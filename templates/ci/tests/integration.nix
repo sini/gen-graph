@@ -1,8 +1,8 @@
-{ lib, graphLib, engine, ... }:
+{ lib, graphLib, ... }:
 let
   # Realistic service dependency graph
-  nodes = engine.buildNodes {
-    importGraph = engine.edges [
+  nodes = graphLib.mock.mkNodes {
+    edges = [
       { from = "web"; to = "api"; }
       { from = "api"; to = "database"; }
       { from = "api"; to = "cache"; }
@@ -56,50 +56,5 @@ in
     expr = builtins.sort builtins.lessThan
       (builtins.attrNames (graphLib.select nodes (n: n.type == "datastore")));
     expected = [ "cache" "database" "queue" ];
-  };
-
-  # Scope-engine-aware: visibleFrom uses engine.query for Neron resolution
-  integration.test-visibleFrom = {
-    expr =
-      let
-        resolveNodes = engine.buildNodes {
-          importGraph = engine.edges [
-            { from = "child"; to = "parent"; }
-          ];
-          decls = {
-            parent = { x = 1; };
-            child = { y = 2; };
-          };
-        };
-        result = engine.eval {
-          baseNodes = resolveNodes;
-          attributes = {};
-        };
-      in
-      graphLib.visibleFrom (n: n.decls.x or null) result "child";
-    expected = 1;
-  };
-
-  # Scope-engine-aware: ambiguities detects multiple reachable declarations
-  integration.test-ambiguities = {
-    expr =
-      let
-        ambigNodes = engine.buildNodes {
-          importGraph = engine.edges [
-            { from = "consumer"; to = "providerA"; }
-            { from = "consumer"; to = "providerB"; }
-          ];
-          decls = {
-            providerA = { x = 1; };
-            providerB = { x = 2; };
-          };
-        };
-        result = engine.eval {
-          baseNodes = ambigNodes;
-          attributes = {};
-        };
-      in
-      graphLib.ambiguities (n: n.decls.x or null) ambigNodes result;
-    expected = [ "consumer" ];
   };
 }

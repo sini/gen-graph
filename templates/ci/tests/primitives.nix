@@ -1,8 +1,8 @@
-{ lib, graphLib, engine, ... }:
+{ lib, graphLib, ... }:
 let
   # Diamond graph: a -> b, a -> c, b -> d, c -> d
-  nodes = engine.buildNodes {
-    importGraph = engine.edges [
+  nodes = graphLib.mock.mkNodes {
+    edges = [
       { from = "a"; to = "b"; }
       { from = "a"; to = "c"; }
       { from = "b"; to = "d"; }
@@ -55,8 +55,8 @@ in
   primitives.test-cycles = {
     expr =
       let
-        cyclicNodes = engine.buildNodes {
-          importGraph = engine.edges [
+        cyclicNodes = graphLib.mock.mkNodes {
+          edges = [
             { from = "a"; to = "b"; }
             { from = "b"; to = "c"; }
             { from = "c"; to = "a"; }

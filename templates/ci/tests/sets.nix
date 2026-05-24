@@ -1,11 +1,11 @@
-{ lib, graphLib, engine, ... }:
+{ lib, graphLib, ... }:
 let
-  nodes = engine.buildNodes {
-    parentGraph = engine.edges [
+  nodes = graphLib.mock.mkNodes {
+    parents = [
       { from = "a"; to = "root"; }
       { from = "b"; to = "root"; }
     ];
-    importGraph = engine.edge "a" "b";
+    edges = [ { from = "a"; to = "b"; } ];
     types = { root = "container"; a = "service"; b = "service"; };
   };
 in

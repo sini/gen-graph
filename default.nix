@@ -1,2 +1,2 @@
-{ lib, engine ? null }:
-import ./lib { inherit lib engine; }
+{ lib }:
+import ./lib { inherit lib; }

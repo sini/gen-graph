@@ -1,7 +1,7 @@
-{ lib, graphLib, engine, ... }:
+{ lib, graphLib, ... }:
 let
-  nodes = engine.buildNodes {
-    importGraph = engine.edges [
+  nodes = graphLib.mock.mkNodes {
+    edges = [
       { from = "a"; to = "b"; }
       { from = "b"; to = "c"; }
       { from = "c"; to = "d"; }

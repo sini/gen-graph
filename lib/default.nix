@@ -1,7 +1,8 @@
-{ lib, engine ? null }:
+{ lib }:
 let
   sets = import ./sets.nix { inherit lib; };
   combinators = import ./combinators.nix { inherit lib sets; };
-  primitives = import ./primitives.nix { inherit lib sets combinators engine; };
+  primitives = import ./primitives.nix { inherit lib sets combinators; };
+  mock = import ./mock.nix { inherit lib; };
 in
-sets // combinators // primitives
+sets // combinators // primitives // { inherit mock; }

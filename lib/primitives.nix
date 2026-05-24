@@ -1,12 +1,6 @@
 # Built-in query primitives via monotonic combinators.
-# Scope-engine-aware queries (visibleFrom, ambiguities) call scope-engine resolution.
-{ lib, sets, combinators, engine }:
+{ lib, sets, combinators }:
 let
-  requireEngine = name:
-    if engine == null
-    then throw "gen-graph: ${name} requires scope-engine (pass engine argument to gen-graph)"
-    else null;
-
   # Internal: extract only import edges (I-label) from a node map
   importEdges = nodes:
     combinators.selectEdges (sets.fromEdges nodes) (e: e.label == "I");
@@ -82,17 +76,5 @@ let
               builtins.map (path: [ current ] ++ path) (dfs newVisited next)
             ) neighbors;
       in dfs [] startId;
-
-    # Scope-engine-aware: Neron visible declaration from a scope
-    visibleFrom = dataFilter: result: nodeId:
-      builtins.seq (requireEngine "visibleFrom")
-      (engine.query { inherit dataFilter; } result nodeId);
-
-    # Scope-engine-aware: nodes with ambiguous resolution
-    ambiguities = dataFilter: nodes: result:
-      builtins.seq (requireEngine "ambiguities")
-      (builtins.filter (id:
-        engine.ambiguous { inherit dataFilter; } result id
-      ) (builtins.attrNames nodes));
   };
 in self
