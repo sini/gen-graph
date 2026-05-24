@@ -16,7 +16,7 @@
           to = target;
           label = "I";
         }) (node.imports or []))
-        ++ (lib.optional (node.parent != null) {
+        ++ (lib.optional ((node.parent or null) != null) {
           from = id;
           to = node.parent;
           label = "P";

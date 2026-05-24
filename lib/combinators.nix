@@ -30,6 +30,10 @@
 
   fixpoint = { seed, step, maxIter ? 1000 }:
     let
+      # Convergence via structural equality (Nix's == is deep comparison).
+      # Monotonicity pre-check: top-level key count. This is a fast heuristic —
+      # it catches removed from-nodes but NOT removed edges within a from-node.
+      # The structural equality check is the authoritative convergence detector.
       go = iter: current:
         let
           next = step current;
