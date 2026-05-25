@@ -56,17 +56,17 @@ let
     roots = nodes:
       let
         iEdges = importEdges nodes;
-        allTargets = lib.unique (lib.concatMap (from:
-          builtins.attrNames iEdges.${from}
+        allTargets = builtins.listToAttrs (lib.concatMap (from:
+          map (to: { name = to; value = true; }) (builtins.attrNames iEdges.${from})
         ) (builtins.attrNames iEdges));
       in
       builtins.sort builtins.lessThan
-        (builtins.filter (n: !(builtins.elem n allTargets)) (builtins.attrNames nodes));
+        (builtins.filter (n: !(allTargets ? ${n})) (builtins.attrNames nodes));
 
     leaves = nodes:
-      let allSources = builtins.attrNames (importEdges nodes);
+      let allSources = importEdges nodes;
       in builtins.sort builtins.lessThan
-        (builtins.filter (n: !(builtins.elem n allSources)) (builtins.attrNames nodes));
+        (builtins.filter (n: !(allSources ? ${n})) (builtins.attrNames nodes));
 
     # Nodes in any cycle (self-reachable in transitive closure)
     cycles = nodes:
@@ -96,15 +96,15 @@ let
         iEdges = importEdges nodes;
         dfs = visited: current:
           if current == endId then [ [ endId ] ]
-          else if builtins.elem current visited then []
+          else if visited ? ${current} then []
           else
             let
               neighbors = builtins.attrNames (iEdges.${current} or {});
-              newVisited = visited ++ [ current ];
+              newVisited = visited // { ${current} = true; };
             in
             builtins.concatMap (next:
               builtins.map (path: [ current ] ++ path) (dfs newVisited next)
             ) neighbors;
-      in dfs [] startId;
+      in dfs {} startId;
   };
 in self
