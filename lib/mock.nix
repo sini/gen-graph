@@ -1,53 +1,75 @@
 { lib }:
 let
-  mkNodes =
+  mkGraph =
     {
       edges ? [],
       parents ? [],
-      decls ? {},
-      types ? {},
+      nodeData ? {},
     }:
     let
-      allIds = lib.unique (
-        (lib.concatMap (e: [ e.from e.to ]) edges)
-        ++ (lib.concatMap (e: [ e.from e.to ]) parents)
-        ++ (builtins.attrNames decls)
-        ++ (builtins.attrNames types)
-      );
-      parentMap = builtins.listToAttrs (map (e: { name = e.from; value = e.to; }) parents);
-      importMap = builtins.foldl' (acc: e:
-        acc // { ${e.from} = (acc.${e.from} or []) ++ [ e.to ]; }
+      allIds = builtins.attrNames (builtins.listToAttrs (
+        (map (e: { name = e.from; value = true; }) edges)
+        ++ (map (e: { name = e.to; value = true; }) edges)
+        ++ (map (e: { name = e.from; value = true; }) parents)
+        ++ (map (e: { name = e.to; value = true; }) parents)
+        ++ (map (k: { name = k; value = true; }) (builtins.attrNames nodeData))
+      ));
+
+      edgeIndex = builtins.foldl' (acc: e:
+        acc // { ${e.from} = (acc.${e.from} or []) ++ [e.to]; }
       ) {} edges;
-      childMap = builtins.foldl' (acc: e:
-        acc // { ${e.to} = (acc.${e.to} or []) ++ [ e.from ]; }
-      ) {} parents;
-    in
-    lib.genAttrs allIds (id: {
-      inherit id;
-      parent = parentMap.${id} or null;
-      imports = importMap.${id} or [];
-      decls = decls.${id} or {};
-      type = types.${id} or null;
-      childrenIds = childMap.${id} or [];
-      edgesByLabel = lib.optionalAttrs (importMap ? ${id}) { I = importMap.${id}; }
-        // lib.optionalAttrs (parentMap ? ${id}) { P = [ parentMap.${id} ]; };
-      rels = lib.optionalAttrs (decls ? ${id}) { ":" = decls.${id}; };
-    });
+
+      parentIndex = builtins.listToAttrs (
+        map (e: { name = e.from; value = e.to; }) parents
+      );
+    in {
+      edges = id: lib.unique (edgeIndex.${id} or []);
+      parent = id: parentIndex.${id} or null;
+      nodes = allIds;
+      nodeData = id: nodeData.${id} or {};
+    };
 
   fixtures = {
-    diamond = mkNodes {
-      edges = [ { from = "a"; to = "b"; } { from = "a"; to = "c"; } { from = "b"; to = "d"; } { from = "c"; to = "d"; } ];
+    diamond = mkGraph {
+      edges = [
+        { from = "a"; to = "b"; }
+        { from = "a"; to = "c"; }
+        { from = "b"; to = "d"; }
+        { from = "c"; to = "d"; }
+      ];
     };
-    chain = mkNodes {
-      edges = [ { from = "a"; to = "b"; } { from = "b"; to = "c"; } { from = "c"; to = "d"; } ];
+    chain = mkGraph {
+      edges = [
+        { from = "a"; to = "b"; }
+        { from = "b"; to = "c"; }
+        { from = "c"; to = "d"; }
+      ];
     };
-    cyclic = mkNodes {
-      edges = [ { from = "a"; to = "b"; } { from = "b"; to = "c"; } { from = "c"; to = "a"; } ];
+    cyclic = mkGraph {
+      edges = [
+        { from = "a"; to = "b"; }
+        { from = "b"; to = "c"; }
+        { from = "c"; to = "a"; }
+      ];
     };
-    tree = mkNodes {
-      parents = [ { from = "child1"; to = "root"; } { from = "child2"; to = "root"; } { from = "grandchild"; to = "child1"; } ];
+    tree = mkGraph {
+      parents = [
+        { from = "child1"; to = "root"; }
+        { from = "child2"; to = "root"; }
+        { from = "grandchild"; to = "child1"; }
+      ];
     };
-    serviceGraph = mkNodes {
+    disconnected = mkGraph {
+      edges = [
+        { from = "a"; to = "b"; }
+      ];
+      nodeData = {
+        a = { type = "connected"; };
+        b = { type = "connected"; };
+        island = { type = "isolated"; };
+      };
+    };
+    serviceGraph = mkGraph {
       edges = [
         { from = "web"; to = "api"; }
         { from = "api"; to = "db"; }
@@ -55,10 +77,24 @@ let
         { from = "worker"; to = "db"; }
         { from = "worker"; to = "queue"; }
       ];
-      types = { web = "frontend"; api = "backend"; db = "datastore"; cache = "datastore"; worker = "backend"; queue = "datastore"; };
+      nodeData = {
+        web = { type = "frontend"; };
+        api = { type = "backend"; };
+        db = { type = "datastore"; };
+        cache = { type = "datastore"; };
+        worker = { type = "backend"; };
+        queue = { type = "datastore"; };
+      };
     };
   };
+  fromNodeMap = nodeMap:
+    let
+      nodes = builtins.attrNames nodeMap;
+    in {
+      edges = id: (nodeMap.${id} or {}).imports or [];
+      parent = id: (nodeMap.${id} or {}).parent or null;
+      inherit nodes;
+      nodeData = id: builtins.removeAttrs (nodeMap.${id} or {}) [ "imports" "parent" ];
+    };
 in
-{
-  inherit mkNodes fixtures;
-}
+{ inherit mkGraph fixtures fromNodeMap; }

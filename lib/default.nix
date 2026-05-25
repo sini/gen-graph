@@ -1,8 +1,10 @@
 { lib }:
 let
-  sets = import ./sets.nix { inherit lib; };
-  combinators = import ./combinators.nix { inherit lib sets; };
-  primitives = import ./primitives.nix { inherit lib sets combinators; };
+  traverse = import ./traverse.nix { inherit lib; };
+  global = import ./global.nix { inherit lib; };
+  enumerate = import ./enumerate.nix { inherit lib; };
+  edgeMaps = import ./edge-maps.nix { inherit lib; };
+  fixpoint = import ./fixpoint.nix { inherit lib; };
   mock = import ./mock.nix { inherit lib; };
 in
-sets // combinators // primitives // { inherit mock; }
+traverse // global // enumerate // edgeMaps // fixpoint // { inherit mock; }

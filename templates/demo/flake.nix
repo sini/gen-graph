@@ -1,5 +1,5 @@
 {
-  description = "gen-graph demo: monotonic graph queries (Arntzenius & Krishnaswami 2016)";
+  description = "gen-graph demo: accessor-based graph queries";
 
   inputs = {
     gen-graph.url = "github:sini/gen-graph";
@@ -21,100 +21,125 @@
       #
       # Diamond pattern: gateway and worker both reach database via different paths.
       # Two roots (gateway, worker), three leaves (database, cache, queue).
-      nodes = {
-        gateway = {
-          type = "frontend";
-          imports = [ "web" ];
-        };
-        web = {
-          type = "frontend";
-          imports = [ "api" ];
-        };
-        api = {
-          type = "backend";
-          imports = [ "database" "cache" ];
-        };
-        worker = {
-          type = "backend";
-          imports = [ "database" "queue" ];
-        };
-        database = {
-          type = "datastore";
-          imports = [ ];
-        };
-        cache = {
-          type = "datastore";
-          imports = [ ];
-        };
-        queue = {
-          type = "datastore";
-          imports = [ ];
-        };
+      services = {
+        gateway = { type = "frontend"; deps = [ "web" ]; };
+        web = { type = "frontend"; deps = [ "api" ]; };
+        api = { type = "backend"; deps = [ "database" "cache" ]; };
+        worker = { type = "backend"; deps = [ "database" "queue" ]; };
+        database = { type = "datastore"; deps = []; };
+        cache = { type = "datastore"; deps = []; };
+        queue = { type = "datastore"; deps = []; };
+      };
+
+      # Accessor record over the service data
+      g = {
+        edges = id: (services.${id} or { deps = []; }).deps;
+        parent = _: null;
+        nodes = builtins.attrNames services;
+        nodeData = id: services.${id} or {};
       };
 
       # Variant with a circular dependency: cache -> api creates a cycle
-      cyclicNodes = nodes // {
-        cache = {
-          type = "datastore";
-          imports = [ "api" ];
-        };
+      cyclicServices = services // {
+        cache = { type = "datastore"; deps = [ "api" ]; };
+      };
+      gCyclic = g // {
+        edges = id: (cyclicServices.${id} or { deps = []; }).deps;
+        nodes = builtins.attrNames cyclicServices;
+        nodeData = id: cyclicServices.${id} or {};
       };
     in
     {
-      # --- Layer 2: Built-in primitives ---
+      # --- Lazy Traversal ---
 
       # What can web reach transitively?
-      # -> [ "api" "cache" "database" ]
-      webReaches = graph.reachableFrom nodes "web";
-
-      # What breaks if database goes down?
-      # -> [ "api" "gateway" "web" "worker" ]
-      databaseImpact = graph.impactOf nodes "database";
-
-      # Entry points (no incoming edges)
-      # -> [ "gateway" "worker" ]
-      entryPoints = graph.roots nodes;
-
-      # Leaf services (no outgoing edges)
-      # -> [ "cache" "database" "queue" ]
-      leafServices = graph.leaves nodes;
+      # → [ "api" "cache" "database" ]
+      webReaches = graph.reachableFrom g "web";
 
       # All paths from gateway to database
-      # -> [ [ "gateway" "web" "api" "database" ] ]
-      gatewayToDb = graph.pathsBetween nodes "gateway" "database";
+      # → [ [ "gateway" "web" "api" "database" ] ]
+      gatewayToDb = graph.pathsBetween g "gateway" "database";
+
+      # Predicate-filtered reachability: only datastore IDs reachable from gateway
+      # → [ "cache" "database" ]
+      gatewayDatastores = graph.reachableWhere g "gateway" (id:
+        ((services.${id} or {}).type or null) == "datastore"
+      );
+
+      # --- Global Analysis ---
+
+      # What breaks if database goes down? (reverse transitive reachability)
+      # → [ "api" "gateway" "web" "worker" ]
+      databaseImpact = graph.dependents g "database";
 
       # Cycle detection on a healthy DAG (should be empty)
-      # -> []
-      hasCycles = graph.cycles nodes;
+      # → []
+      noCycles = graph.cycles g;
 
-      # Cycle detection with circular dependency: cache -> api
-      # -> [ "api" "cache" ]
-      detectedCycles = graph.cycles cyclicNodes;
+      # Cycle detection with circular dependency: cache → api → cache
+      # → [ "api" "cache" ]
+      detectedCycles = graph.cycles gCyclic;
 
-      # Predicate-filtered reachability: only datastores reachable from gateway
-      # -> [ "cache" "database" ]
-      gatewayDatastores = graph.reachableWhere nodes "gateway" (n: n.type == "datastore");
+      # Reversed graph: who depends on database?
+      # → [ "api" "worker" ]
+      dbDependedOnBy = let rev = graph.transpose g; in rev.edges "database";
 
-      # --- Layer 1: Monotonic combinators ---
+      # --- Enumeration ---
 
-      # Filtering: only backend services
-      # -> { api = ...; worker = ...; }
-      backends = graph.select nodes (n: n.type == "backend");
+      # Entry points (no incoming edges)
+      # → [ "gateway" "worker" ]
+      entryPoints = graph.roots g;
 
-      # Edge operations
-      allEdges = graph.fromEdges nodes;
-      edgeCount = graph.sizeEdges (graph.fromEdges nodes);
+      # Leaf services (no outgoing edges)
+      # → [ "cache" "database" "queue" ]
+      leafServices = graph.leaves g;
 
-      # Fixpoint: transitive closure computed explicitly via compose
-      transitiveFromGateway =
-        let
-          iEdges = graph.selectEdges (graph.fromEdges nodes) (e: e.label == "I");
-          closure = graph.fixpoint {
-            seed = iEdges;
-            step = current: graph.unionEdges current (graph.compose current iEdges);
-          };
-        in
-        builtins.attrNames (closure.gateway or { });
-      # -> [ "api" "cache" "database" "web" ]
+      # Filter by node data: only backend services
+      # → [ "api" "worker" ]
+      backends = graph.select g (d: (d.type or null) == "backend");
+
+      # --- Materialization + Edge Map Operations ---
+
+      # Materialize to edge map
+      edgeMap = graph.materialize g;
+
+      # Transitive closure: full reachability as edge map
+      closure = graph.transitiveClosure g;
+
+      # Transitive reduction: minimal edges preserving reachability
+      minimal = graph.transitiveReduction g;
+
+      # Edge filtering: only edges targeting datastores
+      datastoreEdges = let em = graph.materialize g; in
+        graph.selectEdges
+          (_from: to: ((services.${to} or {}).type or null) == "datastore")
+          em;
+
+      # Compose: two-hop reachability
+      # a → b in edgeMap, b → c in edgeMap ⟹ a → c in twoHop
+      twoHop = let em = graph.materialize g; in graph.compose em em;
+
+      # --- Mock utility: fromNodeMap for legacy data ---
+
+      # Convert old-format node map to accessor record
+      legacyReachable = let
+        legacyData = {
+          "svc:web" = { imports = [ "svc:api" ]; parent = null; };
+          "svc:api" = { imports = [ "svc:db" ]; parent = "svc:web"; };
+          "svc:db" = { imports = []; parent = "svc:api"; };
+        };
+        legacyG = graph.mock.fromNodeMap legacyData;
+      in graph.reachableFrom legacyG "svc:web";
+      # → [ "svc:api" "svc:db" ]
+
+      legacyAncestors = let
+        legacyData = {
+          "svc:web" = { imports = [ "svc:api" ]; parent = null; };
+          "svc:api" = { imports = [ "svc:db" ]; parent = "svc:web"; };
+          "svc:db" = { imports = []; parent = "svc:api"; };
+        };
+        legacyG = graph.mock.fromNodeMap legacyData;
+      in graph.ancestorsOf legacyG "svc:db";
+      # → [ "svc:api" "svc:web" ]
     };
 }

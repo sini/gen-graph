@@ -1,5 +1,5 @@
 {
-  description = "gen-graph: monotonic query combinators over scope graphs";
+  description = "gen-graph: accessor-based graph query combinators";
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
   outputs = { nixpkgs, ... }: {
     lib = import ./. { lib = nixpkgs.lib; };
