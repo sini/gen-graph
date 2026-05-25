@@ -56,6 +56,13 @@
       ) (lib.filterAttrs (from: _: b ? ${from}) a)
     );
 
+  differenceEdges = a: b:
+    lib.filterAttrs (_: targets: targets != {}) (
+      lib.mapAttrs (from: aTargets:
+        lib.filterAttrs (to: _: !((b.${from} or {}) ? ${to})) aTargets
+      ) a
+    );
+
   size = s: builtins.length (builtins.attrNames s);
   sizeNodes = s: builtins.length (builtins.attrNames s);
 

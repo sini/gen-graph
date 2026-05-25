@@ -64,4 +64,28 @@ in
     expr = graphLib.memberNode nodes "z";
     expected = false;
   };
+
+  sets.test-differenceEdges-basic = {
+    expr =
+      let
+        a = { x = { y = { from = "x"; to = "y"; label = "I"; }; z = { from = "x"; to = "z"; label = "I"; }; }; };
+        b = { x = { y = { from = "x"; to = "y"; label = "I"; }; }; };
+      in
+      graphLib.differenceEdges a b;
+    expected = { x = { z = { from = "x"; to = "z"; label = "I"; }; }; };
+  };
+
+  sets.test-differenceEdges-disjoint = {
+    expr = graphLib.differenceEdges
+      { a = { b = { from = "a"; to = "b"; label = "I"; }; }; }
+      { x = { y = { from = "x"; to = "y"; label = "I"; }; }; };
+    expected = { a = { b = { from = "a"; to = "b"; label = "I"; }; }; };
+  };
+
+  sets.test-differenceEdges-empty-result = {
+    expr = graphLib.differenceEdges
+      { a = { b = { from = "a"; to = "b"; label = "I"; }; }; }
+      { a = { b = { from = "a"; to = "b"; label = "I"; }; }; };
+    expected = {};
+  };
 }

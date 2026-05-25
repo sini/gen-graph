@@ -86,4 +86,21 @@ in
     expr = graphLib.pathsBetween nodes "a" "b";
     expected = [ [ "a" "b" ] ];
   };
+
+  primitives.test-reachableWhere-by-type = {
+    expr = builtins.sort builtins.lessThan
+      (graphLib.reachableWhere (graphLib.mock.fixtures.serviceGraph) "web" (n: n.type == "datastore"));
+    expected = [ "cache" "db" ];
+  };
+
+  primitives.test-reachableWhere-no-match = {
+    expr = graphLib.reachableWhere nodes "a" (n: n.type == "nonexistent");
+    expected = [];
+  };
+
+  primitives.test-reachableWhere-all-match = {
+    expr = builtins.sort builtins.lessThan
+      (graphLib.reachableWhere nodes "a" (_: true));
+    expected = [ "b" "c" "d" ];
+  };
 }

@@ -29,6 +29,10 @@ let
     reachableFrom = nodes: startId:
       builtins.attrNames ((transitiveClosure nodes).${startId} or {});
 
+    # Predicate-filtered reachability (Arntzenius 2016).
+    reachableWhere = nodes: startId: pred:
+      builtins.filter (id: pred (nodes.${id} or {})) (self.reachableFrom nodes startId);
+
     dependents = nodes: targetId:
       let
         closure = transitiveClosure nodes;
