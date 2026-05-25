@@ -103,4 +103,39 @@ in
       (graphLib.reachableWhere nodes "a" (_: true));
     expected = [ "b" "c" "d" ];
   };
+
+  primitives.test-ancestorsOf-chain = {
+    expr = graphLib.ancestorsOf (graphLib.mock.fixtures.tree) "grandchild";
+    expected = [ "child1" "root" ];
+  };
+
+  primitives.test-ancestorsOf-root = {
+    expr = graphLib.ancestorsOf (graphLib.mock.fixtures.tree) "root";
+    expected = [];
+  };
+
+  primitives.test-ancestorsOf-one-level = {
+    expr = graphLib.ancestorsOf (graphLib.mock.fixtures.tree) "child2";
+    expected = [ "root" ];
+  };
+
+  primitives.test-transitiveReduction-diamond = {
+    expr =
+      let reduced = graphLib.transitiveReduction (graphLib.mock.fixtures.diamond);
+      in graphLib.sizeEdges reduced;
+    expected = 4;
+  };
+
+  primitives.test-transitiveReduction-chain-unchanged = {
+    expr =
+      let
+        reduced = graphLib.transitiveReduction (graphLib.mock.fixtures.chain);
+        iEdges = graphLib.fromEdges (graphLib.mock.fixtures.chain);
+        original = lib.mapAttrs (_: targets:
+          lib.filterAttrs (_: e: e.label == "I") targets
+        ) (lib.filterAttrs (_: t: t != {}) iEdges);
+      in
+      graphLib.sizeEdges reduced == graphLib.sizeEdges original;
+    expected = true;
+  };
 }

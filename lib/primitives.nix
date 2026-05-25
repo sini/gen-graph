@@ -42,6 +42,17 @@ let
 
     impactOf = self.dependents;
 
+    # P-edge upward traversal (Neron 2015 — P* path).
+    ancestorsOf = nodes: startId:
+      let
+        go = visited: id:
+          let p = (nodes.${id} or {}).parent or null;
+          in if p == null then []
+          else if visited ? ${p} then
+            throw "gen-graph: ancestorsOf: cycle detected at '${p}'"
+          else [p] ++ go (visited // { ${p} = true; }) p;
+      in go { ${startId} = true; } startId;
+
     roots = nodes:
       let
         iEdges = importEdges nodes;
@@ -63,6 +74,21 @@ let
       in builtins.sort builtins.lessThan (builtins.filter (id:
         (closure.${id} or {}) ? ${id}
       ) (builtins.attrNames nodes));
+
+    # Transitive reduction: minimal edge set preserving reachability (Mokhov 2017 §4.5).
+    transitiveReduction = nodes:
+      let
+        iEdges = importEdges nodes;
+        closure = transitiveClosure nodes;
+        redundant = lib.mapAttrs (from: targets:
+          lib.filterAttrs (to: _:
+            builtins.any (mid:
+              mid != to && ((closure.${mid} or {}) ? ${to})
+            ) (builtins.attrNames targets)
+          ) targets
+        ) iEdges;
+      in
+      sets.differenceEdges iEdges redundant;
 
     # All acyclic paths between two nodes (DFS with visited set)
     pathsBetween = nodes: startId: endId:
