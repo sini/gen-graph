@@ -270,6 +270,18 @@ gen-graph/
 | Scope graph node format | [Néron et al. — *A Theory of Name Resolution* (ESOP 2015)](https://link.springer.com/chapter/10.1007/978-3-662-46669-8_9) |
 | Algebraic graph construction | [Mokhov — *Algebraic Graphs with Class* (Haskell 2017)](https://dl.acm.org/doi/10.1145/3122955.3122956) |
 
+## Demo
+
+See [`templates/demo/`](templates/demo/) for a runnable microservice dependency graph example exercising all query primitives.
+
+```bash
+cd templates/demo
+nix eval --override-input gen-graph ../.. .#webReaches
+nix eval --override-input gen-graph ../.. .#databaseImpact
+nix eval --override-input gen-graph ../.. .#entryPoints
+nix eval --override-input gen-graph ../.. .#detectedCycles
+```
+
 ## Testing
 
 ```bash
