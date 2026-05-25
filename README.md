@@ -1,20 +1,18 @@
 # gen-graph — Monotonic Query Combinators over Scope Graphs
 
-Datafun-inspired ([Arntzenius & Krishnaswami 2016](https://www.cl.cam.ac.uk/~nk480/datafun.pdf)) query combinators for graph analysis over [scope-engine](https://github.com/sini/scope-engine) node maps. Two layers: composable monotonic combinators (foundation) and built-in query primitives (convenience).
+Datafun-inspired ([Arntzenius & Krishnaswami 2016](https://www.cl.cam.ac.uk/~nk480/datafun.pdf)) query combinators for graph analysis over node maps. Two layers: composable monotonic combinators (foundation) and built-in query primitives (convenience).
 
 ## Overview
 
-gen-graph is a pure analysis layer. It does **not** construct graphs, resolve names, or evaluate attributes — those are scope-engine's responsibilities. gen-graph takes a computed node map and answers questions about it.
+gen-graph is a pure analysis layer. It does **not** construct graphs, resolve names, or evaluate attributes — those are separate concerns. gen-graph takes a computed node map and answers questions about it.
 
 ```nix
-# Build a graph with scope-engine
-nodes = engine.buildNodes {
-  importGraph = engine.edges [
-    { from = "web"; to = "api"; }
-    { from = "api"; to = "database"; }
-    { from = "api"; to = "cache"; }
-  ];
-  types = { web = "frontend"; api = "backend"; database = "datastore"; cache = "datastore"; };
+# Given a node map
+nodes = {
+  web = { id = "web"; imports = [ "api" ]; parent = null; decls = {}; type = "frontend"; };
+  api = { id = "api"; imports = [ "database" "cache" ]; parent = null; decls = {}; type = "backend"; };
+  database = { id = "database"; imports = []; parent = null; decls = {}; type = "datastore"; };
+  cache = { id = "cache"; imports = []; parent = null; decls = {}; type = "datastore"; };
 };
 
 # Query with gen-graph
@@ -25,6 +23,24 @@ graph.leaves nodes                      # → [ "cache" "database" ]
 graph.cycles nodes                      # → []
 ```
 
+## Terminology
+
+| Term | Definition |
+|------|-----------|
+| Nodes | Graph vertices — plain attrsets with id, parent, imports, decls, type |
+| Edges | Labeled relationships between nodes: I (import), P (parent), custom |
+| Combinators | Query builders: select, compose, fixpoint |
+
+## Gen Ecosystem
+
+| Library | Role |
+|---------|------|
+| [gen](https://github.com/sini/gen) | Pure primitives (search, record, identity) |
+| [gen-schema](https://github.com/sini/gen-schema) | Typed registries (kinds, instances, collections, refs) |
+| [gen-aspects](https://github.com/sini/gen-aspects) | Aspect types (traits, classification, dispatch) |
+| [gen-graph](https://github.com/sini/gen-graph) | Graph queries (combinators, traversals, fixpoint) |
+| [gen-scope](https://github.com/sini/gen-scope) | Scope graphs (construction, evaluation, resolution) |
+
 ## Quick Start
 
 ### As a flake input
@@ -33,13 +49,11 @@ graph.cycles nodes                      # → []
 {
   inputs = {
     gen-graph.url = "github:sini/gen-graph";
-    scope-engine.url = "github:sini/scope-engine";
   };
-  outputs = { gen-graph, scope-engine, nixpkgs, ... }:
+  outputs = { gen-graph, nixpkgs, ... }:
     let
       lib = nixpkgs.lib;
-      engine = scope-engine { inherit lib; };
-      graph = gen-graph { inherit lib engine; };
+      graph = gen-graph { inherit lib; };
     in { /* use graph.reachableFrom, graph.dependents, etc. */ };
 }
 ```
@@ -49,20 +63,17 @@ graph.cycles nodes                      # → []
 ```nix
 let
   lib = (import <nixpkgs> {}).lib;
-  engine = import ./path/to/scope-engine { inherit lib; };
-  graph = import ./path/to/gen-graph { inherit lib engine; };
+  graph = import ./path/to/gen-graph { inherit lib; };
 in
 graph.reachableFrom nodes "web"
 ```
-
-The `engine` parameter is optional. Without it, all combinators and graph-only primitives work. Only `visibleFrom` and `ambiguities` (scope-engine-aware queries) require it.
 
 ## Result Sets
 
 gen-graph operates on **result sets** — attrsets keyed by identity for O(1) membership checking.
 
 ```nix
-# Node sets mirror scope-engine's format: { nodeId = nodeRecord; }
+# Node sets: { nodeId = nodeRecord; }
 nodeSet = graph.fromNodes nodes;
 
 # Edge sets use two-level attrsets: { from = { to = edgeRecord; }; }
@@ -90,6 +101,7 @@ graph.unionNodes a b          # monotonic node set union
 graph.unionEdges a b          # monotonic edge set union
 graph.intersectNodes a b      # node set intersection
 graph.intersectEdges a b      # edge set intersection
+graph.differenceEdges a b     # edge set difference (a minus b)
 ```
 
 ### Relational Composition
@@ -125,6 +137,14 @@ All nodes transitively reachable from a start node (via import edges).
 graph.reachableFrom nodes "web"  # → [ "api" "cache" "database" ]
 ```
 
+### `reachableWhere`
+
+Predicate-filtered reachability. Returns nodes transitively reachable from `startId` that match `pred`.
+
+```nix
+reachableWhere nodes startId pred
+```
+
 ### `dependents`
 
 All nodes that transitively lead to a target node.
@@ -139,6 +159,14 @@ Alias for `dependents` — "what breaks if this node goes down?"
 
 ```nix
 graph.impactOf nodes "database"  # → [ "api" "cache" "web" ]
+```
+
+### `ancestorsOf`
+
+Walks P-edges (parent chain) upward from `startId`. Cycle-protected.
+
+```nix
+ancestorsOf nodes startId → [ parentId grandparentId ... ]
 ```
 
 ### `pathsBetween`
@@ -178,26 +206,18 @@ graph.cycles cyclicNodes  # → [ "a" "b" "c" ]
 graph.cycles dagNodes     # → []
 ```
 
-### `visibleFrom` (scope-engine-aware)
+### `transitiveReduction`
 
-Néron-visible declaration from a scope, using scope-engine's resolution with default specificity (D < I < P). Requires `engine` parameter.
-
-```nix
-graph.visibleFrom (n: n.decls.x or null) evalResult "child"  # → 1
-```
-
-### `ambiguities` (scope-engine-aware)
-
-Nodes with ambiguous resolution (multiple reachable declarations). Requires `engine` parameter.
+Minimal edge set preserving reachability. Removes redundant transitive edges.
 
 ```nix
-graph.ambiguities (n: n.decls.x or null) nodes evalResult  # → [ "consumer" ]
+transitiveReduction nodes → edgeSet
 ```
 
 ## Utility Functions
 
 ```nix
-graph.fromNodes nodes           # identity (scope-engine format is the native format)
+graph.fromNodes nodes           # identity (node map is the native format)
 graph.fromEdges nodes           # extract all edges (P, I, custom) as two-level attrset
 graph.emptyNodes                # {}
 graph.emptyEdges                # {}
@@ -206,27 +226,33 @@ graph.sizeEdges edgeSet         # count total edges
 graph.memberNode nodeSet "id"   # bool
 ```
 
+### `mock` (test utility)
+
+Public test utility for constructing node maps without gen-scope.
+
+```nix
+graphLib.mock.mkNodes { edges ? [], parents ? [], decls ? {}, types ? {} }
+graphLib.mock.fixtures.{diamond, chain, cyclic, tree, serviceGraph}
+```
+
 ## Integration with gen-schema
 
-gen-schema's `buildInstanceGraph` produces `{ parentGraph, importGraph, decls, types }` — exactly scope-engine's `buildNodes` input. The pipeline:
+gen-schema's `buildInstanceGraph` produces node maps compatible with gen-graph. The pipeline:
 
 ```nix
 # gen-schema produces the data
 instanceGraph = schema.buildInstanceGraph mySchema fleet;
 
-# scope-engine indexes it
-nodes = engine.buildNodes instanceGraph;
-
 # gen-graph queries it
-graph.dependents nodes "service:postgres"
+graph.dependents instanceGraph.nodes "service:postgres"
 ```
 
 ## Architecture
 
 ```
 gen-graph/
-  flake.nix                — inputs: nixpkgs only (scope-engine is optional)
-  default.nix              — { lib, engine? } entry point
+  flake.nix                — inputs: nixpkgs only
+  default.nix              — { lib } entry point
   lib/
     default.nix            — aggregates sets + combinators + primitives
     sets.nix               — result set operations (fromNodes, fromEdges, union, intersect, size)
@@ -242,12 +268,12 @@ gen-graph/
 |---------|-------|
 | Monotonic combinators, fixpoint | [Arntzenius & Krishnaswami — *Datafun: A Functional Datalog* (ICFP 2016)](https://www.cl.cam.ac.uk/~nk480/datafun.pdf) |
 | Scope graph node format | [Néron et al. — *A Theory of Name Resolution* (ESOP 2015)](https://link.springer.com/chapter/10.1007/978-3-662-46669-8_9) |
-| Algebraic graph construction (scope-engine) | [Mokhov — *Algebraic Graphs with Class* (Haskell 2017)](https://dl.acm.org/doi/10.1145/3122955.3122956) |
+| Algebraic graph construction | [Mokhov — *Algebraic Graphs with Class* (Haskell 2017)](https://dl.acm.org/doi/10.1145/3122955.3122956) |
 
 ## Testing
 
 ```bash
-nix flake check --override-input gen-graph . --override-input scope-engine /path/to/scope-engine ./templates/ci
+nix flake check --override-input gen-graph . ./templates/ci
 ```
 
 ## License
