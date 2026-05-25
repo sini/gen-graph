@@ -1,6 +1,6 @@
 { lib, graphLib, ... }:
 let
-  inherit (graphLib) cycles dependents transpose impactOf;
+  inherit (graphLib) cycles dependents dependentsOf transpose impactOf;
   inherit (graphLib.mock) fixtures mkGraph;
 in
 {
@@ -65,6 +65,25 @@ in
         closure = graphLib.transitiveClosure g;
       in closure."a" or [];
       expected = [ "a" ];
+    };
+
+    # --- dependentsOf (single-target reverse traversal) ---
+
+    test-dependentsOf-db = {
+      expr = builtins.sort builtins.lessThan (dependentsOf fixtures.serviceGraph "db");
+      expected = [ "api" "web" "worker" ];
+    };
+    test-dependentsOf-leaf = {
+      expr = dependentsOf fixtures.chain "a";
+      expected = [];
+    };
+    test-dependentsOf-matches-dependents = {
+      expr = dependentsOf fixtures.serviceGraph "queue";
+      expected = dependents fixtures.serviceGraph "queue";
+    };
+    test-impactOf-uses-dependentsOf = {
+      expr = impactOf fixtures.serviceGraph "cache";
+      expected = dependentsOf fixtures.serviceGraph "cache";
     };
   };
 }

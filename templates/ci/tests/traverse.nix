@@ -1,6 +1,6 @@
 { lib, graphLib, ... }:
 let
-  inherit (graphLib) reachableFrom reachableWhere ancestorsOf pathsBetween;
+  inherit (graphLib) reachableFrom reachableWhere canReach selfReachable ancestorsOf pathsBetween;
   inherit (graphLib.mock) fixtures mkGraph;
 in
 {
@@ -80,6 +80,52 @@ in
     test-reachable-disconnected-from-connected = {
       expr = builtins.sort builtins.lessThan (reachableFrom fixtures.disconnected "a");
       expected = [ "b" ];
+    };
+
+    # --- canReach ---
+
+    test-canReach-true = {
+      expr = canReach fixtures.serviceGraph "web" "db";
+      expected = true;
+    };
+    test-canReach-false = {
+      expr = canReach fixtures.serviceGraph "db" "web";
+      expected = false;
+    };
+    test-canReach-direct = {
+      expr = canReach fixtures.chain "a" "b";
+      expected = true;
+    };
+    test-canReach-transitive = {
+      expr = canReach fixtures.chain "a" "d";
+      expected = true;
+    };
+    test-canReach-self-cyclic = {
+      expr = canReach fixtures.cyclic "a" "a";
+      expected = true;  # a→b→c→a: a can reach itself through the cycle
+    };
+    test-canReach-nonexistent = {
+      expr = canReach fixtures.chain "a" "zzz";
+      expected = false;
+    };
+
+    # --- selfReachable ---
+
+    test-selfReachable-cyclic = {
+      expr = selfReachable fixtures.cyclic "a";
+      expected = true;
+    };
+    test-selfReachable-acyclic = {
+      expr = selfReachable fixtures.chain "a";
+      expected = false;
+    };
+    test-selfReachable-leaf = {
+      expr = selfReachable fixtures.chain "d";
+      expected = false;
+    };
+    test-selfReachable-self-loop = {
+      expr = selfReachable (mkGraph { edges = [{ from = "x"; to = "x"; }]; }) "x";
+      expected = true;
     };
   };
 }
