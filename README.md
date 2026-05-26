@@ -414,7 +414,7 @@ Cross-partition edges are rare in practice. Per-partition analysis is typically 
 ## Testing
 
 ```bash
-nix flake check --override-input gen-graph . ./templates/ci
+nix flake check --override-input gen-graph . ./ci
 ```
 
 ## Theoretical Foundations
