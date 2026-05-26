@@ -2,6 +2,20 @@
 
 Pure graph query combinators for Nix. Queries take accessor functions as arguments — not node maps. The graph structure is supplied by the caller; gen-graph only answers questions about it.
 
+## Table of Contents
+
+- [Overview](#overview)
+- [Gen Ecosystem](#gen-ecosystem)
+- [Quick Start](#quick-start)
+- [Design Principles](#design-principles)
+- [API Reference](#api-reference)
+- [Usage Example](#usage-example)
+- [Performance](#performance)
+- [Performance Optimizations](#performance-optimizations)
+- [Testing](#testing)
+- [Theoretical Foundations](#theoretical-foundations)
+- [License](#license)
+
 ## Overview
 
 gen-graph works with an **accessor record**: an attrset of functions that the caller provides to describe graph structure. Queries destructure only the accessors they need.
@@ -32,6 +46,19 @@ The four accessor fields:
 | `nodeData` | `id → attrset` | `select` |
 
 Functions that only need traversal destructure `{ edges, ... }`. Functions that need global analysis also take `nodes`. Functions that need parent walks take `parent`. No function requires all four.
+
+## Gen Ecosystem
+
+| Library | Role |
+|---------|------|
+| [gen-algebra](https://github.com/sini/gen-algebra) | Pure primitives (search, record, identity) |
+| [gen-schema](https://github.com/sini/gen-schema) | Typed registries (kinds, instances, collections, refs) |
+| [gen-aspects](https://github.com/sini/gen-aspects) | Aspect types (traits, classification, dispatch) |
+| [gen-graph](https://github.com/sini/gen-graph) | Graph queries (combinators, traversals, fixpoint) |
+| [gen-scope](https://github.com/sini/gen-scope) | Scope graphs (construction, evaluation, resolution) |
+| [gen-select](https://github.com/sini/gen-select) | Selector algebra (pattern matching over graph positions) |
+| [gen-bind](https://github.com/sini/gen-bind) | Module binding (inject args into NixOS modules) |
+| [gen-derive](https://github.com/sini/gen-derive) | Rule dispatch (stratified phases, fixpoint, conflict resolution) |
 
 ## Quick Start
 
@@ -385,19 +412,6 @@ lib.concatMap (partition:
 
 Cross-partition edges are rare in practice. Per-partition analysis is typically 100-400x faster than whole-fleet.
 
-## Gen Ecosystem
-
-| Library | Role |
-|---------|------|
-| [gen-algebra](https://github.com/sini/gen-algebra) | Pure primitives (search, record, identity) |
-| [gen-schema](https://github.com/sini/gen-schema) | Typed registries (kinds, instances, collections, refs) |
-| [gen-aspects](https://github.com/sini/gen-aspects) | Aspect types (traits, classification, dispatch) |
-| [gen-graph](https://github.com/sini/gen-graph) | Graph queries (combinators, traversals, fixpoint) |
-| [gen-scope](https://github.com/sini/gen-scope) | Scope graphs (construction, evaluation, resolution) |
-| [gen-select](https://github.com/sini/gen-select) | Selector algebra (pattern matching over graph positions) |
-| [gen-bind](https://github.com/sini/gen-bind) | Module binding (inject args into NixOS modules) |
-| [gen-derive](https://github.com/sini/gen-derive) | Rule dispatch (stratified phases, fixpoint, conflict resolution) |
-
 ## Testing
 
 ```bash
@@ -408,10 +422,10 @@ nix flake check --override-input gen-graph . ./templates/ci
 
 The algorithms and design principles draw from:
 
-- **Mokhov (2017)** — *Algebraic Graphs with Class*. Algebraic graph construction primitives (overlay, connect, vertex, empty) and compositional approach inform gen-graph's design. Edge map set operations and transitive reduction are gen-graph's own contribution.
-- **Arntzenius & Krishnaswami (2016)** — *Datafun: A Functional Datalog*. Monotone fixpoint iteration with convergence guarantees. The `fixpoint` operator enforces monotonicity (edge count must not shrink).
-- **Neron et al. (2015)** — *A Theory of Name Resolution*. Parent-chain traversal (`ancestorsOf`) follows scope graph P-edge resolution. Silent cycle termination chosen over throwing for composability.
-- **Kahn (1974)** — *The Semantics of a Simple Language for Parallel Programming*. Continuous functions over streams with deterministic dataflow semantics. gen-graph's lazy accessor pattern — traversal only forces nodes it visits — aligns with Nix's lazy evaluation model.
+- **Mokhov (2017)** — *Algebraic Graphs with Class*. *Informed by.* Algebraic graph construction primitives (overlay, connect, vertex, empty) and the compositional approach to graph representation inform gen-graph's edge map operations and structural combinators. Edge map set operations (`unionEdges`, `intersectEdges`, `differenceEdges`) and transitive reduction are gen-graph's own contribution built on this algebraic foundation. Transpose follows Mokhov 2017 §4.3 directly.
+- **Arntzenius & Krishnaswami (2016)** — *Datafun: A Functional Datalog*. *Implements.* Monotone fixpoint iteration with convergence guarantees. The `fixpoint` operator enforces monotonicity (edge count must not shrink between iterations), matching Datafun's requirement that fixpoint computations operate over monotone functions on semilattices. Reverse reachability in `dependents`/`dependentsOf` follows the Datafun reverse-query pattern.
+- **Neron et al. (2015)** — *A Theory of Name Resolution*. *Implements.* Parent-chain traversal (`ancestorsOf`) follows scope graph P-edge resolution: walking the `parent` partial function upward through scopes corresponds to following P-edges in the resolution calculus (Neron 2015 §2.3). Silent cycle termination chosen over throwing for composability, matching the well-foundedness requirement on the parent relation.
+- **Kahn (1974)** — *The Semantics of a Simple Language for Parallel Programming*. *Informed by.* Continuous functions over streams with deterministic dataflow semantics. gen-graph's lazy accessor pattern — traversal only forces nodes it visits — aligns conceptually with Kahn's model where computing stations produce output incrementally as input arrives, and monotonicity ensures that receiving more input can only provoke more output (Kahn 1974 §2.2.4).
 
 ## License
 
