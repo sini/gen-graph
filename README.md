@@ -1,5 +1,7 @@
 # gen-graph — accessor-based graph query combinators for Nix
 
+[![CI](https://github.com/sini/gen-graph/actions/workflows/ci.yml/badge.svg)](https://github.com/sini/gen-graph/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+
 Pure graph query combinators for Nix. Queries take accessor functions as arguments — not node maps. The graph structure is supplied by the caller; gen-graph only answers questions about it.
 
 ## Table of Contents
