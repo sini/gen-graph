@@ -389,6 +389,7 @@ Cross-partition edges are rare in practice. Per-partition analysis is typically 
 
 | Library | Role |
 |---------|------|
+| [gen-algebra](https://github.com/sini/gen-algebra) | Pure primitives — search, record, identity |
 | [gen-graph](https://github.com/sini/gen-graph) | Graph queries — accessor-based combinators, traversal, fixpoint |
 | [gen-schema](https://github.com/sini/gen-schema) | Typed registries — kinds, instances, collections, refs |
 | [gen-scope](https://github.com/sini/gen-scope) | Scope graphs — construction, evaluation, resolution |

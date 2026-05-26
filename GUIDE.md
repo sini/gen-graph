@@ -273,12 +273,14 @@ graph.ancestorsOf g "svc:db"      # [ "svc:api" "svc:web" ]
 gen-graph is the **query layer** — it answers structural questions about graphs that other libraries build:
 
 ```
+gen-algebra →  pure primitives (search, record, identity)
 gen-schema  →  defines what kinds of entities exist (types, instances)
 gen-scope   →  evaluates attributes on graph nodes (HOAG evaluator)
 gen-graph   →  queries the graph structure (reachability, cycles, impact)
 gen-aspects →  classifies and dispatches aspect types
 gen-select  →  selector algebra for targeting nodes
 gen-bind    →  injects args into NixOS modules
+gen-derive  →  stratified rule dispatch with fixpoint convergence
 ```
 
 gen-scope uses gen-graph's accessor pattern: scope-engine memoizes attribute evaluation via `_eval` attrsets (Nix values are lazy), and gen-graph queries operate over those memoized accessors. The memoization IS the cache — gen-graph never caches, it relies on the accessor backend (gen-scope's lazy attrsets) for O(1) repeated calls.
