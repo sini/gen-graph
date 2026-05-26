@@ -389,13 +389,14 @@ Cross-partition edges are rare in practice. Per-partition analysis is typically 
 
 | Library | Role |
 |---------|------|
-| [gen-algebra](https://github.com/sini/gen-algebra) | Pure primitives — search, record, identity |
-| [gen-graph](https://github.com/sini/gen-graph) | Graph queries — accessor-based combinators, traversal, fixpoint |
-| [gen-schema](https://github.com/sini/gen-schema) | Typed registries — kinds, instances, collections, refs |
-| [gen-scope](https://github.com/sini/gen-scope) | Scope graphs — construction, evaluation, resolution |
-| [gen-select](https://github.com/sini/gen-select) | Selector algebra — neededBy, pipe.gather, policy.when |
-| [gen-aspects](https://github.com/sini/gen-aspects) | Aspect types — traits, classification, dispatch |
-| [gen-bind](https://github.com/sini/gen-bind) | Module binding — inject external args into NixOS modules |
+| [gen-algebra](https://github.com/sini/gen-algebra) | Pure primitives (search, record, identity) |
+| [gen-schema](https://github.com/sini/gen-schema) | Typed registries (kinds, instances, collections, refs) |
+| [gen-aspects](https://github.com/sini/gen-aspects) | Aspect types (traits, classification, dispatch) |
+| [gen-graph](https://github.com/sini/gen-graph) | Graph queries (combinators, traversals, fixpoint) |
+| [gen-scope](https://github.com/sini/gen-scope) | Scope graphs (construction, evaluation, resolution) |
+| [gen-select](https://github.com/sini/gen-select) | Selector algebra (pattern matching over graph positions) |
+| [gen-bind](https://github.com/sini/gen-bind) | Module binding (inject args into NixOS modules) |
+| [gen-derive](https://github.com/sini/gen-derive) | Rule dispatch (stratified phases, fixpoint, conflict resolution) |
 
 ## Testing
 
@@ -403,15 +404,14 @@ Cross-partition edges are rare in practice. Per-partition analysis is typically 
 nix flake check --override-input gen-graph . ./templates/ci
 ```
 
-## References
+## Theoretical Foundations
 
 The algorithms and design principles draw from:
 
-- **Mokhov (2017)** — *Algebraic Graphs with Class*. Edge map set operations (union, intersect, difference) and transitive reduction follow the algebraic graph framework.
+- **Mokhov (2017)** — *Algebraic Graphs with Class*. Algebraic graph construction primitives (overlay, connect, vertex, empty) and compositional approach inform gen-graph's design. Edge map set operations and transitive reduction are gen-graph's own contribution.
 - **Arntzenius & Krishnaswami (2016)** — *Datafun: A Functional Datalog*. Monotone fixpoint iteration with convergence guarantees. The `fixpoint` operator enforces monotonicity (edge count must not shrink).
 - **Neron et al. (2015)** — *A Theory of Name Resolution*. Parent-chain traversal (`ancestorsOf`) follows scope graph P-edge resolution. Silent cycle termination chosen over throwing for composability.
-- **Kahn (1974)** — *The Semantics of a Simple Language for Parallel Programming*. Demand-driven evaluation model — traversal only forces nodes it visits, matching Nix's lazy semantics.
-- **Radul (2009)** — *The Art of the Propagator*. Influence on the accessor-function pattern — queries compose via function arguments rather than shared mutable state.
+- **Kahn (1974)** — *The Semantics of a Simple Language for Parallel Programming*. Continuous functions over streams with deterministic dataflow semantics. gen-graph's lazy accessor pattern — traversal only forces nodes it visits — aligns with Nix's lazy evaluation model.
 
 ## License
 
