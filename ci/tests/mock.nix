@@ -6,15 +6,23 @@ in
   mock = {
     test-diamond-nodes = {
       expr = builtins.sort builtins.lessThan fixtures.diamond.nodes;
-      expected = [ "a" "b" "c" "d" ];
+      expected = [
+        "a"
+        "b"
+        "c"
+        "d"
+      ];
     };
     test-diamond-edges = {
       expr = builtins.sort builtins.lessThan (fixtures.diamond.edges "a");
-      expected = [ "b" "c" ];
+      expected = [
+        "b"
+        "c"
+      ];
     };
     test-chain-edges-leaf = {
       expr = fixtures.chain.edges "d";
-      expected = [];
+      expected = [ ];
     };
     test-tree-parent = {
       expr = fixtures.tree.parent "child1";
@@ -30,49 +38,82 @@ in
     };
     test-service-nodedata-missing = {
       expr = fixtures.serviceGraph.nodeData "nonexistent";
-      expected = {};
+      expected = { };
     };
     test-mkgraph-empty = {
-      expr = (mkGraph {}).nodes;
-      expected = [];
+      expr = (mkGraph { }).nodes;
+      expected = [ ];
     };
     test-mkgraph-dedup-edges = {
-      expr = (mkGraph { edges = [
-        { from = "a"; to = "b"; }
-        { from = "a"; to = "b"; }
-      ]; }).edges "a";
+      expr =
+        (mkGraph {
+          edges = [
+            {
+              from = "a";
+              to = "b";
+            }
+            {
+              from = "a";
+              to = "b";
+            }
+          ];
+        }).edges
+          "a";
       expected = [ "b" ];
     };
     test-cyclic-nodes = {
       expr = builtins.sort builtins.lessThan fixtures.cyclic.nodes;
-      expected = [ "a" "b" "c" ];
+      expected = [
+        "a"
+        "b"
+        "c"
+      ];
     };
     test-disconnected-nodes = {
       expr = builtins.sort builtins.lessThan fixtures.disconnected.nodes;
-      expected = [ "a" "b" "island" ];
+      expected = [
+        "a"
+        "b"
+        "island"
+      ];
     };
     test-disconnected-island-edges = {
       expr = fixtures.disconnected.edges "island";
-      expected = [];
+      expected = [ ];
     };
     test-from-node-map = {
-      expr = let
-        nm = {
-          "host:a" = { imports = [ "host:b" ]; parent = null; role = "server"; };
-          "host:b" = { imports = []; parent = "host:a"; role = "client"; };
+      expr =
+        let
+          nm = {
+            "host:a" = {
+              imports = [ "host:b" ];
+              parent = null;
+              role = "server";
+            };
+            "host:b" = {
+              imports = [ ];
+              parent = "host:a";
+              role = "client";
+            };
+          };
+          g = graphLib.mock.fromNodeMap nm;
+        in
+        {
+          edges = g.edges "host:a";
+          parent = g.parent "host:b";
+          nodes = builtins.sort builtins.lessThan g.nodes;
+          data = g.nodeData "host:a";
         };
-        g = graphLib.mock.fromNodeMap nm;
-      in {
-        edges = g.edges "host:a";
-        parent = g.parent "host:b";
-        nodes = builtins.sort builtins.lessThan g.nodes;
-        data = g.nodeData "host:a";
-      };
       expected = {
         edges = [ "host:b" ];
         parent = "host:a";
-        nodes = [ "host:a" "host:b" ];
-        data = { role = "server"; };
+        nodes = [
+          "host:a"
+          "host:b"
+        ];
+        data = {
+          role = "server";
+        };
       };
     };
   };
