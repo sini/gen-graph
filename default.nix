@@ -1,2 +1,1 @@
-{ lib }:
-import ./lib { inherit lib; }
+{ lib }: import ./lib { inherit lib; }

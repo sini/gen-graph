@@ -175,10 +175,11 @@ closure = graph.transitiveClosure g;
 ```
 
 The fixpoint iteration (from *Datafun*) works like this:
+
 1. Start with direct edges
-2. Compose the current map with the original (discover two-hop paths)
-3. Union the result with what we had
-4. Repeat until nothing changes
+1. Compose the current map with the original (discover two-hop paths)
+1. Union the result with what we had
+1. Repeat until nothing changes
 
 gen-graph enforces **monotonicity** — each iteration must add edges, never remove them. If a step shrinks the graph, something is wrong, and gen-graph throws. This guarantee comes directly from Arntzenius's lattice-theoretic framework: queries over monotone functions always converge.
 
@@ -395,10 +396,10 @@ The papers behind gen-graph's design, in order of influence:
 
 1. **Néron, P. et al. (2015)** — *A Theory of Name Resolution.* The P/I edge model. Parent edges form trees (lexical scoping); import edges form DAGs (module composition). gen-graph's two accessor types (`parent`, `edges`) directly implement this distinction.
 
-2. **Mokhov, A. (2017)** — *Algebraic Graphs with Class.* Edge map set operations (union, intersect, difference) as a closed algebra. Transitive reduction as "closure minus composed edges." gen-graph's edge-map operations follow this framework.
+1. **Mokhov, A. (2017)** — *Algebraic Graphs with Class.* Edge map set operations (union, intersect, difference) as a closed algebra. Transitive reduction as "closure minus composed edges." gen-graph's edge-map operations follow this framework.
 
-3. **Arntzenius, M. & Krishnaswami, N. (2016)** — *Datafun: A Functional Datalog.* Monotone fixpoint computation over finite lattices. gen-graph's `fixpoint` enforces monotonicity (growing edge count), guaranteeing convergence. `reachableWhere` draws from Datafun's predicate-filtered queries.
+1. **Arntzenius, M. & Krishnaswami, N. (2016)** — *Datafun: A Functional Datalog.* Monotone fixpoint computation over finite lattices. gen-graph's `fixpoint` enforces monotonicity (growing edge count), guaranteeing convergence. `reachableWhere` draws from Datafun's predicate-filtered queries.
 
-4. **Kahn, G. (1974)** — *The Semantics of a Simple Language for Parallel Programming.* Demand-driven evaluation — only compute what's asked for. gen-graph's lazy traversal (only visiting reachable nodes) is this principle applied to graph queries in a lazy language.
+1. **Kahn, G. (1974)** — *The Semantics of a Simple Language for Parallel Programming.* Demand-driven evaluation — only compute what's asked for. gen-graph's lazy traversal (only visiting reachable nodes) is this principle applied to graph queries in a lazy language.
 
-5. **Radul, A. (2009)** — *The Art of the Propagator.* Computations as networks of independent cells connected by propagators. gen-graph's accessor pattern (queries compose via function arguments, not shared mutable state) follows this philosophy of decoupled, composable computation.
+1. **Radul, A. (2009)** — *The Art of the Propagator.* Computations as networks of independent cells connected by propagators. gen-graph's accessor pattern (queries compose via function arguments, not shared mutable state) follows this philosophy of decoupled, composable computation.

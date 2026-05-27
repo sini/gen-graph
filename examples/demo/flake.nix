@@ -22,31 +22,61 @@
       # Diamond pattern: gateway and worker both reach database via different paths.
       # Two roots (gateway, worker), three leaves (database, cache, queue).
       services = {
-        gateway = { type = "frontend"; deps = [ "web" ]; };
-        web = { type = "frontend"; deps = [ "api" ]; };
-        api = { type = "backend"; deps = [ "database" "cache" ]; };
-        worker = { type = "backend"; deps = [ "database" "queue" ]; };
-        database = { type = "datastore"; deps = []; };
-        cache = { type = "datastore"; deps = []; };
-        queue = { type = "datastore"; deps = []; };
+        gateway = {
+          type = "frontend";
+          deps = [ "web" ];
+        };
+        web = {
+          type = "frontend";
+          deps = [ "api" ];
+        };
+        api = {
+          type = "backend";
+          deps = [
+            "database"
+            "cache"
+          ];
+        };
+        worker = {
+          type = "backend";
+          deps = [
+            "database"
+            "queue"
+          ];
+        };
+        database = {
+          type = "datastore";
+          deps = [ ];
+        };
+        cache = {
+          type = "datastore";
+          deps = [ ];
+        };
+        queue = {
+          type = "datastore";
+          deps = [ ];
+        };
       };
 
       # Accessor record over the service data
       g = {
-        edges = id: (services.${id} or { deps = []; }).deps;
+        edges = id: (services.${id} or { deps = [ ]; }).deps;
         parent = _: null;
         nodes = builtins.attrNames services;
-        nodeData = id: services.${id} or {};
+        nodeData = id: services.${id} or { };
       };
 
       # Variant with a circular dependency: cache -> api creates a cycle
       cyclicServices = services // {
-        cache = { type = "datastore"; deps = [ "api" ]; };
+        cache = {
+          type = "datastore";
+          deps = [ "api" ];
+        };
       };
       gCyclic = g // {
-        edges = id: (cyclicServices.${id} or { deps = []; }).deps;
+        edges = id: (cyclicServices.${id} or { deps = [ ]; }).deps;
         nodes = builtins.attrNames cyclicServices;
-        nodeData = id: cyclicServices.${id} or {};
+        nodeData = id: cyclicServices.${id} or { };
       };
     in
     {
@@ -62,8 +92,8 @@
 
       # Predicate-filtered reachability: only datastore IDs reachable from gateway
       # → [ "cache" "database" ]
-      gatewayDatastores = graph.reachableWhere g "gateway" (id:
-        ((services.${id} or {}).type or null) == "datastore"
+      gatewayDatastores = graph.reachableWhere g "gateway" (
+        id: ((services.${id} or { }).type or null) == "datastore"
       );
 
       # --- Global Analysis ---
@@ -82,7 +112,11 @@
 
       # Reversed graph: who depends on database?
       # → [ "api" "worker" ]
-      dbDependedOnBy = let rev = graph.transpose g; in rev.edges "database";
+      dbDependedOnBy =
+        let
+          rev = graph.transpose g;
+        in
+        rev.edges "database";
 
       # --- Enumeration ---
 
@@ -110,36 +144,63 @@
       minimal = graph.transitiveReduction g;
 
       # Edge filtering: only edges targeting datastores
-      datastoreEdges = let em = graph.materialize g; in
-        graph.selectEdges
-          (_from: to: ((services.${to} or {}).type or null) == "datastore")
-          em;
+      datastoreEdges =
+        let
+          em = graph.materialize g;
+        in
+        graph.selectEdges (_from: to: ((services.${to} or { }).type or null) == "datastore") em;
 
       # Compose: two-hop reachability
       # a → b in edgeMap, b → c in edgeMap ⟹ a → c in twoHop
-      twoHop = let em = graph.materialize g; in graph.compose em em;
+      twoHop =
+        let
+          em = graph.materialize g;
+        in
+        graph.compose em em;
 
       # --- Mock utility: fromNodeMap for legacy data ---
 
       # Convert old-format node map to accessor record
-      legacyReachable = let
-        legacyData = {
-          "svc:web" = { imports = [ "svc:api" ]; parent = null; };
-          "svc:api" = { imports = [ "svc:db" ]; parent = "svc:web"; };
-          "svc:db" = { imports = []; parent = "svc:api"; };
-        };
-        legacyG = graph.mock.fromNodeMap legacyData;
-      in graph.reachableFrom legacyG "svc:web";
+      legacyReachable =
+        let
+          legacyData = {
+            "svc:web" = {
+              imports = [ "svc:api" ];
+              parent = null;
+            };
+            "svc:api" = {
+              imports = [ "svc:db" ];
+              parent = "svc:web";
+            };
+            "svc:db" = {
+              imports = [ ];
+              parent = "svc:api";
+            };
+          };
+          legacyG = graph.mock.fromNodeMap legacyData;
+        in
+        graph.reachableFrom legacyG "svc:web";
       # → [ "svc:api" "svc:db" ]
 
-      legacyAncestors = let
-        legacyData = {
-          "svc:web" = { imports = [ "svc:api" ]; parent = null; };
-          "svc:api" = { imports = [ "svc:db" ]; parent = "svc:web"; };
-          "svc:db" = { imports = []; parent = "svc:api"; };
-        };
-        legacyG = graph.mock.fromNodeMap legacyData;
-      in graph.ancestorsOf legacyG "svc:db";
+      legacyAncestors =
+        let
+          legacyData = {
+            "svc:web" = {
+              imports = [ "svc:api" ];
+              parent = null;
+            };
+            "svc:api" = {
+              imports = [ "svc:db" ];
+              parent = "svc:web";
+            };
+            "svc:db" = {
+              imports = [ ];
+              parent = "svc:api";
+            };
+          };
+          legacyG = graph.mock.fromNodeMap legacyData;
+        in
+        graph.ancestorsOf legacyG "svc:db";
       # → [ "svc:api" "svc:web" ]
     };
 }
