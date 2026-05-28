@@ -3,7 +3,7 @@ let
   inherit (graphLib.mock) fixtures mkGraph;
 in
 {
-  mock = {
+  flake.tests.mock = {
     test-diamond-nodes = {
       expr = builtins.sort builtins.lessThan fixtures.diamond.nodes;
       expected = [

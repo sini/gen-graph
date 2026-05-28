@@ -11,7 +11,7 @@ let
   inherit (graphLib.mock) fixtures mkGraph;
 in
 {
-  traverse = {
+  flake.tests.traverse = {
     test-reachable-chain = {
       expr = builtins.sort builtins.lessThan (reachableFrom fixtures.chain "a");
       expected = [

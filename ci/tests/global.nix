@@ -10,7 +10,7 @@ let
   inherit (graphLib.mock) fixtures mkGraph;
 in
 {
-  global = {
+  flake.tests.global = {
     test-cycles-acyclic = {
       expr = cycles fixtures.chain;
       expected = [ ];

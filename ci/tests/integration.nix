@@ -50,7 +50,7 @@ let
   };
 in
 {
-  integration = {
+  flake.tests.integration = {
     test-scope-accessor-reachable = {
       expr = builtins.sort builtins.lessThan (reachableFrom scopeAccessor "host:igloo");
       expected = [

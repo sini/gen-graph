@@ -10,7 +10,7 @@ let
   inherit (graphLib.mock) fixtures mkGraph;
 in
 {
-  fixpoint-tests = {
+  flake.tests.fixpoint-tests = {
     test-closure-chain = {
       expr =
         let

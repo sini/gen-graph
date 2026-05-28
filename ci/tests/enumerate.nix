@@ -4,7 +4,7 @@ let
   inherit (graphLib.mock) fixtures mkGraph;
 in
 {
-  enumerate = {
+  flake.tests.enumerate = {
     test-roots-service = {
       expr = roots fixtures.serviceGraph;
       expected = [

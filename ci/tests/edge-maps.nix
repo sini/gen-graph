@@ -11,7 +11,7 @@ let
   inherit (graphLib.mock) fixtures mkGraph;
 in
 {
-  edge-maps = {
+  flake.tests.edge-maps = {
     test-materialize-chain = {
       expr =
         let
