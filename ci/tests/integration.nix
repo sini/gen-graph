@@ -8,7 +8,7 @@ let
     leaves
     cycles
     ;
-  inherit (graphLib.mock) mkGraph;
+  inherit (graphLib) mkGraph fromRegistry field;
 
   # Simulate gen-scope: a memoized accessor backed by an attrset
   simulatedScope = {
@@ -28,7 +28,7 @@ let
   };
 
   # Simulate a build dependency graph
-  buildGraph = graphLib.mock.mkGraph {
+  buildGraph = mkGraph {
     edges = [
       {
         from = "app";
@@ -111,7 +111,10 @@ in
               imports = [ ];
             };
           };
-          g = graphLib.mock.fromNodeMap nm;
+          g = fromRegistry {
+            registry = nm;
+            edges = field "imports";
+          };
         in
         builtins.sort builtins.lessThan (reachableFrom g "svc:web");
       expected = [

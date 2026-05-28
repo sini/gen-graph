@@ -7,7 +7,7 @@ let
     transitiveReduction
     materialize
     ;
-  inherit (graphLib.mock) fixtures mkGraph;
+  inherit (graphLib) fixtures mkGraph;
 in
 {
   flake.tests.fixpoint-tests = {

@@ -5,6 +5,6 @@ let
   enumerate = import ./enumerate.nix { inherit lib; };
   edgeMaps = import ./edge-maps.nix { inherit lib; };
   fixpoint = import ./fixpoint.nix { inherit lib; };
-  mock = import ./mock.nix { inherit lib; };
+  registry = import ./registry.nix { inherit lib; };
 in
-traverse // global // enumerate // edgeMaps // fixpoint // { inherit mock; }
+traverse // global // enumerate // edgeMaps // fixpoint // registry

@@ -1,7 +1,12 @@
 { lib, graphLib, ... }:
 let
-  inherit (graphLib) roots leaves select;
-  inherit (graphLib.mock) fixtures mkGraph;
+  inherit (graphLib)
+    roots
+    leaves
+    select
+    fixtures
+    mkGraph
+    ;
 in
 {
   flake.tests.enumerate = {

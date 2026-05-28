@@ -8,7 +8,7 @@ let
     ancestorsOf
     pathsBetween
     ;
-  inherit (graphLib.mock) fixtures mkGraph;
+  inherit (graphLib) fixtures mkGraph;
 in
 {
   flake.tests.traverse = {

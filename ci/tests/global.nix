@@ -7,7 +7,7 @@ let
     transpose
     impactOf
     ;
-  inherit (graphLib.mock) fixtures mkGraph;
+  inherit (graphLib) fixtures mkGraph;
 in
 {
   flake.tests.global = {

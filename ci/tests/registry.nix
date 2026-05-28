@@ -1,9 +1,15 @@
 { lib, graphLib, ... }:
 let
-  inherit (graphLib.mock) fixtures mkGraph;
+  inherit (graphLib)
+    fixtures
+    mkGraph
+    fromRegistry
+    field
+    fields
+    ;
 in
 {
-  flake.tests.mock = {
+  flake.tests.registry = {
     test-diamond-nodes = {
       expr = builtins.sort builtins.lessThan fixtures.diamond.nodes;
       expected = [
@@ -81,7 +87,9 @@ in
       expr = fixtures.disconnected.edges "island";
       expected = [ ];
     };
-    test-from-node-map = {
+
+    # fromRegistry tests
+    test-from-registry-basic = {
       expr =
         let
           nm = {
@@ -96,7 +104,11 @@ in
               role = "client";
             };
           };
-          g = graphLib.mock.fromNodeMap nm;
+          g = fromRegistry {
+            registry = nm;
+            edges = field "imports";
+            parent = _id: entry: entry.parent or null;
+          };
         in
         {
           edges = g.edges "host:a";
@@ -112,8 +124,79 @@ in
           "host:b"
         ];
         data = {
+          imports = [ "host:b" ];
+          parent = null;
           role = "server";
         };
+      };
+    };
+
+    # field tests
+    test-field-extracts = {
+      expr = (field "imports") "x" {
+        imports = [
+          "a"
+          "b"
+        ];
+      };
+      expected = [
+        "a"
+        "b"
+      ];
+    };
+    test-field-missing = {
+      expr = (field "imports") "x" { };
+      expected = [ ];
+    };
+
+    # fields tests
+    test-fields-concat = {
+      expr =
+        (fields [
+          "imports"
+          "deps"
+        ])
+          "x"
+          {
+            imports = [ "a" ];
+            deps = [ "b" ];
+          };
+      expected = [
+        "a"
+        "b"
+      ];
+    };
+    test-fields-partial = {
+      expr =
+        (fields [
+          "imports"
+          "deps"
+        ])
+          "x"
+          { imports = [ "a" ]; };
+      expected = [ "a" ];
+    };
+
+    # fromRegistry with missing entry
+    test-from-registry-missing-node = {
+      expr =
+        let
+          g = fromRegistry {
+            registry = {
+              a = {
+                deps = [ "b" ];
+              };
+            };
+            edges = field "deps";
+          };
+        in
+        {
+          edges = g.edges "nonexistent";
+          data = g.nodeData "nonexistent";
+        };
+      expected = {
+        edges = [ ];
+        data = { };
       };
     };
   };
