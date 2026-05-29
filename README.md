@@ -382,7 +382,7 @@ This means gen-graph never causes redundant evaluation in gen-scope. The accesso
 
 ```nix
 # gen-scope evaluates each node's imports ONCE; gen-graph reads the cached result
-graphLib.reachableFrom { edges = id: result.get id "imports"; } "host:igloo"
+genGraph.reachableFrom { edges = id: result.get id "imports"; } "host:igloo"
 ```
 
 ### Choosing the Right Operation
