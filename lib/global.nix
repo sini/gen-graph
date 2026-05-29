@@ -13,15 +13,20 @@ let
   traverse = import ./traverse.nix { inherit lib; };
 
   # Transpose a materialized edge map: reverse all edges.
-  # O(E) where E = total edges. Each // creates a new attrset.
+  # O(E) via groupBy instead of O(E²) via foldl'+//.
   _transposeMat =
     mat:
-    builtins.foldl' (
-      acc: from:
-      builtins.foldl' (acc2: to: acc2 // { ${to} = (acc2.${to} or [ ]) ++ [ from ]; }) acc (
-        mat.${from} or [ ]
-      )
-    ) { } (builtins.attrNames mat);
+    let
+      allEdges = lib.concatMap (
+        from:
+        map (to: {
+          name = to;
+          value = from;
+        }) (mat.${from} or [ ])
+      ) (builtins.attrNames mat);
+      grouped = builtins.groupBy (e: e.name) allEdges;
+    in
+    builtins.mapAttrs (_: es: map (e: e.value) es) grouped;
 
   # Nodes in any cycle (self-reachable).
   # Uses genericClosure per-node (C-level BFS) — no full closure materialization.
@@ -52,11 +57,19 @@ let
     { edges, nodes, ... }:
     targetId:
     let
-      # Build reverse edge accessor: O(n) — iterates all nodes once
-      reverseIndex = builtins.foldl' (
-        acc: from:
-        builtins.foldl' (acc2: to: acc2 // { ${to} = (acc2.${to} or [ ]) ++ [ from ]; }) acc (edges from)
-      ) { } nodes;
+      # Build reverse edge accessor: O(E) via groupBy instead of O(E²) via foldl'+//
+      reverseIndex =
+        let
+          allEdges = lib.concatMap (
+            from:
+            map (to: {
+              name = to;
+              value = from;
+            }) (edges from)
+          ) nodes;
+          grouped = builtins.groupBy (e: e.name) allEdges;
+        in
+        builtins.mapAttrs (_: es: map (e: e.value) es) grouped;
       revEdges = id: reverseIndex.${id} or [ ];
     in
     # Traverse reversed graph from target — C-level BFS via genericClosure

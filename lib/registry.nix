@@ -57,9 +57,11 @@ let
           )
         );
 
-        edgeIndex = builtins.foldl' (
-          acc: e: acc // { ${e.from} = (acc.${e.from} or [ ]) ++ [ e.to ]; }
-        ) { } edges;
+        edgeIndex =
+          let
+            grouped = builtins.groupBy (e: e.from) edges;
+          in
+          builtins.mapAttrs (_: es: map (e: e.to) es) grouped;
 
         parentIndex = builtins.listToAttrs (
           map (e: {
