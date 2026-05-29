@@ -158,15 +158,14 @@
         in
         graph.compose em em;
 
-      # --- Mock utility: fromNodeMap for legacy data ---
+      # --- Registry utility: fromRegistry for declarative data ---
 
-      # Convert old-format node map to accessor record
-      legacyReachable =
+      # Convert a node registry to accessor record
+      registryReachable =
         let
-          legacyData = {
+          registry = {
             "svc:web" = {
               imports = [ "svc:api" ];
-              parent = null;
             };
             "svc:api" = {
               imports = [ "svc:db" ];
@@ -177,17 +176,20 @@
               parent = "svc:api";
             };
           };
-          legacyG = graph.mock.fromNodeMap legacyData;
+          regG = graph.fromRegistry {
+            inherit registry;
+            edges = graph.field "imports";
+            parent = _id: entry: entry.parent or null;
+          };
         in
-        graph.reachableFrom legacyG "svc:web";
+        graph.reachableFrom regG "svc:web";
       # → [ "svc:api" "svc:db" ]
 
-      legacyAncestors =
+      registryAncestors =
         let
-          legacyData = {
+          registry = {
             "svc:web" = {
               imports = [ "svc:api" ];
-              parent = null;
             };
             "svc:api" = {
               imports = [ "svc:db" ];
@@ -198,9 +200,13 @@
               parent = "svc:api";
             };
           };
-          legacyG = graph.mock.fromNodeMap legacyData;
+          regG = graph.fromRegistry {
+            inherit registry;
+            edges = graph.field "imports";
+            parent = _id: entry: entry.parent or null;
+          };
         in
-        graph.ancestorsOf legacyG "svc:db";
+        graph.ancestorsOf regG "svc:db";
       # → [ "svc:api" "svc:web" ]
     };
 }
