@@ -1,6 +1,6 @@
-{ lib, graphLib, ... }:
+{ lib, genGraph, ... }:
 let
-  inherit (graphLib)
+  inherit (genGraph)
     fixtures
     mkGraph
     fromRegistry

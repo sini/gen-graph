@@ -1,6 +1,6 @@
-{ lib, graphLib, ... }:
+{ lib, genGraph, ... }:
 let
-  inherit (graphLib)
+  inherit (genGraph)
     materialize
     materializeParents
     unionEdges
@@ -8,7 +8,7 @@ let
     differenceEdges
     selectEdges
     ;
-  inherit (graphLib) fixtures mkGraph;
+  inherit (genGraph) fixtures mkGraph;
 in
 {
   flake.tests.edge-maps = {

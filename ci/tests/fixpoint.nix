@@ -1,13 +1,13 @@
-{ lib, graphLib, ... }:
+{ lib, genGraph, ... }:
 let
-  inherit (graphLib)
+  inherit (genGraph)
     fixpoint
     compose
     transitiveClosure
     transitiveReduction
     materialize
     ;
-  inherit (graphLib) fixtures mkGraph;
+  inherit (genGraph) fixtures mkGraph;
 in
 {
   flake.tests.fixpoint-tests = {

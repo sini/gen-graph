@@ -1,13 +1,13 @@
-{ lib, graphLib, ... }:
+{ lib, genGraph, ... }:
 let
-  inherit (graphLib)
+  inherit (genGraph)
     cycles
     dependents
     dependentsOf
     transpose
     impactOf
     ;
-  inherit (graphLib) fixtures mkGraph;
+  inherit (genGraph) fixtures mkGraph;
 in
 {
   flake.tests.global = {
@@ -107,7 +107,7 @@ in
               }
             ];
           };
-          closure = graphLib.transitiveClosure g;
+          closure = genGraph.transitiveClosure g;
         in
         closure."a" or [ ];
       expected = [ "a" ];

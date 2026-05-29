@@ -1,6 +1,6 @@
-{ lib, graphLib, ... }:
+{ lib, genGraph, ... }:
 let
-  inherit (graphLib)
+  inherit (genGraph)
     reachableFrom
     dependents
     materialize
@@ -8,7 +8,7 @@ let
     leaves
     cycles
     ;
-  inherit (graphLib) mkGraph fromRegistry field;
+  inherit (genGraph) mkGraph fromRegistry field;
 
   # Simulate gen-scope: a memoized accessor backed by an attrset
   simulatedScope = {
