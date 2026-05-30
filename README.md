@@ -243,7 +243,7 @@ closure = graph.fixpoint {
 
 **`transitiveClosure g`** — full transitive closure as an edge map. Materializes `g`, then iterates `compose` to fixpoint.
 
-**`transitiveReduction g`** — minimal edge map preserving reachability. Removes edge `a → c` when `a → b → c` exists for some `b`.
+**`transitiveReduction g`** — minimal edge map preserving reachability. Removes edge `a → c` when `a → b → c` exists for some `b`. Standard DAG transitive reduction (gen-graph's own implementation); assumes a DAG — the reduction is unique only on acyclic graphs.
 
 ### Edge Map Operations
 
@@ -262,20 +262,22 @@ selectEdges     : (id → id → bool) → edgeMap → edgeMap
 
 **`differenceEdges a b`** — edges in `a` not in `b`. Empty target lists are dropped.
 
-### Mock Utility
+### Construction
 
-`graph.mock` provides test helpers for constructing accessor records from declarative edge lists.
+Top-level helpers for building accessor records, exported flat (no `mock` namespace).
 
 ```
-mkGraph     : { edges?, parents?, nodeData? } → accessorRecord
-fromNodeMap : { id → { imports?, parent?, ... } } → accessorRecord
-fixtures    : { diamond, chain, cyclic, tree, serviceGraph, disconnected }
+mkGraph      : { edges?, parents?, nodeData? } → accessorRecord
+fromRegistry : { registry, edges, parent? } → accessorRecord
+field        : name → id → entry → [id]
+fields       : [name] → id → entry → [id]
+fixtures     : { diamond, chain, cyclic, tree, serviceGraph, disconnected }
 ```
 
-**`mkGraph`** — takes edge lists and returns a valid accessor record with all four fields populated.
+**`mkGraph`** — takes declarative `{ from; to; }` edge lists and returns a valid accessor record with all four fields populated.
 
 ```nix
-g = graph.mock.mkGraph {
+g = graph.mkGraph {
   edges = [
     { from = "a"; to = "b"; }
     { from = "b"; to = "c"; }
@@ -288,6 +290,15 @@ g = graph.mock.mkGraph {
 
 graph.reachableFrom g "a"             # → [ "b" "c" ]
 graph.select g (d: d ? label)         # → [ "a" "c" ]
+```
+
+**`fromRegistry`** — wraps an arbitrary registry attrset. `edges`/`parent` are `id → entry → …` projections applied per node; `field`/`fields` build common projections.
+
+```nix
+g = graph.fromRegistry {
+  registry = myNodes;
+  edges = graph.field "deps";   # each entry's `deps` list
+};
 ```
 
 **`fixtures`** — pre-built accessor records for common graph shapes:
@@ -423,7 +434,7 @@ nix flake check --override-input gen-graph . ./ci
 
 The algorithms and design principles draw from:
 
-- **Mokhov (2017)** — *Algebraic Graphs with Class*. *Informed by.* Algebraic graph construction primitives (overlay, connect, vertex, empty) and the compositional approach to graph representation inform gen-graph's edge map operations and structural combinators. Edge map set operations (`unionEdges`, `intersectEdges`, `differenceEdges`) and transitive reduction are gen-graph's own contribution built on this algebraic foundation. Transpose follows Mokhov 2017 §4.3 directly.
+- **Mokhov (2017)** — *Algebraic Graphs with Class*. *Informed by.* Algebraic graph construction primitives (overlay, connect, vertex, empty) and the compositional approach to graph representation inform gen-graph's edge map operations and structural combinators. Edge map set operations (`unionEdges`, `intersectEdges`, `differenceEdges`) are gen-graph's own contribution built on this algebraic foundation. Mokhov 2017 §4.5 supplies only the equivalence-class *notion* of reduction; `transitiveReduction` is a standard DAG transitive-reduction algorithm (gen-graph's own implementation) and assumes a DAG, since reduction is not unique under cycles. Transpose follows Mokhov 2017 §4.3 directly.
 - **Arntzenius & Krishnaswami (2016)** — *Datafun: A Functional Datalog*. *Implements.* Monotone fixpoint iteration with convergence guarantees. The `fixpoint` operator enforces monotonicity (edge count must not shrink between iterations), matching Datafun's requirement that fixpoint computations operate over monotone functions on semilattices. Reverse reachability in `dependents`/`dependentsOf` follows the Datafun reverse-query pattern.
 - **Neron et al. (2015)** — *A Theory of Name Resolution*. *Implements.* Parent-chain traversal (`ancestorsOf`) follows scope graph P-edge resolution: walking the `parent` partial function upward through scopes corresponds to following P-edges in the resolution calculus (Neron 2015 §2.3). Silent cycle termination chosen over throwing for composability, matching the well-foundedness requirement on the parent relation.
 - **Kahn (1974)** — *The Semantics of a Simple Language for Parallel Programming*. *Informed by.* Continuous functions over streams with deterministic dataflow semantics. gen-graph's lazy accessor pattern — traversal only forces nodes it visits — aligns conceptually with Kahn's model where computing stations produce output incrementally as input arrives, and monotonicity ensures that receiving more input can only provoke more output (Kahn 1974 §2.2.4).

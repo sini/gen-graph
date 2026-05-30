@@ -1,7 +1,7 @@
 # Global graph analysis — operations requiring full graph knowledge.
 #
-# cycles: Vogt 1989 (well-definedness requires termination — cycle detection
-#   ensures finite expansion). Uses genericClosure per-node for C-level BFS.
+# cycles: standard cycle detection (a node is in a cycle iff reachable from
+#   itself). Uses genericClosure per-node for C-level BFS.
 # dependents/dependentsOf: Arntzenius 2016 (Datafun reverse reachability).
 #   dependents uses full transitive closure (amortized for multi-target).
 #   dependentsOf uses reverse traversal (O(reachable) for single-target).
@@ -28,9 +28,10 @@ let
     in
     builtins.mapAttrs (_: es: map (e: e.value) es) grouped;
 
-  # Nodes in any cycle (self-reachable).
+  # Nodes in any cycle (self-reachable): a node is in a cycle iff it is
+  # reachable from itself. Standard cycle detection.
   # Uses genericClosure per-node (C-level BFS) — no full closure materialization.
-  # O(n × reachable) with C-level inner loop. Correct per Vogt 1989 Lemma 3.2.
+  # O(n × reachable) with C-level inner loop.
   cycles =
     { edges, nodes, ... }:
     builtins.sort builtins.lessThan (builtins.filter (traverse.selfReachable { inherit edges; }) nodes);
