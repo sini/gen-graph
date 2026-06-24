@@ -79,6 +79,34 @@ let
     in
     builtins.sort builtins.lessThan (traverse.reachableFrom { edges = revEdges; } targetId);
 
+  # S3: reverse-reachability cone of targetId, walked level-by-level, descending
+  # into a node's dependents only when prune node == true. A prune==false node is
+  # INCLUDED (reached) but not expanded — the early-cutoff stop. genericClosure
+  # cannot include-but-not-expand, so this is a hand-rolled BFS with a visited
+  # attrset (cycle guard: each id enters the frontier <= once). Reduces to
+  # dependentsOf when prune = _: true. (Spec 2026-06-23-gen-rebuild-v2-design §5.P0.)
+  dependentsFrontier =
+    { edges, nodes, ... }:
+    targetId: prune:
+    let
+      reverseIndex = _reverseIndex { inherit edges nodes; };
+      revOf = id: reverseIndex.${id} or [ ];
+      go =
+        visited: frontier:
+        if frontier == [ ] then
+          visited
+        else
+          let
+            expandable = builtins.filter prune frontier;
+            neighbours = lib.unique (lib.concatMap revOf expandable);
+            fresh = builtins.filter (id: !(visited ? ${id})) neighbours;
+          in
+          go (visited // lib.genAttrs fresh (_: true)) fresh;
+      seed0 = if prune targetId then lib.unique (revOf targetId) else [ ];
+      reached = go (lib.genAttrs seed0 (_: true)) seed0;
+    in
+    builtins.sort builtins.lessThan (builtins.filter (id: id != targetId) (builtins.attrNames reached));
+
   # Reverse all edge directions, return new accessor set (Mokhov 2017 §4.3).
   transpose =
     { edges, nodes, ... }:
@@ -99,6 +127,7 @@ in
     cycles
     dependents
     dependentsOf
+    dependentsFrontier
     transpose
     impactOf
     ;
