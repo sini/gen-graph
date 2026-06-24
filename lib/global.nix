@@ -12,6 +12,22 @@ let
   fp = import ./fixpoint.nix { inherit lib; };
   traverse = import ./traverse.nix { inherit lib; };
 
+  # Shared O(E) reverse-edge index (consumer->producer reversed): id -> [ids that read id].
+  # Extracted from dependentsOf so dependentsFrontier (S3) reuses it. groupBy, not foldl'+//.
+  _reverseIndex =
+    { edges, nodes, ... }:
+    let
+      allEdges = lib.concatMap (
+        from:
+        map (to: {
+          name = to;
+          value = from;
+        }) (edges from)
+      ) nodes;
+      grouped = builtins.groupBy (e: e.name) allEdges;
+    in
+    builtins.mapAttrs (_: es: map (e: e.value) es) grouped;
+
   # Transpose a materialized edge map: reverse all edges.
   # O(E) via groupBy instead of O(E²) via foldl'+//.
   _transposeMat =
@@ -58,22 +74,9 @@ let
     { edges, nodes, ... }:
     targetId:
     let
-      # Build reverse edge accessor: O(E) via groupBy instead of O(E²) via foldl'+//
-      reverseIndex =
-        let
-          allEdges = lib.concatMap (
-            from:
-            map (to: {
-              name = to;
-              value = from;
-            }) (edges from)
-          ) nodes;
-          grouped = builtins.groupBy (e: e.name) allEdges;
-        in
-        builtins.mapAttrs (_: es: map (e: e.value) es) grouped;
+      reverseIndex = _reverseIndex { inherit edges nodes; };
       revEdges = id: reverseIndex.${id} or [ ];
     in
-    # Traverse reversed graph from target — C-level BFS via genericClosure
     builtins.sort builtins.lessThan (traverse.reachableFrom { edges = revEdges; } targetId);
 
   # Reverse all edge directions, return new accessor set (Mokhov 2017 §4.3).
