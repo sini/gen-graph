@@ -2,6 +2,7 @@
 let
   inherit (genGraph)
     fixpoint
+    seededFixpoint
     compose
     transitiveClosure
     transitiveReduction
@@ -173,6 +174,91 @@ in
         in
         closure."a" or [ ];
       expected = [ "a" ];
+    };
+    # --- seededFixpoint (S4) ---
+    # Canonical semi-naive transitive-closure instance: dR = dR . R (vs naive R . R).
+    test-seeded-closure-equals-transitiveClosure-chain = {
+      expr =
+        let
+          mat = materialize fixtures.chain;
+          sn = seededFixpoint {
+            seed = mat;
+            frontier = mat;
+            step = dF: _: compose dF mat;
+          };
+        in
+        builtins.sort builtins.lessThan (sn."a" or [ ]);
+      expected = builtins.sort builtins.lessThan ((transitiveClosure fixtures.chain)."a" or [ ]);
+    };
+    test-seeded-closure-equals-transitiveClosure-diamond = {
+      expr =
+        let
+          mat = materialize fixtures.diamond;
+          sn = seededFixpoint {
+            seed = mat;
+            frontier = mat;
+            step = dF: _: compose dF mat;
+          };
+        in
+        builtins.sort builtins.lessThan (sn."a" or [ ]);
+      expected = builtins.sort builtins.lessThan ((transitiveClosure fixtures.diamond)."a" or [ ]);
+    };
+    test-seeded-empty-frontier-returns-seed = {
+      expr = seededFixpoint {
+        seed = {
+          a = [ "b" ];
+        };
+        frontier = { };
+        step = dF: _: compose dF { };
+      };
+      expected = {
+        a = [ "b" ];
+      };
+    };
+    test-seeded-max-iter-throws = {
+      # A non-converging step (always produces a fresh fact) must throw at maxIter.
+      expr =
+        !(builtins.tryEval (seededFixpoint {
+          seed = {
+            a = [ "n0" ];
+          };
+          frontier = {
+            a = [ "n0" ];
+          };
+          step = dF: _: lib.mapAttrs (_: ts: map (t: t + "x") ts) dF;
+          maxIter = 5;
+        })).success;
+      expected = true;
+    };
+    test-seeded-property-equals-naive-over-fixtures = {
+      # property: the canonical semi-naive instance == transitiveClosure on EVERY
+      # fixture shape (gen-graph has no random-DAG generator; multiple shapes stand
+      # in for §8's "semi-naive == naive over random DAGs"). Sorted per-node compare.
+      expr =
+        let
+          ok =
+            g:
+            let
+              mat = materialize g;
+              sn = seededFixpoint {
+                seed = mat;
+                frontier = mat;
+                step = dF: _: compose dF mat;
+              };
+              tc = transitiveClosure g;
+            in
+            builtins.all (
+              n:
+              builtins.sort builtins.lessThan (sn.${n} or [ ]) == builtins.sort builtins.lessThan (tc.${n} or [ ])
+            ) g.nodes;
+        in
+        builtins.all ok [
+          fixtures.chain
+          fixtures.diamond
+          fixtures.serviceGraph
+          fixtures.cyclic
+        ];
+      expected = true;
     };
   };
 }
