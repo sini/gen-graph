@@ -31,6 +31,35 @@ let
     in
     go 0 seed;
 
+  # S4: semi-naive delta-frontier fixpoint. step sees ONLY the current frontier dF
+  # (the semi-naive saving vs `fixpoint`'s step-over-whole-acc). Converges when the
+  # frontier empties. NEW export — does NOT modify `fixpoint`. No monotonicity guard:
+  # union-accumulation makes shrinking structurally impossible (it would be dead code).
+  # (Spec 2026-06-23-gen-rebuild-v2-design §5.P0; Arntzenius 2016 §9 semi-naive.)
+  seededFixpoint =
+    {
+      seed,
+      frontier,
+      step,
+      maxIter ? 1000,
+    }:
+    let
+      go =
+        iter: acc: dF:
+        if iter >= maxIter then
+          throw "gen-graph: seededFixpoint exceeded ${toString maxIter} iterations"
+        else if countEdges dF == 0 then
+          acc
+        else
+          let
+            produced = step dF acc;
+            acc' = edgeMaps.unionEdges acc produced;
+            dF' = edgeMaps.differenceEdges produced acc;
+          in
+          go (iter + 1) acc' dF';
+    in
+    go 0 (edgeMaps.unionEdges seed frontier) frontier;
+
   compose =
     e1: e2:
     lib.mapAttrs (_from: targets: lib.unique (lib.concatMap (mid: e2.${mid} or [ ]) targets)) e1;
@@ -74,6 +103,7 @@ in
 {
   inherit
     fixpoint
+    seededFixpoint
     compose
     transitiveClosure
     transitiveReduction
