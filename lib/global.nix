@@ -119,6 +119,74 @@ let
       inherit nodes;
     };
 
+  # coScc: thin co-SCC predicate (canReach-backed, single-pair, no full closure).
+  coScc =
+    { edges, ... }:
+    u: v:
+    (u == v) || (traverse.canReach { inherit edges; } u v && traverse.canReach { inherit edges; } v u);
+
+  # condensation: SCC partition + condensation (quotient) graph, closure-based O(n^2)
+  # (u,v co-SCC iff each reaches the other via transitiveClosure) — NOT Tarjan's
+  # linear O(V+E) single-DFS (mutable stack/lowlink, out-of-substrate for pure Nix).
+  # bottomUp is producers-first (consumer->producer reverse-topo): solve a super-node
+  # only after every super-node it depends on. reps == bottomUp; sccs == map members reps.
+  # (Spec 2026-06-23-gen-rebuild-v2-design §5.P0; Tarjan 1972 / Kosaraju, Mokhov 2017 idiom.)
+  condensation =
+    { edges, nodes, ... }:
+    let
+      closure = fp.transitiveClosure { inherit edges nodes; };
+      # O(1) membership (mirrors transitiveReduction's closureSets) -> O(n^2), not O(n^3).
+      closSets = lib.mapAttrs (_: ts: lib.genAttrs ts (_: true)) closure;
+      reaches = u: v: (closSets.${u} or { }) ? ${v};
+      # CYCLIC node's closure includes itself; ACYCLIC node's does NOT -> (u == v) mandatory.
+      coSccPair = u: v: (u == v) || (reaches u v && reaches v u);
+      repOf = lib.genAttrs nodes (
+        n: builtins.head (builtins.sort builtins.lessThan (builtins.filter (m: coSccPair n m) nodes))
+      );
+      # reps0: the UNORDERED set of SCC tags — input to the bottom-up sort below,
+      # NOT the output order. The output order is `bottomUp`, and `reps = bottomUp`.
+      reps0 = lib.unique (map (n: repOf.${n}) nodes);
+      membersOf = lib.mapAttrs (_: ns: builtins.sort builtins.lessThan (map (e: e.n) ns)) (
+        builtins.groupBy (e: e.r) (
+          map (n: {
+            r = repOf.${n};
+            n = n;
+          }) nodes
+        )
+      );
+      condEdgesOf =
+        r:
+        lib.unique (
+          builtins.filter (rb: rb != r) (
+            map (t: repOf.${t}) (lib.concatMap (m: edges m) (membersOf.${r} or [ ]))
+          )
+        );
+      # Bottom-up: a SECOND closure over the condensation, sort by closure-cardinality
+      # ASCENDING (producers have smaller closures), name tie-break. No hand-rolled DFS.
+      condMat = lib.genAttrs reps0 (r: condEdgesOf r);
+      condClosure = fp.transitiveClosure {
+        edges = id: condMat.${id} or [ ];
+        nodes = reps0;
+      };
+      depthOf = r: builtins.length (condClosure.${r} or [ ]);
+      bottomUp = builtins.sort (
+        ra: rb:
+        let
+          da = depthOf ra;
+          db = depthOf rb;
+        in
+        if da == db then ra < rb else da < db
+      ) reps0;
+      reps = bottomUp;
+      members = tag: membersOf.${tag} or [ ];
+    in
+    {
+      inherit reps bottomUp members;
+      sccs = map (r: members r) reps;
+      sccOf = id: repOf.${id} or id;
+      condEdges = condEdgesOf;
+    };
+
   # Impact analysis alias (uses efficient single-target path).
   impactOf = dependentsOf;
 in
@@ -130,5 +198,7 @@ in
     dependentsFrontier
     transpose
     impactOf
+    condensation
+    coScc
     ;
 }

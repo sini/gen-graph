@@ -7,6 +7,8 @@ let
     dependentsFrontier
     transpose
     impactOf
+    condensation
+    coScc
     ;
   inherit (genGraph) fixtures mkGraph;
 in
@@ -174,6 +176,139 @@ in
           cut = dependentsFrontier fixtures.serviceGraph "db" (id: id != "api");
         in
         builtins.all (id: builtins.elem id full) cut;
+      expected = true;
+    };
+
+    # --- condensation + coScc ---
+    test-condensation-acyclic-singletons-d-first = {
+      # chain a->b->c->d: every node its own singleton, bottom-up (d first, producers first).
+      expr = (condensation fixtures.chain).sccs;
+      expected = [
+        [ "d" ]
+        [ "c" ]
+        [ "b" ]
+        [ "a" ]
+      ];
+    };
+    test-condensation-cyclic-single-scc = {
+      expr = (condensation fixtures.cyclic).sccs;
+      expected = [
+        [
+          "a"
+          "b"
+          "c"
+        ]
+      ];
+    };
+    test-condensation-cyclic-tag-is-min-member = {
+      expr =
+        let
+          c = condensation fixtures.cyclic;
+        in
+        [
+          (c.sccOf "a")
+          (c.sccOf "b")
+          (c.sccOf "c")
+        ];
+      expected = [
+        "a"
+        "a"
+        "a"
+      ];
+    };
+    test-coScc-acyclic-node-self = {
+      # an acyclic node IS its own SCC (guards the closure-self-exclusion special case).
+      expr = coScc fixtures.chain "b" "b";
+      expected = true;
+    };
+    test-condensation-index-alignment = {
+      # DEFECT-1 guard: reps == bottomUp AND sccs == map members reps.
+      expr =
+        let
+          c = condensation fixtures.chain;
+        in
+        (c.reps == c.bottomUp) && (map c.members c.reps == c.sccs);
+      expected = true;
+    };
+    test-condensation-condEdges-direction = {
+      # a->b->c->a cycle, a->d, x->a, y->x. condEdges(sccOf a)=[sccOf d]; condEdges(sccOf x)=[sccOf a].
+      expr =
+        let
+          g = mkGraph {
+            edges = [
+              {
+                from = "a";
+                to = "b";
+              }
+              {
+                from = "b";
+                to = "c";
+              }
+              {
+                from = "c";
+                to = "a";
+              }
+              {
+                from = "a";
+                to = "d";
+              }
+              {
+                from = "x";
+                to = "a";
+              }
+              {
+                from = "y";
+                to = "x";
+              }
+            ];
+          };
+          c = condensation g;
+        in
+        [
+          (c.condEdges (c.sccOf "a"))
+          (c.condEdges (c.sccOf "x"))
+        ];
+      expected = [
+        [ "d" ]
+        [ "a" ]
+      ];
+    };
+    test-condensation-ordering-soundness = {
+      # property witness: every condEdges target appears strictly EARLIER in bottomUp.
+      expr =
+        let
+          g = mkGraph {
+            edges = [
+              {
+                from = "a";
+                to = "b";
+              }
+              {
+                from = "b";
+                to = "c";
+              }
+              {
+                from = "c";
+                to = "a";
+              }
+              {
+                from = "a";
+                to = "d";
+              }
+              {
+                from = "x";
+                to = "a";
+              }
+              {
+                from = "y";
+                to = "x";
+              }
+            ];
+          };
+          c = condensation g;
+          idx = t: lib.lists.findFirstIndex (r: r == t) (-1) c.bottomUp;
+        in
+        builtins.all (r: builtins.all (target: idx target < idx r) (c.condEdges r)) c.bottomUp;
       expected = true;
     };
   };
