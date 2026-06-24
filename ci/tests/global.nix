@@ -4,6 +4,7 @@ let
     cycles
     dependents
     dependentsOf
+    dependentsFrontier
     transpose
     impactOf
     ;
@@ -134,6 +135,46 @@ in
     test-impactOf-uses-dependentsOf = {
       expr = impactOf fixtures.serviceGraph "cache";
       expected = dependentsOf fixtures.serviceGraph "cache";
+    };
+
+    # --- dependentsFrontier (S3) ---
+    test-frontier-prune-all-equals-dependentsOf = {
+      # prune = _: true reduces EXACTLY to dependentsOf (the conformance anchor).
+      expr = dependentsFrontier fixtures.serviceGraph "db" (_: true);
+      expected = builtins.sort builtins.lessThan (dependentsOf fixtures.serviceGraph "db");
+    };
+    test-frontier-prune-false-at-target = {
+      # prune targetId == false => seed0 == [] => nothing downstream walked.
+      expr = dependentsFrontier fixtures.serviceGraph "db" (_: false);
+      expected = [ ];
+    };
+    test-frontier-cutoff-mid-cone = {
+      # db's reverse neighbours are {api, worker}; cutting api stops web; worker has no dependents.
+      expr = dependentsFrontier fixtures.serviceGraph "db" (id: id != "api");
+      expected = [
+        "api"
+        "worker"
+      ];
+    };
+    test-frontier-pruned-boundary-present = {
+      # the pruned node api is STILL in the output (reached); only web is cut.
+      expr = builtins.elem "api" (dependentsFrontier fixtures.serviceGraph "db" (id: id != "api"));
+      expected = true;
+    };
+    test-frontier-cyclic-terminates = {
+      # cycle guard: prune-all on a cyclic graph terminates and equals dependentsOf.
+      expr = dependentsFrontier fixtures.cyclic "a" (_: true);
+      expected = builtins.sort builtins.lessThan (dependentsOf fixtures.cyclic "a");
+    };
+    test-frontier-prune-only-shrinks = {
+      # property (concrete witness): any prune yields a subset of the prune-all cone.
+      expr =
+        let
+          full = dependentsFrontier fixtures.serviceGraph "db" (_: true);
+          cut = dependentsFrontier fixtures.serviceGraph "db" (id: id != "api");
+        in
+        builtins.all (id: builtins.elem id full) cut;
+      expected = true;
     };
   };
 }
