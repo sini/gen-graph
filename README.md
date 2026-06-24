@@ -156,11 +156,14 @@ graph.pathsBetween g "a" "d"
 These functions enumerate all nodes. They require both `edges` and `nodes`.
 
 ```
-cycles       : { edges, nodes, ... } → [id]
-dependents   : { edges, nodes, ... } → id → [id]
-dependentsOf : { edges, nodes, ... } → id → [id]
-impactOf     : { edges, nodes, ... } → id → [id]   # alias for dependentsOf
-transpose    : { edges, nodes, ... } → { edges, nodes }
+cycles             : { edges, nodes, ... } → [id]
+dependents         : { edges, nodes, ... } → id → [id]
+dependentsOf       : { edges, nodes, ... } → id → [id]
+dependentsFrontier : { edges, nodes, ... } → id → (id → bool) → [id]
+impactOf           : { edges, nodes, ... } → id → [id]   # alias for dependentsOf
+transpose          : { edges, nodes, ... } → { edges, nodes }
+coScc              : { edges, ... } → id → id → bool
+condensation       : { edges, nodes, ... } → { reps, bottomUp, members, sccs, sccOf, condEdges }
 ```
 
 **`cycles g`** — nodes that appear in any cycle (self-reachable). Uses C-level BFS per node via `selfReachable` — no full transitive closure materialization needed. Returns a sorted list.
@@ -181,6 +184,14 @@ graph.dependents g "database"   # → [ "api" "web" "worker" ]
 graph.dependentsOf g "database"   # → [ "api" "cache" "web" "worker" ]
 ```
 
+**`dependentsFrontier g targetId prune`** — `dependentsOf` with an early cutoff. Walks the reverse-reachability cone level by level, but descends into a node's own dependents only when `prune node` is `true`. A pruned node is still **included** in the result (it was reached) but is not expanded, so nothing beyond it is walked. Cycle-safe via a visited set. Reduces exactly to `dependentsOf` when `prune = _: true`.
+
+```nix
+# Everything that depends on db, but stop walking past api:
+graph.dependentsFrontier g "db" (id: id != "api")
+# → [ "api" "worker" ]   # api included, but web (which only reaches db via api) is cut
+```
+
 **`impactOf`** — alias for `dependentsOf`. "What breaks if this node changes?"
 
 **`transpose g`** — returns a new accessor record `{ edges, nodes }` with all edges reversed.
@@ -188,6 +199,31 @@ graph.dependentsOf g "database"   # → [ "api" "cache" "web" "worker" ]
 ```nix
 rev = graph.transpose g;
 graph.reachableFrom rev "database"   # → nodes that depend on database
+```
+
+**`coScc g u v`** — are `u` and `v` in the same strongly connected component? `canReach`-backed point query (no full closure): true iff `u == v`, or each reaches the other.
+
+```nix
+graph.coScc cyclicGraph "a" "c"   # → true  (a → b → c → a)
+graph.coScc dagGraph     "a" "b"  # → false
+```
+
+**`condensation g`** — collapses each SCC to a super-node and returns the condensation (quotient) graph. Closure-based O(n²) — not Tarjan's linear single-DFS, whose mutable stack is out of reach in pure Nix. Returns a record:
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `reps` | `[tag]` | SCC tags in bottom-up order (`== bottomUp`) |
+| `bottomUp` | `[tag]` | SCCs in reverse-topological order: each appears after every SCC it points to |
+| `members` | `tag → [id]` | the member ids of one SCC, sorted |
+| `sccs` | `[[id]]` | member lists, in `bottomUp` order |
+| `sccOf` | `id → tag` | the SCC tag (smallest member id) of a node |
+| `condEdges` | `tag → [tag]` | the SCCs that this SCC points to |
+
+```nix
+c = graph.condensation g;
+c.sccs              # → [ [ "d" ] [ "c" ] [ "b" ] [ "a" ] ]  for chain a → b → c → d
+c.sccOf "a"         # → "a"
+c.condEdges (c.sccOf "a")   # → SCCs that a's component depends on
 ```
 
 ### Enumeration
@@ -225,6 +261,7 @@ materializeParents : { parent, nodes, ... } → { id → id }
 
 ```
 fixpoint            : { seed, step, maxIter? } → edgeMap
+seededFixpoint      : { seed, frontier, step, maxIter? } → edgeMap
 compose             : edgeMap → edgeMap → edgeMap
 transitiveClosure   : { edges, nodes, ... } → edgeMap
 transitiveReduction : { edges, nodes, ... } → edgeMap
@@ -236,6 +273,18 @@ transitiveReduction : { edges, nodes, ... } → edgeMap
 closure = graph.fixpoint {
   seed = graph.materialize g;
   step = current: graph.unionEdges current (graph.compose current (graph.materialize g));
+};
+```
+
+**`seededFixpoint { seed, frontier, step, maxIter? }`** — semi-naive variant of `fixpoint`. Here `step` takes two arguments, `step frontier accumulator`, and is shown **only the current delta frontier** rather than the whole accumulator — so each iteration does work proportional to what changed, not to the full result. Newly produced facts join the accumulator and become the next frontier; it converges when the frontier empties. No monotonicity guard is needed since union-accumulation never shrinks. Throws past `maxIter` (default 1000).
+
+```nix
+# Semi-naive transitive closure: dR = dF ∘ R each round.
+mat = graph.materialize g;
+closure = graph.seededFixpoint {
+  seed     = mat;
+  frontier = mat;
+  step     = dF: _acc: graph.compose dF mat;
 };
 ```
 
@@ -363,6 +412,10 @@ in {
 | `cycles` | O(nodes × reachable) | per-node C-level BFS (no full closure needed) |
 | `dependents` | O(nodes²) | full transitive closure + transpose |
 | `dependentsOf` | O(nodes + reachable) | reverse index + C-level BFS |
+| `dependentsFrontier` | O(nodes + reachable) | reverse index + level-by-level BFS, pruned early |
+| `coScc` | O(reachable from u, v) | two `canReach` probes, no full closure |
+| `condensation` | O(nodes²) | two transitive closures (graph + quotient) |
+| `seededFixpoint` | O(work per delta) | semi-naive: each iteration touches only the frontier |
 | `roots` / `leaves` | O(nodes × avg degree) | single scan of all edges |
 | `select` | O(nodes) | one pass over node list |
 | `unionEdges` / `intersectEdges` / `differenceEdges` | O(edges) | attrset membership O(1) per edge |

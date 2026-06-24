@@ -31,11 +31,11 @@ let
     in
     go 0 seed;
 
-  # S4: semi-naive delta-frontier fixpoint. step sees ONLY the current frontier dF
-  # (the semi-naive saving vs `fixpoint`'s step-over-whole-acc). Converges when the
-  # frontier empties. NEW export — does NOT modify `fixpoint`. No monotonicity guard:
-  # union-accumulation makes shrinking structurally impossible (it would be dead code).
-  # (Spec 2026-06-23-gen-rebuild-v2-design §5.P0; Arntzenius 2016 §9 semi-naive.)
+  # Semi-naive delta-frontier fixpoint: `step dF acc` sees only the current frontier
+  # `dF`, not the whole accumulator (the semi-naive saving over `fixpoint`, which
+  # re-steps the whole map each iteration). Converges when the frontier empties.
+  # No monotonicity guard — union-accumulation cannot shrink the result.
+  # (Arntzenius 2016 §9, semi-naive evaluation.)
   seededFixpoint =
     {
       seed,

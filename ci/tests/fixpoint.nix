@@ -175,7 +175,7 @@ in
         closure."a" or [ ];
       expected = [ "a" ];
     };
-    # --- seededFixpoint (S4) ---
+    # --- seededFixpoint ---
     # Canonical semi-naive transitive-closure instance: dR = dR . R (vs naive R . R).
     test-seeded-closure-equals-transitiveClosure-chain = {
       expr =
@@ -231,9 +231,9 @@ in
       expected = true;
     };
     test-seeded-property-equals-naive-over-fixtures = {
-      # property: the canonical semi-naive instance == transitiveClosure on EVERY
+      # property: the canonical semi-naive instance == transitiveClosure on every
       # fixture shape (gen-graph has no random-DAG generator; multiple shapes stand
-      # in for §8's "semi-naive == naive over random DAGs"). Sorted per-node compare.
+      # in for the "semi-naive == naive over random DAGs" equivalence). Sorted per-node compare.
       expr =
         let
           ok =

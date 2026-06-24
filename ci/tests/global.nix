@@ -139,7 +139,7 @@ in
       expected = dependentsOf fixtures.serviceGraph "cache";
     };
 
-    # --- dependentsFrontier (S3) ---
+    # --- dependentsFrontier ---
     test-frontier-prune-all-equals-dependentsOf = {
       # prune = _: true reduces EXACTLY to dependentsOf (the conformance anchor).
       expr = dependentsFrontier fixtures.serviceGraph "db" (_: true);
@@ -222,7 +222,7 @@ in
       expected = true;
     };
     test-condensation-index-alignment = {
-      # DEFECT-1 guard: reps == bottomUp AND sccs == map members reps.
+      # index alignment: reps == bottomUp AND sccs == map members reps.
       expr =
         let
           c = condensation fixtures.chain;

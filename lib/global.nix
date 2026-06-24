@@ -12,8 +12,9 @@ let
   fp = import ./fixpoint.nix { inherit lib; };
   traverse = import ./traverse.nix { inherit lib; };
 
-  # Shared O(E) reverse-edge index (consumer->producer reversed): id -> [ids that read id].
-  # Extracted from dependentsOf so dependentsFrontier (S3) reuses it. groupBy, not foldl'+//.
+  # Shared reverse-edge index: id -> [ids with an edge to id].
+  # Extracted from dependentsOf so dependentsFrontier reuses it.
+  # O(E) via groupBy instead of O(E²) via foldl'+//.
   _reverseIndex =
     { edges, nodes, ... }:
     let
@@ -79,12 +80,12 @@ let
     in
     builtins.sort builtins.lessThan (traverse.reachableFrom { edges = revEdges; } targetId);
 
-  # S3: reverse-reachability cone of targetId, walked level-by-level, descending
-  # into a node's dependents only when prune node == true. A prune==false node is
-  # INCLUDED (reached) but not expanded — the early-cutoff stop. genericClosure
+  # Reverse-reachability cone of targetId, walked level-by-level, descending into
+  # a node's dependents only when `prune node` is true. A pruned node is still
+  # included (reached) but not expanded — the early-cutoff stop. genericClosure
   # cannot include-but-not-expand, so this is a hand-rolled BFS with a visited
-  # attrset (cycle guard: each id enters the frontier <= once). Reduces to
-  # dependentsOf when prune = _: true. (Spec 2026-06-23-gen-rebuild-v2-design §5.P0.)
+  # attrset (cycle guard: each id enters the frontier at most once).
+  # Reduces to `dependentsOf` when `prune = _: true`.
   dependentsFrontier =
     { edges, nodes, ... }:
     targetId: prune:
@@ -119,32 +120,35 @@ let
       inherit nodes;
     };
 
-  # coScc: thin co-SCC predicate (canReach-backed, single-pair, no full closure).
+  # Co-SCC predicate: are u and v in the same strongly connected component?
+  # canReach-backed, single-pair (no full closure). The u == v case handles an
+  # acyclic node, which cannot reach itself.
   coScc =
     { edges, ... }:
     u: v:
     (u == v) || (traverse.canReach { inherit edges; } u v && traverse.canReach { inherit edges; } v u);
 
-  # condensation: SCC partition + condensation (quotient) graph, closure-based O(n^2)
-  # (u,v co-SCC iff each reaches the other via transitiveClosure) — NOT Tarjan's
-  # linear O(V+E) single-DFS (mutable stack/lowlink, out-of-substrate for pure Nix).
-  # bottomUp is producers-first (consumer->producer reverse-topo): solve a super-node
-  # only after every super-node it depends on. reps == bottomUp; sccs == map members reps.
-  # (Spec 2026-06-23-gen-rebuild-v2-design §5.P0; Tarjan 1972 / Kosaraju, Mokhov 2017 idiom.)
+  # SCC partition + condensation (quotient) graph, closure-based O(n²): u and v are
+  # co-SCC iff each reaches the other via transitiveClosure. Not Tarjan's linear
+  # O(V+E) single-DFS — its mutable stack/lowlink is out-of-substrate for pure Nix.
+  # `bottomUp` lists each SCC after every SCC it points to (a reverse-topological
+  # order over the condensation DAG); `reps == bottomUp`, `sccs == map members reps`.
+  # (Tarjan 1972 / Kosaraju for SCCs; Mokhov 2017 §4 for the quotient-graph idiom.)
   condensation =
     { edges, nodes, ... }:
     let
       closure = fp.transitiveClosure { inherit edges nodes; };
-      # O(1) membership (mirrors transitiveReduction's closureSets) -> O(n^2), not O(n^3).
+      # O(1) membership (mirrors transitiveReduction's closureSets) → O(n²), not O(n³).
       closSets = lib.mapAttrs (_: ts: lib.genAttrs ts (_: true)) closure;
       reaches = u: v: (closSets.${u} or { }) ? ${v};
-      # CYCLIC node's closure includes itself; ACYCLIC node's does NOT -> (u == v) mandatory.
+      # A cyclic node's closure includes itself; an acyclic node's does not, so the
+      # u == v case is required to make every node co-SCC with itself.
       coSccPair = u: v: (u == v) || (reaches u v && reaches v u);
       repOf = lib.genAttrs nodes (
         n: builtins.head (builtins.sort builtins.lessThan (builtins.filter (m: coSccPair n m) nodes))
       );
-      # reps0: the UNORDERED set of SCC tags — input to the bottom-up sort below,
-      # NOT the output order. The output order is `bottomUp`, and `reps = bottomUp`.
+      # reps0: the unordered set of SCC tags — input to the bottom-up sort below,
+      # not the output order. The output order is `bottomUp`, and `reps = bottomUp`.
       reps0 = lib.unique (map (n: repOf.${n}) nodes);
       membersOf = lib.mapAttrs (_: ns: builtins.sort builtins.lessThan (map (e: e.n) ns)) (
         builtins.groupBy (e: e.r) (
@@ -161,8 +165,9 @@ let
             map (t: repOf.${t}) (lib.concatMap (m: edges m) (membersOf.${r} or [ ]))
           )
         );
-      # Bottom-up: a SECOND closure over the condensation, sort by closure-cardinality
-      # ASCENDING (producers have smaller closures), name tie-break. No hand-rolled DFS.
+      # Bottom-up: a second closure, over the condensation, sorted by closure
+      # cardinality ascending (a node that points to fewer SCCs has a smaller
+      # closure, so it sorts earlier), with a name tie-break. No hand-rolled DFS.
       condMat = lib.genAttrs reps0 (r: condEdgesOf r);
       condClosure = fp.transitiveClosure {
         edges = id: condMat.${id} or [ ];
