@@ -194,6 +194,42 @@ let
 
   # Impact analysis alias (uses efficient single-target path).
   impactOf = dependentsOf;
+
+  # Cone-local producers-first rank: depth id = 1 + max(depth of in-cone producers).
+  # O(|cone| + edges_in_cone) via lib.fix memoization; NOT whole-graph condensation.
+  # RTD 1983 topological enumeration restricted to a dependent cone.
+  # Precondition: `cone` is acyclic (a data-change dependent cone is). A cyclic cone
+  # makes the lib.fix recurrence self-referential → uncatchable infinite recursion.
+  coneRank =
+    accessor: cone:
+    let
+      coneSet = lib.genAttrs cone (_: true);
+      inConeProducers = id: builtins.filter (d: coneSet ? ${d}) (accessor.edges id);
+      # lib.fix binds `depth` once, so each node's depth is forced at most once
+      # (a plain recursive `let` would re-expand shared producers, blowing up to
+      # exponential) — this is what delivers the O(|cone| + edges_in_cone) bound.
+      depth = lib.fix (
+        d:
+        lib.genAttrs cone (
+          id:
+          let
+            ps = inConeProducers id;
+          in
+          if ps == [ ] then 0 else 1 + lib.foldl' (m: p: lib.max m d.${p}) 0 ps
+        )
+      );
+      order = builtins.sort (
+        a: b: if depth.${a} == depth.${b} then a < b else depth.${a} < depth.${b}
+      ) cone;
+    in
+    {
+      inherit order depth;
+    };
+
+  # DIRECT reverse-adjacency (full map) — the public face of _reverseIndex.
+  # DIRECT (immediate dependents), in contrast to dependentsOf's TRANSITIVE closure.
+  directDependents = { edges, nodes, ... }: _reverseIndex { inherit edges nodes; };
+  directDependentsOf = accessor: id: (directDependents accessor).${id} or [ ];
 in
 {
   inherit
@@ -205,5 +241,8 @@ in
     impactOf
     condensation
     coScc
+    coneRank
+    directDependents
+    directDependentsOf
     ;
 }
