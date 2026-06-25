@@ -164,6 +164,9 @@ impactOf           : { edges, nodes, ... } → id → [id]   # alias for depende
 transpose          : { edges, nodes, ... } → { edges, nodes }
 coScc              : { edges, ... } → id → id → bool
 condensation       : { edges, nodes, ... } → { reps, bottomUp, members, sccs, sccOf, condEdges }
+coneRank           : { edges, ... } → [id] → { order, depth }
+directDependents   : { edges, nodes, ... } → { id → [id] }
+directDependentsOf : { edges, nodes, ... } → id → [id]
 ```
 
 **`cycles g`** — nodes that appear in any cycle (self-reachable). Uses C-level BFS per node via `selfReachable` — no full transitive closure materialization needed. Returns a sorted list.
@@ -224,6 +227,22 @@ c = graph.condensation g;
 c.sccs              # → [ [ "d" ] [ "c" ] [ "b" ] [ "a" ] ]  for chain a → b → c → d
 c.sccOf "a"         # → "a"
 c.condEdges (c.sccOf "a")   # → SCCs that a's component depends on
+```
+
+**`coneRank g cone`** — producers-first topological rank of a node set, computed **cone-locally**. Returns `{ order; depth; }` where `depth id = 0` if `id` has no producer inside `cone`, else `1 + max(depth of its in-cone producers)`, and `order` is `cone` sorted ascending by depth with an id tie-break (so every producer precedes its consumers). Memoized via `lib.fix` over the cone, so it runs in O(|cone| + edges-in-cone) — it does **not** materialize the whole-graph `condensation`. The cone must be acyclic (every producer is strictly shallower than its consumer). This is RTD 1983 topological rank restricted to a dependent cone.
+
+```nix
+graph.coneRank g [ "A" "B" "X" ]    # for B→A, X→B
+# → { order = [ "A" "B" "X" ]; depth = { A = 0; B = 1; X = 2; }; }
+```
+
+**`directDependents g`** — the full **direct** reverse-adjacency map `{ id → [direct dependents of id] }`: the immediate reverse neighbours of every node, in one O(E) `groupBy`. This is the public face of the internal `_reverseIndex`. **Direct**, in contrast to `dependentsOf`'s **transitive** closure — a producer with no consumer simply has no key.
+
+**`directDependentsOf g id`** — the immediate dependents of a single node: `(directDependents g).${id} or [ ]`.
+
+```nix
+graph.directDependentsOf g "A"   # → [ "B" ]      (DIRECT — immediate neighbour)
+graph.dependentsOf       g "A"   # → [ "B" "X" ]  (TRANSITIVE — full reverse cone)
 ```
 
 ### Enumeration
@@ -415,6 +434,8 @@ in {
 | `dependentsFrontier` | O(nodes + reachable) | reverse index + level-by-level BFS, pruned early |
 | `coScc` | O(reachable from u, v) | two `canReach` probes, no full closure |
 | `condensation` | O(nodes²) | two transitive closures (graph + quotient) |
+| `coneRank` | O(|cone| + edges-in-cone) | `lib.fix` memoized depth, cone-local (no condensation) |
+| `directDependents` / `directDependentsOf` | O(edges) | one `groupBy` reverse-adjacency map |
 | `seededFixpoint` | O(work per delta) | semi-naive: each iteration touches only the frontier |
 | `roots` / `leaves` | O(nodes × avg degree) | single scan of all edges |
 | `select` | O(nodes) | one pass over node list |
@@ -488,6 +509,7 @@ nix flake check --override-input gen-graph . ./ci
 The algorithms and design principles draw from:
 
 - **Mokhov (2017)** — *Algebraic Graphs with Class*. *Informed by.* Algebraic graph construction primitives (overlay, connect, vertex, empty) and the compositional approach to graph representation inform gen-graph's edge map operations and structural combinators. Edge map set operations (`unionEdges`, `intersectEdges`, `differenceEdges`) are gen-graph's own contribution built on this algebraic foundation. Mokhov 2017 §4.5 supplies only the equivalence-class *notion* of reduction; `transitiveReduction` is a standard DAG transitive-reduction algorithm (gen-graph's own implementation) and assumes a DAG, since reduction is not unique under cycles. Transpose follows Mokhov 2017 §4.3 directly.
-- **Arntzenius & Krishnaswami (2016)** — *Datafun: A Functional Datalog*. *Implements.* Monotone fixpoint iteration with convergence guarantees. The `fixpoint` operator enforces monotonicity (edge count must not shrink between iterations), matching Datafun's requirement that fixpoint computations operate over monotone functions on semilattices. Reverse reachability in `dependents`/`dependentsOf` follows the Datafun reverse-query pattern.
+- **Arntzenius & Krishnaswami (2016)** — *Datafun: A Functional Datalog*. *Implements.* Monotone fixpoint iteration with convergence guarantees. The `fixpoint` operator enforces monotonicity (edge count must not shrink between iterations), matching Datafun's requirement that fixpoint computations operate over monotone functions on semilattices. Reverse reachability in `dependents`/`dependentsOf` follows the Datafun reverse-query pattern. `directDependents`/`directDependentsOf` expose the underlying reverse-adjacency index directly: the **immediate** reverse neighbours (one edge), in contrast to `dependentsOf`'s **transitive** reverse closure — the distinction matters when a consumer must enumerate only its direct producers' dependents without re-materializing the whole reverse cone.
+- **Tarjan (1983)** — *Data Structures and Network Algorithms (RTD)*. *Implements.* Topological rank by longest incoming path. `coneRank` assigns each node `depth = 1 + max(depth of producers)` — the standard topological-rank recurrence — but **restricted to a cone**: only producers inside the supplied node set count, so the rank is computed in O(|cone| + edges-in-cone) via `lib.fix` memoization rather than over the whole graph. Ordering by ascending depth yields a producers-first (reverse-topological) enumeration without building `condensation`.
 - **Neron et al. (2015)** — *A Theory of Name Resolution*. *Implements.* Parent-chain traversal (`ancestorsOf`) follows scope graph P-edge resolution: walking the `parent` partial function upward through scopes corresponds to following P-edges in the resolution calculus (Neron 2015 §2.3). Silent cycle termination chosen over throwing for composability, matching the well-foundedness requirement on the parent relation.
 - **Kahn (1974)** — *The Semantics of a Simple Language for Parallel Programming*. *Informed by.* Continuous functions over streams with deterministic dataflow semantics. gen-graph's lazy accessor pattern — traversal only forces nodes it visits — aligns conceptually with Kahn's model where computing stations produce output incrementally as input arrives, and monotonicity ensures that receiving more input can only provoke more output (Kahn 1974 §2.2.4).
