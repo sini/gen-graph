@@ -71,7 +71,7 @@ Functions that only need traversal destructure `{ edges, ... }`. Functions that 
   outputs = { gen-graph, nixpkgs, ... }:
     let
       lib   = nixpkgs.lib;
-      graph = gen-graph { inherit lib; };
+      graph = gen-graph.lib;
     in { /* use graph.reachableFrom, graph.roots, etc. */ };
 }
 ```
@@ -386,7 +386,7 @@ g = graph.fromRegistry {
 { nixpkgs, gen-graph }:
 let
   lib   = nixpkgs.lib;
-  graph = gen-graph { inherit lib; };
+  graph = gen-graph.lib;
 
   # Your data
   services = {

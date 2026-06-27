@@ -10,7 +10,7 @@
     { gen-graph, nixpkgs, ... }:
     let
       lib = nixpkgs.lib;
-      graph = gen-graph { inherit lib; };
+      graph = gen-graph.lib;
 
       # Microservice dependency graph
       #

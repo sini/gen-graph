@@ -4,7 +4,6 @@
   outputs =
     { nixpkgs, ... }:
     {
-      lib = import ./. { lib = nixpkgs.lib; };
-      __functor = _: import ./.;
+      lib = import ./lib { lib = nixpkgs.lib; };
     };
 }
