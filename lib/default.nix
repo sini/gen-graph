@@ -1,6 +1,6 @@
 { prelude }:
 let
-  traverse = import ./traverse.nix { };
+  traverse = import ./traverse.nix;
   global = import ./global.nix { inherit prelude; };
   enumerate = import ./enumerate.nix { inherit prelude; };
   edgeMaps = import ./edge-maps.nix { inherit prelude; };

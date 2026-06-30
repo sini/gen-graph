@@ -3,8 +3,7 @@
 # Uses builtins.genericClosure (C-level BFS with native dedup) for
 # reachability queries. ~4-5x faster than Nix-level BFS on large graphs.
 #
-# Depends on nothing (pure builtins) — needs no prelude input.
-{ }:
+# Pure builtins only — no dependencies, so this is a bare value (not a function).
 let
   # Follow edges transitively from a start node (excludes startId).
   # C-level BFS via genericClosure. O(reachable nodes).

@@ -10,7 +10,7 @@
 let
   edgeMaps = import ./edge-maps.nix { inherit prelude; };
   fp = import ./fixpoint.nix { inherit prelude; };
-  traverse = import ./traverse.nix { };
+  traverse = import ./traverse.nix;
 
   # Shared reverse-edge index: id -> [ids with an edge to id].
   # Extracted from dependentsOf so dependentsFrontier reuses it.
