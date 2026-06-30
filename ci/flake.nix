@@ -14,7 +14,7 @@
       ...
     }:
     let
-      prelude = import "${gen-prelude}/lib" { };
+      prelude = import "${gen-prelude}/lib";
       genGraph = import ../lib { inherit prelude; };
     in
     gen.lib.mkCi {
