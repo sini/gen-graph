@@ -1,10 +1,10 @@
-{ lib }:
+{ prelude }:
 let
   roots =
     { edges, nodes, ... }:
     let
       allTargets = builtins.listToAttrs (
-        lib.concatMap (
+        prelude.concatMap (
           id:
           map (t: {
             name = t;

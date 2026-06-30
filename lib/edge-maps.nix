@@ -1,10 +1,10 @@
-{ lib }:
+{ prelude }:
 let
-  materialize = { edges, nodes, ... }: lib.genAttrs nodes (id: lib.unique (edges id));
+  materialize = { edges, nodes, ... }: prelude.genAttrs nodes (id: prelude.unique (edges id));
 
   materializeParents =
     { parent, nodes, ... }:
-    lib.listToAttrs (
+    prelude.listToAttrs (
       builtins.filter (e: e.value != null) (
         map (id: {
           name = id;
@@ -30,24 +30,24 @@ let
       bKeys = builtins.filter (k: !(a ? ${k})) (builtins.attrNames b);
       allKeys = aKeys ++ bKeys;
     in
-    lib.genAttrs allKeys (k: lib.unique ((a.${k} or [ ]) ++ (b.${k} or [ ])));
+    prelude.genAttrs allKeys (k: prelude.unique ((a.${k} or [ ]) ++ (b.${k} or [ ])));
 
   intersectEdges =
     a: b:
-    lib.filterAttrs (_: targets: targets != [ ]) (
-      lib.mapAttrs (
+    prelude.filterAttrs (_: targets: targets != [ ]) (
+      prelude.mapAttrs (
         from: aTargets:
         let
           bSet = _targetSet (b.${from} or [ ]);
         in
         builtins.filter (to: bSet ? ${to}) aTargets
-      ) (lib.filterAttrs (from: _: b ? ${from}) a)
+      ) (prelude.filterAttrs (from: _: b ? ${from}) a)
     );
 
   differenceEdges =
     a: b:
-    lib.filterAttrs (_: targets: targets != [ ]) (
-      lib.mapAttrs (
+    prelude.filterAttrs (_: targets: targets != [ ]) (
+      prelude.mapAttrs (
         from: aTargets:
         let
           bSet = _targetSet (b.${from} or [ ]);
@@ -58,8 +58,8 @@ let
 
   selectEdges =
     pred: edgeMap:
-    lib.filterAttrs (_: targets: targets != [ ]) (
-      lib.mapAttrs (from: targets: builtins.filter (to: pred from to) targets) edgeMap
+    prelude.filterAttrs (_: targets: targets != [ ]) (
+      prelude.mapAttrs (from: targets: builtins.filter (to: pred from to) targets) edgeMap
     );
 in
 {

@@ -1,10 +1,10 @@
-{ lib }:
+{ prelude }:
 let
-  traverse = import ./traverse.nix { inherit lib; };
-  global = import ./global.nix { inherit lib; };
-  enumerate = import ./enumerate.nix { inherit lib; };
-  edgeMaps = import ./edge-maps.nix { inherit lib; };
-  fixpoint = import ./fixpoint.nix { inherit lib; };
-  registry = import ./registry.nix { inherit lib; };
+  traverse = import ./traverse.nix { };
+  global = import ./global.nix { inherit prelude; };
+  enumerate = import ./enumerate.nix { inherit prelude; };
+  edgeMaps = import ./edge-maps.nix { inherit prelude; };
+  fixpoint = import ./fixpoint.nix { inherit prelude; };
+  registry = import ./registry.nix { inherit prelude; };
 in
 traverse // global // enumerate // edgeMaps // fixpoint // registry

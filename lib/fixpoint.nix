@@ -1,6 +1,6 @@
-{ lib }:
+{ prelude }:
 let
-  edgeMaps = import ./edge-maps.nix { inherit lib; };
+  edgeMaps = import ./edge-maps.nix { inherit prelude; };
 
   countEdges =
     m: builtins.foldl' (acc: from: acc + builtins.length (m.${from} or [ ])) 0 (builtins.attrNames m);
@@ -62,7 +62,9 @@ let
 
   compose =
     e1: e2:
-    lib.mapAttrs (_from: targets: lib.unique (lib.concatMap (mid: e2.${mid} or [ ]) targets)) e1;
+    prelude.mapAttrs (
+      _from: targets: prelude.unique (prelude.concatMap (mid: e2.${mid} or [ ]) targets)
+    ) e1;
 
   transitiveClosure =
     { edges, nodes, ... }:
@@ -79,11 +81,11 @@ let
     let
       mat = edgeMaps.materialize { inherit edges nodes; };
       closure = transitiveClosure { inherit edges nodes; };
-      redundant = lib.mapAttrs (
+      redundant = prelude.mapAttrs (
         _from: targets:
         let
           # Pre-convert closure lists to attrsets for O(1) membership
-          closureSets = lib.genAttrs targets (
+          closureSets = prelude.genAttrs targets (
             mid:
             builtins.listToAttrs (
               map (t: {

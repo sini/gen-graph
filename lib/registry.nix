@@ -1,4 +1,4 @@
-{ lib }:
+{ prelude }:
 let
   self = {
     fromRegistry =
@@ -71,7 +71,7 @@ let
         );
       in
       {
-        edges = id: lib.unique (edgeIndex.${id} or [ ]);
+        edges = id: prelude.unique (edgeIndex.${id} or [ ]);
         parent = id: parentIndex.${id} or null;
         nodes = allIds;
         nodeData = id: nodeData.${id} or { };

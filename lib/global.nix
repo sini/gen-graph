@@ -6,11 +6,11 @@
 #   dependents uses full transitive closure (amortized for multi-target).
 #   dependentsOf uses reverse traversal (O(reachable) for single-target).
 # transpose: Mokhov 2017 §4.3 (algebraic graph transpose operation).
-{ lib }:
+{ prelude }:
 let
-  edgeMaps = import ./edge-maps.nix { inherit lib; };
-  fp = import ./fixpoint.nix { inherit lib; };
-  traverse = import ./traverse.nix { inherit lib; };
+  edgeMaps = import ./edge-maps.nix { inherit prelude; };
+  fp = import ./fixpoint.nix { inherit prelude; };
+  traverse = import ./traverse.nix { };
 
   # Shared reverse-edge index: id -> [ids with an edge to id].
   # Extracted from dependentsOf so dependentsFrontier reuses it.
@@ -18,7 +18,7 @@ let
   _reverseIndex =
     { edges, nodes, ... }:
     let
-      allEdges = lib.concatMap (
+      allEdges = prelude.concatMap (
         from:
         map (to: {
           name = to;
@@ -34,7 +34,7 @@ let
   _transposeMat =
     mat:
     let
-      allEdges = lib.concatMap (
+      allEdges = prelude.concatMap (
         from:
         map (to: {
           name = to;
@@ -99,12 +99,12 @@ let
         else
           let
             expandable = builtins.filter prune frontier;
-            neighbours = lib.unique (lib.concatMap revOf expandable);
+            neighbours = prelude.unique (prelude.concatMap revOf expandable);
             fresh = builtins.filter (id: !(visited ? ${id})) neighbours;
           in
-          go (visited // lib.genAttrs fresh (_: true)) fresh;
-      seed0 = if prune targetId then lib.unique (revOf targetId) else [ ];
-      reached = go (lib.genAttrs seed0 (_: true)) seed0;
+          go (visited // prelude.genAttrs fresh (_: true)) fresh;
+      seed0 = if prune targetId then prelude.unique (revOf targetId) else [ ];
+      reached = go (prelude.genAttrs seed0 (_: true)) seed0;
     in
     builtins.sort builtins.lessThan (builtins.filter (id: id != targetId) (builtins.attrNames reached));
 
@@ -139,18 +139,18 @@ let
     let
       closure = fp.transitiveClosure { inherit edges nodes; };
       # O(1) membership (mirrors transitiveReduction's closureSets) → O(n²), not O(n³).
-      closSets = lib.mapAttrs (_: ts: lib.genAttrs ts (_: true)) closure;
+      closSets = prelude.mapAttrs (_: ts: prelude.genAttrs ts (_: true)) closure;
       reaches = u: v: (closSets.${u} or { }) ? ${v};
       # A cyclic node's closure includes itself; an acyclic node's does not, so the
       # u == v case is required to make every node co-SCC with itself.
       coSccPair = u: v: (u == v) || (reaches u v && reaches v u);
-      repOf = lib.genAttrs nodes (
+      repOf = prelude.genAttrs nodes (
         n: builtins.head (builtins.sort builtins.lessThan (builtins.filter (m: coSccPair n m) nodes))
       );
       # reps0: the unordered set of SCC tags — input to the bottom-up sort below,
       # not the output order. The output order is `bottomUp`, and `reps = bottomUp`.
-      reps0 = lib.unique (map (n: repOf.${n}) nodes);
-      membersOf = lib.mapAttrs (_: ns: builtins.sort builtins.lessThan (map (e: e.n) ns)) (
+      reps0 = prelude.unique (map (n: repOf.${n}) nodes);
+      membersOf = prelude.mapAttrs (_: ns: builtins.sort builtins.lessThan (map (e: e.n) ns)) (
         builtins.groupBy (e: e.r) (
           map (n: {
             r = repOf.${n};
@@ -160,15 +160,15 @@ let
       );
       condEdgesOf =
         r:
-        lib.unique (
+        prelude.unique (
           builtins.filter (rb: rb != r) (
-            map (t: repOf.${t}) (lib.concatMap (m: edges m) (membersOf.${r} or [ ]))
+            map (t: repOf.${t}) (prelude.concatMap (m: edges m) (membersOf.${r} or [ ]))
           )
         );
       # Bottom-up: a second closure, over the condensation, sorted by closure
       # cardinality ascending (a node that points to fewer SCCs has a smaller
       # closure, so it sorts earlier), with a name tie-break. No hand-rolled DFS.
-      condMat = lib.genAttrs reps0 (r: condEdgesOf r);
+      condMat = prelude.genAttrs reps0 (r: condEdgesOf r);
       condClosure = fp.transitiveClosure {
         edges = id: condMat.${id} or [ ];
         nodes = reps0;
@@ -196,26 +196,26 @@ let
   impactOf = dependentsOf;
 
   # Cone-local producers-first rank: depth id = 1 + max(depth of in-cone producers).
-  # O(|cone| + edges_in_cone) via lib.fix memoization; NOT whole-graph condensation.
+  # O(|cone| + edges_in_cone) via prelude.fix memoization; NOT whole-graph condensation.
   # RTD 1983 topological enumeration restricted to a dependent cone.
   # Precondition: `cone` is acyclic (a data-change dependent cone is). A cyclic cone
-  # makes the lib.fix recurrence self-referential → uncatchable infinite recursion.
+  # makes the prelude.fix recurrence self-referential → uncatchable infinite recursion.
   coneRank =
     accessor: cone:
     let
-      coneSet = lib.genAttrs cone (_: true);
+      coneSet = prelude.genAttrs cone (_: true);
       inConeProducers = id: builtins.filter (d: coneSet ? ${d}) (accessor.edges id);
-      # lib.fix binds `depth` once, so each node's depth is forced at most once
+      # prelude.fix binds `depth` once, so each node's depth is forced at most once
       # (a plain recursive `let` would re-expand shared producers, blowing up to
       # exponential) — this is what delivers the O(|cone| + edges_in_cone) bound.
-      depth = lib.fix (
+      depth = prelude.fix (
         d:
-        lib.genAttrs cone (
+        prelude.genAttrs cone (
           id:
           let
             ps = inConeProducers id;
           in
-          if ps == [ ] then 0 else 1 + lib.foldl' (m: p: lib.max m d.${p}) 0 ps
+          if ps == [ ] then 0 else 1 + prelude.foldl' (m: p: prelude.max m d.${p}) 0 ps
         )
       );
       order = builtins.sort (
