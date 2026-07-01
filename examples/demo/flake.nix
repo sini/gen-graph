@@ -82,8 +82,8 @@
     {
       # --- Lazy Traversal ---
 
-      # What can web reach transitively?
-      # → [ "api" "cache" "database" ]
+      # What can web reach transitively? (BFS discovery order, not sorted)
+      # → [ "api" "database" "cache" ]
       webReaches = graph.reachableFrom g "web";
 
       # All paths from gateway to database
@@ -91,7 +91,8 @@
       gatewayToDb = graph.pathsBetween g "gateway" "database";
 
       # Predicate-filtered reachability: only datastore IDs reachable from gateway
-      # → [ "cache" "database" ]
+      # (preserves BFS discovery order)
+      # → [ "database" "cache" ]
       gatewayDatastores = graph.reachableWhere g "gateway" (
         id: ((services.${id} or { }).type or null) == "datastore"
       );
