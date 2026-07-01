@@ -59,7 +59,7 @@ Functions that only need traversal destructure `{ edges, ... }`. Functions that 
 | [gen-schema](https://github.com/sini/gen-schema) | Typed registries (kinds, instances, collections, refs) |
 | [gen-aspects](https://github.com/sini/gen-aspects) | Aspect type system (traits, classification, dispatch) |
 | [gen-scope](https://github.com/sini/gen-scope) | HOAG scope-graph evaluator (demand-driven, \_eval memoization, circular attributes) |
-| [gen-graph](https://github.com/sini/gen-graph) | Accessor-based graph query combinators (traversal, condensation, phaseOrder) |
+| [gen-graph](https://github.com/sini/gen-graph) | **This lib** — Accessor-based graph query combinators (traversal, condensation, phaseOrder) |
 | [gen-select](https://github.com/sini/gen-select) | Selector algebra (pattern matching over graph positions) |
 | [gen-bind](https://github.com/sini/gen-bind) | Module binding (inject external args into NixOS modules) |
 | [gen-dispatch](https://github.com/sini/gen-dispatch) | Relational rule dispatch STEP (stratified phases, conflict resolution) |
@@ -424,9 +424,8 @@ g = graph.fromRegistry {
 ## Usage Example
 
 ```nix
-{ nixpkgs, gen-graph }:
+{ gen-graph }:
 let
-  lib   = nixpkgs.lib;
   graph = gen-graph.lib;
 
   # Your data
