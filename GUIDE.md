@@ -234,12 +234,13 @@ graph.selectEdges (from: to: to == "db") em
 # Only edges pointing at "db": { api = ["db"]; worker = ["db"]; }
 ```
 
-## The mock utility: building graphs for testing
+## Building graphs: mkGraph and fromRegistry
 
-For tests and exploration, `graph.mock.mkGraph` builds accessor records from simple declarations:
+The construction helpers are exported flat (no `mock` namespace). For tests and
+exploration, `graph.mkGraph` builds accessor records from simple declarations:
 
 ```nix
-g = graph.mock.mkGraph {
+g = graph.mkGraph {
   edges = [
     { from = "a"; to = "b"; }
     { from = "b"; to = "c"; }
@@ -256,7 +257,9 @@ graph.reachableFrom g "a"    # [ "b" "c" ]
 graph.ancestorsOf g "child"  # [ "parent" ]
 ```
 
-If you have data in the old node-map format (like scope-engine produces), `fromNodeMap` adapts it:
+If you have data in a node-map format (an attrset keyed by id, each entry carrying its
+own `imports`/`parent` fields), `fromRegistry` adapts it — you supply projections that
+read edges and parent out of each entry:
 
 ```nix
 legacy = {
@@ -264,7 +267,11 @@ legacy = {
   "svc:api" = { imports = [ "svc:db" ]; parent = "svc:web"; };
   "svc:db" = { imports = []; parent = "svc:api"; };
 };
-g = graph.mock.fromNodeMap legacy;
+g = graph.fromRegistry {
+  registry = legacy;
+  edges  = graph.field "imports";        # each entry's `imports` list
+  parent = _id: entry: entry.parent or null;
+};
 graph.reachableFrom g "svc:web"   # [ "svc:api" "svc:db" ]
 graph.ancestorsOf g "svc:db"      # [ "svc:api" "svc:web" ]
 ```
@@ -274,17 +281,19 @@ graph.ancestorsOf g "svc:db"      # [ "svc:api" "svc:web" ]
 gen-graph is the **query layer** — it answers structural questions about graphs that other libraries build:
 
 ```
-gen-algebra →  pure primitives (search, record, identity)
+gen-prelude →  pure nixpkgs-lib-free utility base
+gen-algebra →  pure primitives (record, search monad, either, intensional identity)
 gen-schema  →  defines what kinds of entities exist (types, instances)
 gen-scope   →  evaluates attributes on graph nodes (HOAG evaluator)
-gen-graph   →  queries the graph structure (reachability, cycles, impact)
+gen-graph   →  queries the graph structure (reachability, cycles, impact, phaseOrder)
 gen-aspects →  classifies and dispatches aspect types
 gen-select  →  selector algebra for targeting nodes
 gen-bind    →  injects args into NixOS modules
-gen-dispatch  →  stratified rule dispatch with fixpoint convergence
+gen-dispatch  →  relational rule dispatch STEP (stratified phases, conflict resolution)
+gen-resolve →  demand-driven RAG evaluator (attribute schedule + convergence loop)
 ```
 
-gen-scope uses gen-graph's accessor pattern: scope-engine memoizes attribute evaluation via `_eval` attrsets (Nix values are lazy), and gen-graph queries operate over those memoized accessors. The memoization IS the cache — gen-graph never caches, it relies on the accessor backend (gen-scope's lazy attrsets) for O(1) repeated calls.
+gen-scope uses gen-graph's accessor pattern: gen-scope memoizes attribute evaluation via `_eval` attrsets (Nix values are lazy), and gen-graph queries operate over those memoized accessors. The memoization IS the cache — gen-graph never caches, it relies on the accessor backend (gen-scope's lazy attrsets) for O(1) repeated calls.
 
 ## Summary of operations
 
