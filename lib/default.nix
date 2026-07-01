@@ -6,5 +6,6 @@ let
   edgeMaps = import ./edge-maps.nix { inherit prelude; };
   fixpoint = import ./fixpoint.nix { inherit prelude; };
   registry = import ./registry.nix { inherit prelude; };
+  order = import ./order.nix { inherit prelude; };
 in
-traverse // global // enumerate // edgeMaps // fixpoint // registry
+traverse // global // enumerate // edgeMaps // fixpoint // registry // order

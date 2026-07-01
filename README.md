@@ -59,7 +59,7 @@ Functions that only need traversal destructure `{ edges, ... }`. Functions that 
 | [gen-scope](https://github.com/sini/gen-scope) | Scope graphs (construction, evaluation, resolution) |
 | [gen-select](https://github.com/sini/gen-select) | Selector algebra (pattern matching over graph positions) |
 | [gen-bind](https://github.com/sini/gen-bind) | Module binding (inject args into NixOS modules) |
-| [gen-derive](https://github.com/sini/gen-derive) | Rule dispatch (stratified phases, fixpoint, conflict resolution) |
+| [gen-dispatch](https://github.com/sini/gen-dispatch) | Rule dispatch STEP (stratified phases, conflict resolution) |
 
 ## Quick Start
 
@@ -243,6 +243,37 @@ graph.coneRank g [ "A" "B" "X" ]    # for B→A, X→B
 ```nix
 graph.directDependentsOf g "A"   # → [ "B" ]      (DIRECT — immediate neighbour)
 graph.dependentsOf       g "A"   # → [ "B" "X" ]  (TRANSITIVE — full reverse cone)
+```
+
+### Ordering (phase DAG)
+
+The ordering front-door: a home-manager-style DAG authored with `before`/`after`
+constraints, resolved to a forward, producers-first order over the `condensation`. This
+is the ergonomic layer some consumers want on top of `condensation` (e.g. dispatching
+rules over stratified phases).
+
+```
+entryAnywhere            : entry                       ( {} — no constraints )
+entryAfter  [ "a" ]      : entry                       ( comes after "a" )
+entryBefore [ "b" ]      : entry                       ( comes before "b" )
+entryBetween befs afts   : entry
+phaseOrder  { name = entry; ... } : [ name ]           ( forward topological order )
+```
+
+**`phaseOrder entries`** returns **a** valid topological order (the reverse of
+`condensation.bottomUp`). For genuinely *independent* nodes the tie-break is
+closure-cardinality then name — which may differ from `lib.toposort`'s attr-name seed —
+so treat the result as a valid order, not a specific permutation. A consumer that applies
+a phase's effect only *after* the phase (so later phases see earlier results, never the
+reverse) is output-invariant across any valid order. A cycle (or a self-loop) in the
+constraints throws.
+
+```nix
+graph.phaseOrder {
+  validate = graph.entryAnywhere;
+  resolve  = graph.entryAfter [ "validate" ];
+  emit     = graph.entryAfter [ "resolve" ];
+}                                         # → [ "validate" "resolve" "emit" ]
 ```
 
 ### Enumeration
