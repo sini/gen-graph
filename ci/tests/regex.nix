@@ -300,5 +300,17 @@ in
       expr = (builtins.tryEval (r.stateKey (r.parse "(a"))).success;
       expected = false;
     };
+    test-parse-leading-postfix-throws = {
+      expr = (builtins.tryEval (r.stateKey (r.parse "*a"))).success;
+      expected = false;
+    };
+    test-parse-double-postfix-throws = {
+      expr = (builtins.tryEval (r.stateKey (r.parse "a**"))).success;
+      expected = false;
+    };
+    test-parse-dangling-alt-throws = {
+      expr = (builtins.tryEval (r.stateKey (r.parse "a |"))).success;
+      expected = false;
+    };
   };
 }
