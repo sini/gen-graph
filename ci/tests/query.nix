@@ -470,7 +470,9 @@ in
       ];
     };
     test-fold-group-closure = {
-      # groups include groups; effective members = fold over member closure
+      # groups include groups; effective members = fold over member closure.
+      # The list-append combine is deliberately NON-ACI: it pins the canonical
+      # sorted-node fold order (a change to that order would flip this list).
       expr =
         let
           g = labeledFrom {
@@ -495,6 +497,33 @@ in
         "root-u"
         "sini"
       ];
+    };
+    test-fold-where-valueOf = {
+      # where + valueOf flow THROUGH queryFold to the closure (the strip-list
+      # deliberately omits them) — where filters the folded set, valueOf maps it
+      expr =
+        let
+          g = labeledFrom {
+            includes = id: { admins = [ "wheel" ]; }.${id} or [ ];
+            member =
+              id:
+              {
+                admins = [ "sini" ];
+                wheel = [ "root-u" ];
+              }
+              .${id} or [ ];
+          };
+        in
+        genGraph.queryFold {
+          graph = g;
+          from = "admins";
+          follow = r.parse "includes* member";
+          where = id: id != "sini";
+          empty = 0;
+          combine = a: n: a + n;
+          valueOf = builtins.stringLength;
+        };
+      expected = 6; # "root-u" only
     };
     test-fold-empty-answers = {
       expr = genGraph.queryFold {
