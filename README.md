@@ -424,6 +424,115 @@ g = graph.fromRegistry {
 | `serviceGraph` | web/api/worker/db/cache/queue with nodeData |
 | `disconnected` | a → b plus isolated `island` node |
 
+### Labeled Queries
+
+The label-blind surface above (`edges : id → [id]`) is untouched; labeled queries are a
+strictly additive layer for graphs whose edges carry a **kind**. A labeled graph exposes one
+extra accessor:
+
+```
+labeledEdges : id → [ { label; target; } ]
+```
+
+Reachability is then constrained by a **regex over labels** — a query answers a node iff the
+word spelled by the labels along some path from `from` matches the `follow` expression.
+
+**`labeledFrom`** adapts one plain accessor per edge kind into the labeled contract:
+
+```nix
+g = graph.labeledFrom {
+  contains = id: containsEdges id;   # each returns a plain [ id ] list
+  member   = id: memberEdges id;
+};
+```
+
+**`regex`** builds `follow` expressions, as constructors or a compact string:
+
+```
+regex.lit / seq / alt / star / opt / plus / any / eps / empty   # constructors
+regex.parse : string → regex                                     # compact form
+```
+
+Grammar (`parse`): whitespace = sequence, `|` = alternation (binds loosest), postfix `*` `?`
+`+`, parentheses group, `_` is the any-label wildcard, labels are `[A-Za-z0-9_-]+`, and `""`
+parses to `eps`. Postfix is whitespace-insensitive — `a *` is `a*`. Malformed input throws a
+named `gen-graph.regex.parse: …` error.
+
+```nix
+regex.parse "contains* member"          # zero-or-more contains, then one member
+regex.parse "own | include owni"        # a declaration here, or one hop through an include
+```
+
+> **Label alphabet caveat.** Regex composites render to a canonical `stateKey` for the
+> derivative seen-set. A constructor-supplied `lit` label containing rendering metacharacters
+> (`* | . ( )`) can collide with a composite's rendering, so `lit` labels are expected to match
+> `[A-Za-z0-9_-]+` (the `parse` alphabet). Callers own this constraint (see the `regex.nix`
+> header).
+
+**`query`** runs a labeled query in one of five modes:
+
+```
+query : { graph; from; follow; where?; mode?; order?; groupBy?; … } → result
+```
+
+| Mode | Result | Notes |
+|------|--------|-------|
+| `all` (default) | sorted `[ id ]` | reachable set; `from` included iff `follow` is nullable. `genericClosure` over the (node × derivative-state) product — scales, no path materialization |
+| `paths` | `[ { node; path = [ { label; from; to; } … ]; } ]` | labeled path **witnesses** (the "why"); acyclic paths only |
+| `visible` | `{ visible; shadowed; }` | nearest-wins resolution under `order`, grouped by `groupBy` (default: the answer node) |
+| `layers` | `[ [ answer … ] … ]` | all answers grouped into ordered layers by rank word (the cascade shape) |
+| `fixpoint` | fold result | dispatch-alias for `queryFold` (below) |
+
+`order = { labels = [ … ]; endOfPath ? -1; }` gives a per-query specificity order: earlier
+labels are more specific, unlisted labels rank after all listed. `endOfPath` is the rank of
+*stopping* — the default `-1` makes a proper prefix beat its extensions (prefix-wins); a higher
+rank lets continuation on lower-ranked labels beat stopping.
+
+```nix
+query {
+  graph = g;
+  from = "s";
+  follow = regex.parse "own | include";
+  mode = "visible";
+  order.labels = [ "own" "include" ];   # own shadows include
+}
+# → { visible = [ … own answers … ]; shadowed = [ … include answers … ]; }
+```
+
+**`queryFold`** folds a caller-supplied combine over the `all`-mode answer set in canonical
+sorted order (the group-closure / acl shape):
+
+```nix
+queryFold {
+  graph = g;
+  from = "admins";
+  follow = regex.parse "includes* member";
+  empty = [ ];
+  combine = acc: u: acc ++ [ u ];
+  # valueOf ? (id: id), where ? (_: true)
+}
+```
+
+`combine` is expected to be a commutative-idempotent monoid; under those laws the canonical
+order is unobservable. Recursive node-valued fixpoints (a node's value depending on its
+neighbours') remain [`fixpoint`](#fixpoint) territory.
+
+**gen-scope adapter recipe** (recipe only — gen-graph does **not** import gen-scope):
+
+```nix
+# consumer code: wrap gen-scope's per-label followEdge into the labeled contract
+g = graph.labeledFrom {
+  imports = id: scope.followEdge "imports" self id;
+  parent  = id: scope.followEdge "parent" self id;
+};
+```
+
+**Cost guidance.** `all` is `genericClosure`-backed and scales (no path materialization).
+`paths`/`visible`/`layers` enumerate witnesses and are enumeration-priced — use them when the
+witness itself is the product. The two families also differ observably: `all` answers node
+revisits (the (node × state) product), while witness modes enumerate acyclic paths only, so a
+self-loop witness that `all` reports is not enumerated by `paths`.
+
 ## Usage Example
 
 ```nix
@@ -548,8 +657,8 @@ nix flake check --override-input gen-graph . ./ci        # all suites
 nix flake check --override-input gen-graph . ./ci 2>&1   # with test output
 ```
 
-**153 tests** across **10 suites** (`edge-maps`, `enumerate`, `fixpoint`, `global`,
-`integration`, `order`, `purity`, `registry`, `topo`, `traverse`), run under
+**214 tests** across **12 suites** (`edge-maps`, `enumerate`, `fixpoint`, `global`,
+`integration`, `order`, `purity`, `query`, `regex`, `registry`, `topo`, `traverse`), run under
 [nix-unit](https://github.com/nix-community/nix-unit) via the gen CI harness
 (`gen.lib.mkCi`). The `purity` suite asserts the library source stays nixpkgs-lib-free
 (gen-prelude only).
@@ -563,3 +672,7 @@ The algorithms and design principles draw from:
 - **Tarjan (1983)** — *Data Structures and Network Algorithms (RTD)*. *Implements.* Topological rank by longest incoming path. `coneRank` assigns each node `depth = 1 + max(depth of producers)` — the standard topological-rank recurrence — but **restricted to a cone**: only producers inside the supplied node set count, so the rank is computed in O(|cone| + edges-in-cone) via `lib.fix` memoization rather than over the whole graph. Ordering by ascending depth yields a producers-first (reverse-topological) enumeration without building `condensation`.
 - **Neron et al. (2015)** — *A Theory of Name Resolution*. *Implements.* Parent-chain traversal (`ancestorsOf`) follows scope graph P-edge resolution: walking the `parent` partial function upward through scopes corresponds to following P-edges in the resolution calculus (Neron 2015 §2.3). Silent cycle termination chosen over throwing for composability, matching the well-foundedness requirement on the parent relation.
 - **Kahn (1974)** — *The Semantics of a Simple Language for Parallel Programming*. *Informed by.* Continuous functions over streams with deterministic dataflow semantics. gen-graph's lazy accessor pattern — traversal only forces nodes it visits — aligns conceptually with Kahn's model where computing stations produce output incrementally as input arrives, and monotonicity ensures that receiving more input can only provoke more output (Kahn 1974 §2.2.4).
+- **Brzozowski (1964)** — *Derivatives of Regular Expressions*. *Implements.* The labeled-query `follow` kernel steps a Brzozowski derivative of the label regex alongside the graph walk; `deriv l r` and `nullable r` are the classical derivative and nullability functions, so a path's label word is accepted iff folding `deriv` over it lands in a nullable state.
+- **Owens, Reppy & Turon (2009)** — *Regular-expression Derivatives Re-examined*. *Implements.* Derivative states are kept in an ACI-normal form (alternation flattened/sorted/deduplicated, sequence flattened with unit/zero absorption, star collapsed), so the derivative set of any expression is finite and the canonical `stateKey` is a sound seen-set key — this is what makes the `all` mode's (node × derivative-state) product automaton terminate on cyclic graphs.
+- **Néron, Tolmach, Visser & Wachsmuth (2015)** — *A Theory of Name Resolution*. *Implements.* Beyond parent-chain resolution (above), the labeled query surface generalizes scope-graph reachability to arbitrary edge labels: `query`'s `follow` is a reachability regex over labels, and the `visible`/`layers` specificity order generalizes Néron's D < I < P label order.
+- **van Antwerpen, Poulsen, Rouvoet & Visser (2018)** — *Scopes as Types*. *Implements.* The per-query label order carries an end-of-path token: `order.endOfPath` competes against a word's next label rank at exhaustion, so stopping can out- or under-rank continuation (default `-1` = prefix-wins), matching van Antwerpen's per-query ≤ with an end-of-path marker.
