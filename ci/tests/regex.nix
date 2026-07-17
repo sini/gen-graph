@@ -169,6 +169,48 @@ in
         ) == r.stateKey (r.lit "a");
       expected = true;
     };
+    test-alt-associates = {
+      expr =
+        r.stateKey (
+          r.alt [
+            (r.alt [
+              (r.lit "a")
+              (r.lit "b")
+            ])
+            (r.lit "c")
+          ]
+        ) == r.stateKey (
+          r.alt [
+            (r.lit "a")
+            (r.alt [
+              (r.lit "b")
+              (r.lit "c")
+            ])
+          ]
+        );
+      expected = true;
+    };
+    test-seq-associates = {
+      expr =
+        r.stateKey (
+          r.seq [
+            (r.seq [
+              (r.lit "a")
+              (r.lit "b")
+            ])
+            (r.lit "c")
+          ]
+        ) == r.stateKey (
+          r.seq [
+            (r.lit "a")
+            (r.seq [
+              (r.lit "b")
+              (r.lit "c")
+            ])
+          ]
+        );
+      expected = true;
+    };
 
     # finiteness: derivative closure of a star-alt reaches a fixed keyset (bounded)
     test-derivative-space-finite = {
