@@ -210,6 +210,102 @@ let
         };
       };
     };
+
+    # labeled fixtures — a miniature containment/membership world for query tests.
+    #   contains: root→{h1,h2}, h1→{u1,vm1}, vm1→{u2}   (nested depth 3)
+    #   member:   g1→{u1,u2}
+    #   include:  u1→shared
+    labeledFixtures = {
+      world = {
+        labeledEdges =
+          id:
+          {
+            root = [
+              {
+                label = "contains";
+                target = "h1";
+              }
+              {
+                label = "contains";
+                target = "h2";
+              }
+            ];
+            h1 = [
+              {
+                label = "contains";
+                target = "u1";
+              }
+              {
+                label = "contains";
+                target = "vm1";
+              }
+            ];
+            vm1 = [
+              {
+                label = "contains";
+                target = "u2";
+              }
+            ];
+            g1 = [
+              {
+                label = "member";
+                target = "u1";
+              }
+              {
+                label = "member";
+                target = "u2";
+              }
+            ];
+            u1 = [
+              {
+                label = "include";
+                target = "shared";
+              }
+            ];
+          }
+          .${id} or [ ];
+      };
+      # labeled cycle: a -contains-> b -contains-> a, plus a -member-> m
+      cyclic = {
+        labeledEdges =
+          id:
+          {
+            a = [
+              {
+                label = "contains";
+                target = "b";
+              }
+              {
+                label = "member";
+                target = "m";
+              }
+            ];
+            b = [
+              {
+                label = "contains";
+                target = "a";
+              }
+            ];
+          }
+          .${id} or [ ];
+      };
+      # poison: touching node "boom"'s edges throws — laziness witness
+      poisoned = {
+        labeledEdges =
+          id:
+          {
+            a = [
+              {
+                label = "safe";
+                target = "b";
+              }
+            ];
+            b = [ ];
+            boom = throw "poisoned accessor forced";
+          }
+          .${id} or [ ];
+      };
+    };
   };
 in
 self

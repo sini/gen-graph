@@ -8,5 +8,16 @@ let
   registry = import ./registry.nix { inherit prelude; };
   order = import ./order.nix { inherit prelude; };
   regex = import ./regex.nix { inherit prelude; };
+  queryLib = import ./query.nix { inherit prelude; };
 in
-traverse // global // enumerate // edgeMaps // fixpoint // registry // order // { inherit regex; }
+traverse
+// global
+// enumerate
+// edgeMaps
+// fixpoint
+// registry
+// order
+// queryLib
+// {
+  inherit regex;
+}
