@@ -7,5 +7,6 @@ let
   fixpoint = import ./fixpoint.nix { inherit prelude; };
   registry = import ./registry.nix { inherit prelude; };
   order = import ./order.nix { inherit prelude; };
+  regex = import ./regex.nix { inherit prelude; };
 in
-traverse // global // enumerate // edgeMaps // fixpoint // registry // order
+traverse // global // enumerate // edgeMaps // fixpoint // registry // order // { inherit regex; }
