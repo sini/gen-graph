@@ -153,6 +153,151 @@ let
         ]
       else
         first;
+
+  # ── string sugar ──────────────────────────────────────────────────────────
+  # grammar:  expr := seqE ("|" seqE)*        (alternation binds loosest)
+  #           seqE := post+                    (juxtaposition = sequence)
+  #           post := atom ("*" | "?" | "+")?
+  #           atom := LABEL | "_" | "(" expr ")"
+  # LABEL chars: [A-Za-z0-9_-] — but a lone "_" is the any-label wildcard.
+  # Character-level tokenizer + recursive-descent over the token list; index
+  # threaded, no regex builtins (builtins.match over user strings backtracks and
+  # can stack-overflow — see REFERENCE.md).
+  parse =
+    s:
+    let
+      err = m: throw "gen-graph.regex.parse: ${m} (in ${builtins.toJSON s})";
+      n = builtins.stringLength s;
+      isLabelChar =
+        c:
+        (c >= "a" && c <= "z") || (c >= "A" && c <= "Z") || (c >= "0" && c <= "9") || c == "_" || c == "-";
+      # tokenize → [ { t = "label"|"("|")"|"|"|"*"|"?"|"+"; v? } ]
+      tokenize =
+        i:
+        if i >= n then
+          [ ]
+        else
+          let
+            c = builtins.substring i 1 s;
+          in
+          if c == " " || c == "\t" || c == "\n" then
+            tokenize (i + 1)
+          else if c == "(" || c == ")" || c == "|" || c == "*" || c == "?" || c == "+" then
+            [ { t = c; } ] ++ tokenize (i + 1)
+          else if isLabelChar c then
+            let
+              takeEnd = j: if j < n && isLabelChar (builtins.substring j 1 s) then takeEnd (j + 1) else j;
+              e = takeEnd i;
+            in
+            [
+              {
+                t = "label";
+                v = builtins.substring i (e - i) s;
+              }
+            ]
+            ++ tokenize e
+          else
+            err "unexpected character '${c}'";
+      toks = tokenize 0;
+      len = builtins.length toks;
+      at = i: builtins.elemAt toks i;
+
+      # each parser: i → { re; i; }
+      pAtom =
+        i:
+        if i >= len then
+          err "unexpected end of input"
+        else
+          let
+            tok = at i;
+          in
+          if tok.t == "label" then
+            {
+              re = if tok.v == "_" then any else lit tok.v;
+              i = i + 1;
+            }
+          else if tok.t == "(" then
+            let
+              inner = pExpr (i + 1);
+            in
+            if inner.i < len && (at inner.i).t == ")" then
+              {
+                re = inner.re;
+                i = inner.i + 1;
+              }
+            else
+              err "unbalanced parenthesis"
+          else
+            err "unexpected token '${tok.t}'";
+      pPost =
+        i:
+        let
+          a = pAtom i;
+          tok = if a.i < len then (at a.i).t else "";
+        in
+        if tok == "*" then
+          {
+            re = star a.re;
+            i = a.i + 1;
+          }
+        else if tok == "?" then
+          {
+            re = opt a.re;
+            i = a.i + 1;
+          }
+        else if tok == "+" then
+          {
+            re = plus a.re;
+            i = a.i + 1;
+          }
+        else
+          a;
+      startsAtom = i: i < len && ((at i).t == "label" || (at i).t == "(");
+      pSeq =
+        i:
+        let
+          go =
+            acc: j:
+            if startsAtom j then
+              let
+                p = pPost j;
+              in
+              go (acc ++ [ p.re ]) p.i
+            else
+              {
+                re = seq acc;
+                i = j;
+              };
+        in
+        if startsAtom i then go [ ] i else err "expected a label or '('";
+      pExpr =
+        i:
+        let
+          first = pSeq i;
+          go =
+            acc: j:
+            if j < len && (at j).t == "|" then
+              let
+                nxt = pSeq (j + 1);
+              in
+              go (acc ++ [ nxt.re ]) nxt.i
+            else
+              {
+                re = alt acc;
+                i = j;
+              };
+        in
+        go [ first.re ] first.i;
+      result =
+        if toks == [ ] then
+          {
+            re = eps;
+            i = 0;
+          }
+        else
+          pExpr 0;
+    in
+    if result.i == len then result.re else err "trailing tokens";
 in
 {
   inherit
@@ -168,5 +313,6 @@ in
     nullable
     deriv
     stateKey
+    parse
     ;
 }

@@ -243,5 +243,62 @@ in
         builtins.length (builtins.attrNames all) < 12;
       expected = true;
     };
+
+    # string sugar — parse must agree with the constructor AST (canonical keys equal)
+    test-parse-spec-example = {
+      expr =
+        r.stateKey (r.parse "contains* nest?") == r.stateKey (
+          r.seq [
+            (r.star (r.lit "contains"))
+            (r.opt (r.lit "nest"))
+          ]
+        );
+      expected = true;
+    };
+    test-parse-alt-loosest = {
+      expr =
+        r.stateKey (r.parse "a | b c") == r.stateKey (
+          r.alt [
+            (r.lit "a")
+            (r.seq [
+              (r.lit "b")
+              (r.lit "c")
+            ])
+          ]
+        );
+      expected = true;
+    };
+    test-parse-parens = {
+      expr =
+        r.stateKey (r.parse "(a | b) c") == r.stateKey (
+          r.seq [
+            (r.alt [
+              (r.lit "a")
+              (r.lit "b")
+            ])
+            (r.lit "c")
+          ]
+        );
+      expected = true;
+    };
+    test-parse-any = {
+      expr = r.stateKey (r.parse "_") == r.stateKey r.any;
+      expected = true;
+    };
+    test-parse-empty-is-eps = {
+      expr = r.stateKey (r.parse "") == r.stateKey r.eps;
+      expected = true;
+    };
+    test-parse-plus = {
+      expr = accepts (r.parse "hop+") [
+        "hop"
+        "hop"
+      ];
+      expected = true;
+    };
+    test-parse-unbalanced-throws = {
+      expr = (builtins.tryEval (r.stateKey (r.parse "(a"))).success;
+      expected = false;
+    };
   };
 }
