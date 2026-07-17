@@ -243,5 +243,27 @@ in
         path = [ ];
       };
     };
+    test-paths-vs-all-self-loop-divergence = {
+      # a self-loop witness needs a node revisit: `all` answers it ((node × state)
+      # product), `paths` enumerates acyclic witnesses only — the documented
+      # asymmetry, pinned so a visited-keying change can't silently move it.
+      expr =
+        let
+          g = labeledFrom { hop = id: { s = [ "s" ]; }.${id} or [ ]; };
+          common = {
+            graph = g;
+            from = "s";
+            follow = r.parse "hop";
+          };
+        in
+        {
+          all = query (common // { mode = "all"; });
+          paths = query (common // { mode = "paths"; });
+        };
+      expected = {
+        all = [ "s" ];
+        paths = [ ];
+      };
+    };
   };
 }

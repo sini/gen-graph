@@ -3,8 +3,10 @@
 # arbitrary edge labels). The engine steps a Brzozowski derivative alongside
 # the graph walk; the seen-set keys on (node, canonical-derivative) pairs, so
 # cyclic graphs terminate because ACI-normalized derivative sets are finite
-# (Owens, Reppy & Turon 2009). `all` mode is genericClosure-backed (C-level,
-# no path materialization); witness-carrying modes live beside it.
+# (Owens, Reppy & Turon 2009) — that is the `all` engine; witness modes
+# terminate by acyclic path enumeration instead. `all` mode is
+# genericClosure-backed (C-level, no path materialization); witness-carrying
+# modes live beside it.
 { prelude }:
 let
   regex = import ./regex.nix { inherit prelude; };
