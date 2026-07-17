@@ -384,6 +384,7 @@ fromRegistry : { registry, edges, parent? } → accessorRecord
 field        : name → id → entry → [id]
 fields       : [name] → id → entry → [id]
 fixtures     : { diamond, chain, cyclic, tree, serviceGraph, disconnected }
+labeledFixtures : { world, cyclic, poisoned }   # { labeledEdges; } records for labeled queries
 ```
 
 **`mkGraph`** — takes declarative `{ from; to; }` edge lists and returns a valid accessor record with all four fields populated.
