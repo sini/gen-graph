@@ -237,6 +237,31 @@ let
     in
     map (k: keyed.${k}) (builtins.sort less words);
 
+  # Fold a combining operation over a query's answer set, in canonical
+  # (sorted-node) order. The caller's (empty, combine) is expected to be a
+  # commutative-idempotent monoid — under those laws the canonical order is
+  # unobservable (Arntzenius & Krishnaswami's Datafun restricts fixpoints to
+  # bounded join-semilattices for exactly this reason). Recursive node-valued
+  # fixpoints (a node's value depending on neighbors' values) are fixpoint.nix
+  # territory, not this fold.
+  queryFold =
+    args@{
+      empty,
+      combine,
+      valueOf ? (id: id),
+      ...
+    }:
+    builtins.foldl' (acc: id: combine acc (valueOf id)) empty (
+      queryAll (
+        builtins.removeAttrs args [
+          "empty"
+          "combine"
+          "valueOf"
+          "mode" # `query { mode = "fixpoint"; … }` dispatches here — strip the alias
+        ]
+      )
+    );
+
   # ── THE complete mode dispatch (final form) ────────────────────────────────
   query =
     args@{
@@ -259,10 +284,12 @@ let
     else if mode == "layers" then
       queryLayers (builtins.removeAttrs args [ "mode" ])
     else if mode == "fixpoint" then
-      throw "gen-graph.query: fixpoint mode lands with queryFold"
+      # fixpoint consumption IS the ACI fold — the mode string dispatches to it;
+      # lawfulness (commutative-idempotent combine) is the caller's contract
+      queryFold (builtins.removeAttrs args [ "mode" ])
     else
       throw "gen-graph.query: unknown mode '${mode}'";
 in
 {
-  inherit labeledFrom query;
+  inherit labeledFrom query queryFold;
 }

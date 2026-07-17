@@ -423,5 +423,103 @@ in
         map (a: a.node) res.visible;
       expected = [ "near" ];
     };
+    test-visible-empty-answers = {
+      # degenerate: no reachable answers — {[];[]} without a head-of-empty throw
+      # (the guard is groupBy dropping empty groups; pin the invariant)
+      expr = query {
+        graph = labeledFixtures.world;
+        from = "root";
+        follow = r.parse "contains";
+        mode = "visible";
+        where = _: false;
+      };
+      expected = {
+        visible = [ ];
+        shadowed = [ ];
+      };
+    };
+    test-visible-eop-tie-covisible = {
+      # endOfPath rank EQUAL to a label rank: incomparable-as-equal — both answers visible
+      expr =
+        let
+          g = labeledFrom {
+            hop =
+              id:
+              {
+                s = [ "n1" ];
+                n1 = [ "n2" ];
+              }
+              .${id} or [ ];
+          };
+          res = query {
+            graph = g;
+            from = "s";
+            follow = r.parse "hop hop?";
+            mode = "visible";
+            order = {
+              labels = [ "hop" ];
+              endOfPath = 0;
+            };
+            groupBy = _: "g";
+          };
+        in
+        map (a: a.node) res.visible;
+      expected = [
+        "n1"
+        "n2"
+      ];
+    };
+    test-fold-group-closure = {
+      # groups include groups; effective members = fold over member closure
+      expr =
+        let
+          g = labeledFrom {
+            includes = id: { admins = [ "wheel" ]; }.${id} or [ ];
+            member =
+              id:
+              {
+                admins = [ "sini" ];
+                wheel = [ "root-u" ];
+              }
+              .${id} or [ ];
+          };
+        in
+        genGraph.queryFold {
+          graph = g;
+          from = "admins";
+          follow = r.parse "includes* member";
+          empty = [ ];
+          combine = acc: u: acc ++ [ u ];
+        };
+      expected = [
+        "root-u"
+        "sini"
+      ];
+    };
+    test-fold-empty-answers = {
+      expr = genGraph.queryFold {
+        graph = labeledFixtures.world;
+        from = "u2";
+        follow = r.parse "member";
+        empty = 0;
+        combine = a: _: a + 1;
+      };
+      expected = 0;
+    };
+    test-fixpoint-mode-aliases-fold = {
+      # the spec-surface mode string dispatches to the same fold
+      expr =
+        let
+          common = {
+            graph = labeledFixtures.world;
+            from = "g1";
+            follow = r.parse "member";
+            empty = 0;
+            combine = a: _: a + 1;
+          };
+        in
+        query (common // { mode = "fixpoint"; }) == genGraph.queryFold common;
+      expected = true;
+    };
   };
 }
