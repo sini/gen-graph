@@ -265,5 +265,163 @@ in
         paths = [ ];
       };
     };
+    test-visible-nearest-wins = {
+      # x declared at own scope AND reachable via include: own wins, include shadowed
+      expr =
+        let
+          g = labeledFrom {
+            own = id: { s = [ "x@s" ]; }.${id} or [ ];
+            include = id: { s = [ "t" ]; }.${id} or [ ];
+            owni = id: { t = [ "x@t" ]; }.${id} or [ ];
+          };
+          # follow: own | include owni  (a declaration here, or one hop through an include)
+          res = query {
+            graph = g;
+            from = "s";
+            follow = r.parse "own | include owni";
+            mode = "visible";
+            order.labels = [
+              "own"
+              "include"
+              "owni"
+            ];
+            groupBy = _: "decl"; # both answers compete for one name
+          };
+        in
+        {
+          visible = map (a: a.node) res.visible;
+          shadowed = map (a: a.node) res.shadowed;
+        };
+      expected = {
+        visible = [ "x@s" ];
+        shadowed = [ "x@t" ];
+      };
+    };
+    test-visible-default-group-no-cross-shadow = {
+      # default groupBy = node: distinct nodes both visible
+      expr =
+        let
+          g = labeledFrom {
+            own = id: { s = [ "a" ]; }.${id} or [ ];
+            include = id: { s = [ "b" ]; }.${id} or [ ];
+          };
+          res = query {
+            graph = g;
+            from = "s";
+            follow = r.parse "own | include";
+            mode = "visible";
+            order.labels = [
+              "own"
+              "include"
+            ];
+          };
+        in
+        builtins.sort builtins.lessThan (map (a: a.node) res.visible);
+      expected = [
+        "a"
+        "b"
+      ];
+    };
+    test-visible-prefix-beats-extension = {
+      # same group, one answer at depth 1 and one at depth 2 through equal-rank labels:
+      # the shorter (more direct) wins
+      expr =
+        let
+          g = labeledFrom {
+            hop =
+              id:
+              {
+                s = [ "n1" ];
+                n1 = [ "n2" ];
+              }
+              .${id} or [ ];
+          };
+          res = query {
+            graph = g;
+            from = "s";
+            follow = r.parse "hop hop?";
+            mode = "visible";
+            order.labels = [ "hop" ];
+            groupBy = _: "g";
+          };
+        in
+        map (a: a.node) res.visible;
+      expected = [ "n1" ];
+    };
+    test-layers-cascade-order = {
+      # layers: own layer before include layer before parent layer
+      expr =
+        let
+          g = labeledFrom {
+            own = id: { s = [ "l-own" ]; }.${id} or [ ];
+            include = id: { s = [ "l-inc" ]; }.${id} or [ ];
+            parent = id: { s = [ "l-par" ]; }.${id} or [ ];
+          };
+          res = query {
+            graph = g;
+            from = "s";
+            follow = r.parse "own | include | parent";
+            mode = "layers";
+            order.labels = [
+              "own"
+              "include"
+              "parent"
+            ];
+          };
+        in
+        map (layer: map (a: a.node) layer) res;
+      expected = [
+        [ "l-own" ]
+        [ "l-inc" ]
+        [ "l-par" ]
+      ];
+    };
+    test-visible-endofpath-continuation-wins = {
+      # endOfPath ranked WORSE than the label: continuing beats stopping — n2 wins over n1
+      expr =
+        let
+          g = labeledFrom {
+            hop =
+              id:
+              {
+                s = [ "n1" ];
+                n1 = [ "n2" ];
+              }
+              .${id} or [ ];
+          };
+          res = query {
+            graph = g;
+            from = "s";
+            follow = r.parse "hop hop?";
+            mode = "visible";
+            order = {
+              labels = [ "hop" ];
+              endOfPath = 5;
+            };
+            groupBy = _: "g";
+          };
+        in
+        map (a: a.node) res.visible;
+      expected = [ "n2" ];
+    };
+    test-visible-unlisted-label-ranks-last = {
+      expr =
+        let
+          g = labeledFrom {
+            own = id: { s = [ "near" ]; }.${id} or [ ];
+            exotic = id: { s = [ "far" ]; }.${id} or [ ];
+          };
+          res = query {
+            graph = g;
+            from = "s";
+            follow = r.parse "own | exotic";
+            mode = "visible";
+            order.labels = [ "own" ];
+            groupBy = _: "g";
+          };
+        in
+        map (a: a.node) res.visible;
+      expected = [ "near" ];
+    };
   };
 }

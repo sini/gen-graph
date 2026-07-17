@@ -132,15 +132,134 @@ let
     in
     go { ${from} = true; } [ ] from follow;
 
+  # ── per-query label order (Néron et al. specificity; van Antwerpen et al.
+  # per-query ≤ with an end-of-path token): compare witness paths
+  # lexicographically on label ranks; when one word is exhausted, its
+  # end-of-path rank competes against the other word's next label rank —
+  # the default endOfPath = -1 makes stopping outrank everything (a proper
+  # prefix beats its extensions); a higher endOfPath lets continuation on
+  # lower-ranked labels beat stopping. ──
+  ranksOf =
+    order:
+    (builtins.foldl'
+      (acc: l: {
+        i = acc.i + 1;
+        m = acc.m // {
+          ${l} = acc.i;
+        };
+      })
+      {
+        i = 0;
+        m = { };
+      }
+      (order.labels or [ ])
+    ).m;
+
+  rankOf = order: label: (ranksOf order).${label} or (builtins.length (order.labels or [ ]));
+
+  rankWordOf = order: path: map (p: rankOf order p.label) path;
+
+  # strict word comparison with the end-of-path rank at exhaustion
+  wordLess =
+    eop: wa: wb:
+    let
+      la = builtins.length wa;
+      lb = builtins.length wb;
+      go =
+        i:
+        if i >= la && i >= lb then
+          false # equal words
+        else if i >= la then
+          eop < builtins.elemAt wb i # a stopped; a wins iff stopping outranks b's continuation
+        else if i >= lb then
+          builtins.elemAt wa i < eop # b stopped; a wins iff its continuation outranks stopping
+        else if builtins.elemAt wa i < builtins.elemAt wb i then
+          true
+        else if builtins.elemAt wa i > builtins.elemAt wb i then
+          false
+        else
+          go (i + 1);
+    in
+    go 0;
+
+  pathLess =
+    order: pa: pb:
+    wordLess (order.endOfPath or (-1)) (rankWordOf order pa) (rankWordOf order pb);
+
+  queryVisible =
+    args@{
+      order ? {
+        labels = [ ];
+      },
+      groupBy ? (ans: ans.node),
+      ...
+    }:
+    let
+      answers = queryPaths (
+        builtins.removeAttrs args [
+          "order"
+          "groupBy"
+        ]
+      );
+      groups = builtins.groupBy groupBy answers;
+      split =
+        anss:
+        let
+          sorted' = builtins.sort (a: b: pathLess order a.path b.path) anss;
+          best = builtins.head sorted';
+          isMin = a: !(pathLess order best.path a.path);
+        in
+        {
+          visible = builtins.filter isMin sorted';
+          shadowed = builtins.filter (a: pathLess order best.path a.path) sorted';
+        };
+      parts = builtins.mapAttrs (_: split) groups;
+      names = builtins.sort builtins.lessThan (builtins.attrNames parts);
+    in
+    {
+      visible = builtins.concatMap (k: parts.${k}.visible) names;
+      shadowed = builtins.concatMap (k: parts.${k}.shadowed) names;
+    };
+
+  queryLayers =
+    args@{
+      order ? {
+        labels = [ ];
+      },
+      ...
+    }:
+    let
+      answers = queryPaths (builtins.removeAttrs args [ "order" ]);
+      # layer key = the rank word as JSON (parses back losslessly; no digit-string fragility)
+      keyed = builtins.groupBy (ans: builtins.toJSON (rankWordOf order ans.path)) answers;
+      words = builtins.attrNames keyed;
+      less = ka: kb: wordLess (order.endOfPath or (-1)) (builtins.fromJSON ka) (builtins.fromJSON kb);
+    in
+    map (k: keyed.${k}) (builtins.sort less words);
+
+  # ── THE complete mode dispatch (final form) ────────────────────────────────
   query =
     args@{
       mode ? "all",
       ...
     }:
+    let
+      core = builtins.removeAttrs args [
+        "mode"
+        "order"
+        "groupBy"
+      ];
+    in
     if mode == "all" then
-      queryAll (builtins.removeAttrs args [ "mode" ])
+      queryAll core
     else if mode == "paths" then
-      queryPaths (builtins.removeAttrs args [ "mode" ])
+      queryPaths core
+    else if mode == "visible" then
+      queryVisible (builtins.removeAttrs args [ "mode" ])
+    else if mode == "layers" then
+      queryLayers (builtins.removeAttrs args [ "mode" ])
+    else if mode == "fixpoint" then
+      throw "gen-graph.query: fixpoint mode lands with queryFold"
     else
       throw "gen-graph.query: unknown mode '${mode}'";
 in
