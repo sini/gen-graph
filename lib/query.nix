@@ -51,23 +51,32 @@ let
             e:
             let
               st' = regex.deriv e.label item.st;
+              k = regex.stateKey st';
             in
-            if regex.stateKey st' == "0" then
+            if k == "0" then
               [ ]
             else
               [
                 {
-                  key = keyOf e.target st';
+                  key = builtins.toJSON [
+                    e.target
+                    k
+                  ];
                   node = e.target;
                   st = st';
                 }
               ]
           ) (graph.labeledEdges item.node);
       };
-      answers = builtins.foldl' (
-        acc: item:
-        if regex.nullable item.st && where item.node then acc // { ${item.node} = true; } else acc
-      ) { } closure;
+      # answers are a SET of node ids: listToAttrs is first-wins on duplicate
+      # names, so distinct derivative states reaching the same node collapse to
+      # one entry, and attrNames stays sorted.
+      answers = builtins.listToAttrs (
+        map (item: {
+          name = item.node;
+          value = true;
+        }) (builtins.filter (item: regex.nullable item.st && where item.node) closure)
+      );
     in
     builtins.attrNames answers;
 

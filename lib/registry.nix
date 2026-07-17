@@ -289,7 +289,9 @@ let
           }
           .${id} or [ ];
       };
-      # poison: touching node "boom"'s edges throws — laziness witness
+      # poison: touching node "boom"'s edges throws — laziness witness. boom has
+      # an incoming edge (label "other"), so only the derivative-empty prune (a
+      # follow that derives empty on "other") keeps boom's accessor unforced.
       poisoned = {
         labeledEdges =
           id:
@@ -298,6 +300,10 @@ let
               {
                 label = "safe";
                 target = "b";
+              }
+              {
+                label = "other";
+                target = "boom";
               }
             ];
             b = [ ];

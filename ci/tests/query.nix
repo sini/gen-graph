@@ -156,5 +156,19 @@ in
       };
       expected = [ "b" ];
     };
+    test-all-dedup-across-nullable-states = {
+      # n reached in TWO distinct nullable derivative states (residuals e and (e|'z));
+      # answers are a SET — one entry. Also covers parallel same-target edges.
+      expr = query {
+        graph = labeledFrom {
+          x = id: { s = [ "n" ]; }.${id} or [ ];
+          y = id: { s = [ "n" ]; }.${id} or [ ];
+        };
+        from = "s";
+        follow = r.parse "x | y z?";
+        mode = "all";
+      };
+      expected = [ "n" ];
+    };
   };
 }
