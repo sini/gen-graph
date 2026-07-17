@@ -170,5 +170,78 @@ in
       };
       expected = [ "n" ];
     };
+    test-paths-witness-shape = {
+      expr = query {
+        graph = labeledFixtures.world;
+        from = "g1";
+        follow = r.parse "member include";
+        mode = "paths";
+      };
+      expected = [
+        {
+          node = "shared";
+          path = [
+            {
+              label = "member";
+              from = "g1";
+              to = "u1";
+            }
+            {
+              label = "include";
+              from = "u1";
+              to = "shared";
+            }
+          ];
+        }
+      ];
+    };
+    test-paths-diamond-both-witnesses = {
+      expr =
+        let
+          g = labeledFrom {
+            e =
+              id:
+              {
+                a = [
+                  "b"
+                  "c"
+                ];
+                b = [ "d" ];
+                c = [ "d" ];
+              }
+              .${id} or [ ];
+          };
+          res = query {
+            graph = g;
+            from = "a";
+            follow = r.parse "e e";
+            mode = "paths";
+          };
+        in
+        builtins.length (builtins.filter (ans: ans.node == "d") res);
+      expected = 2;
+    };
+    test-paths-cycle-terminates = {
+      expr = builtins.length (query {
+        graph = labeledFixtures.cyclic;
+        from = "a";
+        follow = r.parse "contains* member";
+        mode = "paths";
+      });
+      expected = 1;
+    };
+    test-paths-nullable-start = {
+      expr = builtins.head (query {
+        graph = labeledFixtures.world;
+        from = "root";
+        follow = r.parse "contains*";
+        mode = "paths";
+        where = id: id == "root";
+      });
+      expected = {
+        node = "root";
+        path = [ ];
+      };
+    };
   };
 }

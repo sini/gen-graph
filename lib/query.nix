@@ -80,6 +80,56 @@ let
     in
     builtins.attrNames answers;
 
+  # `paths` mode: witness-carrying DFS. Enumerates ACYCLIC paths only (the
+  # pathsBetween precedent) with derivative pruning; enumeration-priced —
+  # use `all` for scale, `paths` when the witness itself is the product
+  # (resolution traces, shadowing explanations).
+  queryPaths =
+    {
+      graph,
+      from,
+      follow,
+      where ? (_: true),
+    }:
+    let
+      go =
+        visited: pathAcc: node: st:
+        let
+          here =
+            if regex.nullable st && where node then
+              [
+                {
+                  inherit node;
+                  path = pathAcc;
+                }
+              ]
+            else
+              [ ];
+          steps = builtins.concatMap (
+            e:
+            let
+              st' = regex.deriv e.label st;
+            in
+            if regex.stateKey st' == "0" || visited ? ${e.target} then
+              [ ]
+            else
+              go (visited // { ${e.target} = true; }) (
+                # witness step built in its final shape — no post-hoc strip
+                pathAcc
+                ++ [
+                  {
+                    inherit (e) label;
+                    from = node;
+                    to = e.target;
+                  }
+                ]
+              ) e.target st'
+          ) (graph.labeledEdges node);
+        in
+        here ++ steps;
+    in
+    go { ${from} = true; } [ ] from follow;
+
   query =
     args@{
       mode ? "all",
@@ -87,6 +137,8 @@ let
     }:
     if mode == "all" then
       queryAll (builtins.removeAttrs args [ "mode" ])
+    else if mode == "paths" then
+      queryPaths (builtins.removeAttrs args [ "mode" ])
     else
       throw "gen-graph.query: unknown mode '${mode}'";
 in
