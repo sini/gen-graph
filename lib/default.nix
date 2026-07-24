@@ -7,6 +7,7 @@ let
   fixpoint = import ./fixpoint.nix { inherit prelude; };
   registry = import ./registry.nix { inherit prelude; };
   order = import ./order.nix { inherit prelude; };
+  preorder = import ./preorder.nix { inherit prelude; };
   regex = import ./regex.nix { inherit prelude; };
   queryLib = import ./query.nix { inherit prelude; };
 in
@@ -17,6 +18,7 @@ traverse
 // fixpoint
 // registry
 // order
+// preorder
 // queryLib
 // {
   inherit regex;

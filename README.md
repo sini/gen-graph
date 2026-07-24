@@ -164,6 +164,82 @@ graph.pathsBetween g "a" "d"
 # → [ [ "a" "b" "d" ] [ "a" "c" "d" ] ]   # diamond
 ```
 
+### Pre-order Traversal (ordered, payload-carrying)
+
+`reachableFrom` is C-level but BFS, single-keyed and payload-blind — it returns a *set*, in
+no guaranteed order, with no way to expose the traversed edge or carry a projection. These
+combinators are the missing **DFS pre-order**, **payload-carrying**, **edge-exposing** dual:
+a frame is folded before its children, siblings in list order, each frame visited once (first
+occurrence wins) via a threaded visited attrset. They visit only what they reach, and a
+frame's successors may be **demand-generated** (forced only when the frame is reached).
+
+```
+foldPreorder   : { roots; key; expand; acc; visited? }                              → { acc; visited }
+expandPreorder : { roots; key; edges; resolve?; emit?; seen0?; nodes0? }            → { nodes; seen }
+foldReach      : { roots; edges; target; project; itemKey; visited0?; seen0?; nodes0? } → { nodes; seen; visited }
+```
+
+**`foldPreorder`** — the primitive. A pre-order DFS fold with a caller-owned accumulator and a
+first-occurrence visited set. `key frame` is the cycle-guard/dedup key (a `null` key is never
+guarded); `expand acc frame → { acc; children? }` folds this frame in and yields its child
+frames; `visited` seeds the guard set (a pre-seeded key prunes that frame's subtree without
+forcing it). `expandPreorder` and `foldReach` are thin specializations of it.
+
+```nix
+# classify a nested include tree into two buckets, cycle-guarded by .key
+graph.foldPreorder {
+  roots  = [ rootNode ];
+  key    = v: v.key or null;
+  acc    = { recs = [ ]; bares = [ ]; };
+  expand = acc: v: {
+    acc = { recs = acc.recs ++ policyIncludes v; bares = acc.bares ++ bareIncludes v; };
+    children = subRecords v;
+  };
+}
+```
+
+**`expandPreorder`** — payload-carrying DFS-preorder closure. Folds `emit frame (resolve frame)`
+in first-occurrence pre-order into an ordered witness list. `resolve` is the (possibly
+parametric) node force; `edges` reads the **resolved** payload's successors, so a node's
+children can be demand-generated (they exist only after `resolve` invokes it). One key set —
+`key frame` both cycle-guards and dedups. `seen0`/`nodes0` seed the guard set and the witness
+list.
+
+```nix
+graph.expandPreorder {
+  roots   = aspectList;
+  key     = a: a.key;
+  resolve = a: if a.__isWrappedFn or false then a ctx else a;   # parametric invoke
+  edges   = concrete: concrete.includes or [ ];                  # demand-generated
+  emit    = a: concrete: { inherit (a) key; content = concrete; };
+  seen0   = droppedKeys;
+}
+# → { nodes = [ … witness, pre-order … ]; seen = { … }; }
+```
+
+**`foldReach`** — labeled, suppression-aware, transitive reach fold. Folds over labeled
+**edges**, each carrying a `target` vertex and a projection label; `project edge → [item]` is
+the per-edge content projection with the whole edge **exposed** (so it can slice the target's
+content by the edge's label — one edge → many items). Negative-edge **suppression** is expressed
+by the `edges` accessor itself (return a vertex's edges minus the suppressed ones), so the fold
+is suppression-aware by construction. Two key sets, because one vertex projects many items:
+`target edge` cycle-guards the vertex DFS (`visited0`), `itemKey item` first-occurrence-dedups
+the witness across vertices (`seen0`; a `null` item key is kept, never deduped).
+
+```nix
+graph.foldReach {
+  roots    = edgesAt startId;                 # edgesAt bakes in suppression
+  edges    = edgesAt;
+  target   = e: e.target;
+  project  = e: builtins.filter (classFilter e) (contentAt e.target);   # per-edge label projection
+  itemKey  = n: n.key;
+  visited0 = { ${startId} = true; };
+  seen0    = structuralKeys;                   # structural component already emitted
+  nodes0   = structuralNodes;
+}
+# → { nodes = [ … ordered witness … ]; seen = { … }; visited = { … }; }
+```
+
 ### Global Analysis (materializes internally)
 
 These functions enumerate all nodes. They require both `edges` and `nodes`.
@@ -658,8 +734,8 @@ nix flake check --override-input gen-graph . ./ci        # all suites
 nix flake check --override-input gen-graph . ./ci 2>&1   # with test output
 ```
 
-**214 tests** across **12 suites** (`edge-maps`, `enumerate`, `fixpoint`, `global`,
-`integration`, `order`, `purity`, `query`, `regex`, `registry`, `topo`, `traverse`), run under
+**232 tests** across **13 suites** (`edge-maps`, `enumerate`, `fixpoint`, `global`,
+`integration`, `order`, `preorder`, `purity`, `query`, `regex`, `registry`, `topo`, `traverse`), run under
 [nix-unit](https://github.com/nix-community/nix-unit) via the gen CI harness
 (`gen.lib.mkCi`). The `purity` suite asserts the library source stays nixpkgs-lib-free
 (gen-prelude only).
@@ -672,7 +748,9 @@ The algorithms and design principles draw from:
 - **Arntzenius & Krishnaswami (2016)** — *Datafun: A Functional Datalog*. *Implements.* Monotone fixpoint iteration with convergence guarantees. The `fixpoint` operator enforces monotonicity (edge count must not shrink between iterations), matching Datafun's requirement that fixpoint computations operate over monotone functions on semilattices. Reverse reachability in `dependents`/`dependentsOf` follows the Datafun reverse-query pattern. `directDependents`/`directDependentsOf` expose the underlying reverse-adjacency index directly: the **immediate** reverse neighbours (one edge), in contrast to `dependentsOf`'s **transitive** reverse closure — the distinction matters when a consumer must enumerate only its direct producers' dependents without re-materializing the whole reverse cone.
 - **Tarjan (1983)** — *Data Structures and Network Algorithms (RTD)*. *Implements.* Topological rank by longest incoming path. `coneRank` assigns each node `depth = 1 + max(depth of producers)` — the standard topological-rank recurrence — but **restricted to a cone**: only producers inside the supplied node set count, so the rank is computed in O(|cone| + edges-in-cone) via `lib.fix` memoization rather than over the whole graph. Ordering by ascending depth yields a producers-first (reverse-topological) enumeration without building `condensation`.
 - **Neron et al. (2015)** — *A Theory of Name Resolution*. *Implements.* Parent-chain traversal (`ancestorsOf`) follows scope graph P-edge resolution: walking the `parent` partial function upward through scopes corresponds to following P-edges in the resolution calculus (Neron 2015 §2.3). Silent cycle termination chosen over throwing for composability, matching the well-foundedness requirement on the parent relation.
-- **Kahn (1974)** — *The Semantics of a Simple Language for Parallel Programming*. *Informed by.* Continuous functions over streams with deterministic dataflow semantics. gen-graph's lazy accessor pattern — traversal only forces nodes it visits — aligns conceptually with Kahn's model where computing stations produce output incrementally as input arrives, and monotonicity ensures that receiving more input can only provoke more output (Kahn 1974 §2.2.4).
+- **Kahn (1974)** — *The Semantics of a Simple Language for Parallel Programming*. *Informed by.* Continuous functions over streams with deterministic dataflow semantics. gen-graph's lazy accessor pattern — traversal only forces nodes it visits — aligns conceptually with Kahn's model where computing stations produce output incrementally as input arrives, and monotonicity ensures that receiving more input can only provoke more output (Kahn 1974 §2.2.4). The pre-order combinators (`preorder.nix`) make this demand property load-bearing: `expandPreorder`'s `edges` read the *resolved* payload, so a node's successors are demand-generated, and a `seen0`-pruned frame is never forced.
+- **Tarjan (1972)** — *Depth-First Search and Linear Graph Algorithms*. *Implements.* Beyond the SCC/condensation use, the pre-order traversal combinators (`foldPreorder`, `expandPreorder`, `foldReach`) fold in DFS pre-order — a frame before its children, siblings in list order, each frame visited once via a first-occurrence visited set. First-occurrence is Tarjan's pre-order discovery numbering; `genericClosure` (BFS, single-keyed, payload-blind) structurally cannot express the order, payload or edge exposure these carry.
+- **Meijer, Fokkinga & Paterson (1991)** — *Functional Programming with Bananas, Lenses, Envelopes and Barbed Wire*. *Informed by.* `foldPreorder` has the shape of a hylomorphism: the visited-set coalgebra unfolds the (possibly cyclic) graph into its finite DFS spanning forest, which `expand` folds (catamorphism) into the accumulator. `expandPreorder` and `foldReach` specialize that accumulator to an ordered witness list — an ordered, payload-carrying fold rather than a set-returning closure.
 - **Brzozowski (1964)** — *Derivatives of Regular Expressions*. *Implements.* The labeled-query `follow` kernel steps a Brzozowski derivative of the label regex alongside the graph walk; `deriv l r` and `nullable r` are the classical derivative and nullability functions, so a path's label word is accepted iff folding `deriv` over it lands in a nullable state.
 - **Owens, Reppy & Turon (2009)** — *Regular-expression Derivatives Re-examined*. *Implements.* Derivative states are kept in an ACI-normal form (alternation flattened/sorted/deduplicated, sequence flattened with unit/zero absorption, star collapsed), so the derivative set of any expression is finite and the canonical `stateKey` is a sound seen-set key — this is what makes the `all` mode's (node × derivative-state) product automaton terminate on cyclic graphs.
 - **Néron, Tolmach, Visser & Wachsmuth (2015)** — *A Theory of Name Resolution*. *Implements.* Beyond parent-chain resolution (above), the labeled query surface generalizes scope-graph reachability to arbitrary edge labels: `query`'s `follow` is a reachability regex over labels, and the `visible`/`layers` specificity order generalizes Néron's D < I < P label order.
