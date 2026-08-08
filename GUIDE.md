@@ -392,7 +392,7 @@ g = {
 | "What depends on X?" (one X) | `dependentsOf` | O(n + reachable) |
 | "What depends on X, Y, Z?" | `dependents` × 1 | O(n²) amortized |
 | "Is this node in a cycle?" | `selfReachable` | O(reachable from node) |
-| "List all cycles" | `cycles` | O(n × reachable), C-level |
+| "List all cycles" | `cycles` | C-level; O(n × reachable) only at bounded out-degree, Θ(n³) on a dense graph |
 | "Entry points" | `roots` | O(n × degree) |
 | "Minimal diagram" | `transitiveReduction` | O(n²) — needs closure |
 | "All paths A→B" | `pathsBetween` | O(paths) — small subgraphs only |

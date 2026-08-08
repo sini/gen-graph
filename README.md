@@ -707,7 +707,7 @@ in {
 | `materialize` | O(nodes × avg degree) | one-time scan |
 | `transitiveClosure` | O(nodes² × iterations) | fixpoint over materialized map |
 | `transitiveReduction` | O(nodes² × degree) | needs full closure; O(1) membership via attrsets |
-| `cycles` | O(nodes × reachable) | per-node C-level BFS (no full closure needed) |
+| `cycles` | `Θ(Σ_v Σ_{u ∈ reach v} (1 + outdeg u))` — i.e. O(nodes × reachable) only where out-degree is **bounded**; Θ(n³) on a complete DAG | per-node C-level BFS (no full closure needed). The per-visit cost is O(1 + outdeg), not O(1), because `selfReachable`'s `genericClosure` operator re-reads `edges` at every visit |
 | `cyclePaths` | O(nodes × reachable) on a DAG; + O(n²) condensation and simple-path search once cyclic | short-circuits before any path work when acyclic |
 | `dependents` | O(nodes²) | full transitive closure + transpose |
 | `dependentsOf` | O(nodes + reachable) | reverse index + C-level BFS |
@@ -757,7 +757,7 @@ genGraph.reachableFrom { edges = id: result.get id "imports"; } "host:igloo"
 | "Can A reach B?" | `canReach` (O(reachable)) | `dependents` (O(n²)) |
 | "What depends on X?" (one target) | `dependentsOf` (O(n + reachable)) | `dependents` (O(n²)) |
 | "What depends on X, Y, Z?" (multi-target) | `dependents` (O(n²) amortized) | `dependentsOf` × 3 (rebuilds index 3×) |
-| "Is there a cycle?" | `cycles` (O(n × reachable), C-level) | `transitiveClosure` (O(n²)) |
+| "Is there a cycle?" | `cycles` (C-level; O(n × reachable) at bounded out-degree, Θ(n³) on a dense graph — see Performance) | `transitiveClosure` (O(n²)) |
 | "Which loop, in order, for a message?" | `cyclePaths` (free on a DAG) | hand-rolled DFS per node (enumerates every simple path even when acyclic) |
 | "All paths between A and B" | `pathsBetween` (DFS) | Only for small subgraphs |
 | "Full closure for analysis" | `transitiveClosure` | — (use when you genuinely need it) |
@@ -769,12 +769,12 @@ For 10,000+ node fleets, partition the graph by environment/datacenter before ru
 
 ```nix
 # Instead of:
-graph.cycles { edges; nodes = ALL_10K_NODES; }  # O(10K × reachable)
+graph.cycles { edges; nodes = ALL_10K_NODES; }  # O(10K × reachable) at bounded out-degree; Θ(n³) dense
 
 # Partition first:
 lib.concatMap (partition:
   graph.cycles { inherit edges; nodes = partition; }
-) (partitionByEnvironment allNodes)  # 20 × O(500 × reachable)
+) (partitionByEnvironment allNodes)  # 20 × O(500 × reachable) — and 20 × Θ((n/20)³) dense
 ```
 
 Cross-partition edges are rare in practice. Per-partition analysis is typically 100-400x faster than whole-fleet.

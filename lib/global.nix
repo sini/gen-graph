@@ -53,7 +53,11 @@ let
   # Nodes in any cycle (self-reachable): a node is in a cycle iff it is
   # reachable from itself. Standard cycle detection.
   # Uses genericClosure per-node (C-level BFS) — no full closure materialization.
-  # O(n × reachable) with C-level inner loop.
+  # Shape-dependent: `traverse.selfReachable`'s genericClosure operator re-reads `edges`
+  # at every visit, so a visit is O(1 + outdeg), not O(1). Total cost is
+  #   Θ( Σ_v Σ_{u ∈ reach v} (1 + outdeg u) )
+  # → O(n × reachable) where out-degree is bounded (a chain is the witness), but Θ(n³)
+  # on a complete DAG — cubic in n, not linear per reached node.
   cycles =
     { edges, nodes, ... }:
     builtins.sort builtins.lessThan (builtins.filter (traverse.selfReachable { inherit edges; }) nodes);
