@@ -8,7 +8,9 @@
 # dependents/dependentsOf: Arntzenius 2016 (Datafun reverse reachability).
 #   dependents uses full transitive closure (amortized for multi-target).
 #   dependentsOf uses reverse traversal (O(reachable) for single-target).
-# transpose: Mokhov 2017 §4.3 (algebraic graph transpose operation).
+# transpose: Mokhov 2017 §5.2 Graph Transpose — the law is that transpose flips
+#   the arguments of `connect` and leaves `overlay` unchanged, so direction is
+#   REVERSED, not erased.
 { prelude }:
 let
   edgeMaps = import ./edge-maps.nix { inherit prelude; };
@@ -111,7 +113,9 @@ let
     in
     builtins.sort builtins.lessThan (builtins.filter (id: id != targetId) (builtins.attrNames reached));
 
-  # Reverse all edge directions, return new accessor set (Mokhov 2017 §4.3).
+  # Reverse all edge directions, return new accessor set. Mokhov 2017 §5.2 Graph
+  # Transpose: transpose flips the arguments of `connect` and leaves `overlay`
+  # unchanged — direction is reversed, not erased.
   transpose =
     { edges, nodes, ... }:
     let
@@ -136,7 +140,9 @@ let
   # O(V+E) single-DFS — its mutable stack/lowlink is out-of-substrate for pure Nix.
   # `bottomUp` lists each SCC after every SCC it points to (a reverse-topological
   # order over the condensation DAG); `reps == bottomUp`, `sccs == map members reps`.
-  # (Tarjan 1972 / Kosaraju for SCCs; Mokhov 2017 §4 for the quotient-graph idiom.)
+  # (Tarjan 1972 / Kosaraju for SCCs; Mokhov 2017 §4.6 Preorders and Equivalence
+  # Relations for the quotient-graph idiom — a condensation is the quotient by the
+  # co-SCC equivalence.)
   condensation =
     { edges, nodes, ... }:
     let
