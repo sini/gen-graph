@@ -1,4 +1,14 @@
-# Allocation benchmark for two overlapping cost classes:
+# Allocation benchmark for the library's overlapping COST CLASSES — sets of surfaces
+# that share one cost because they share one call, and so must be documented from one
+# measurement rather than per-function.
+#
+# ★ THIS PATH IS A FIXED CITATION TARGET. `README.md` and `lib/global.nix` cite it by
+# path as the re-run command behind their figures, so renaming this file breaks those
+# citations — the same anchor-decay class this file's own branch was written to retire.
+# The name is deliberately about the SUBJECT, not about any one arm, so new arms can be
+# added without it going stale. Add arms; do not rename.
+#
+# The two classes measured here:
 #
 #   1. the two terms `topoOrder`'s CYCLE PATH pays — a `global.cycles` call and a
 #      `global.condensation` call (`lib/order.nix`, the `ok = false` branch);
@@ -43,7 +53,7 @@
 #
 # RUN (all three axes; a single-axis read is what this file exists to prevent):
 #   NIX_SHOW_STATS=1 NIX_SHOW_STATS_PATH=/tmp/s.json nix-instantiate --eval --strict \
-#     --arg n 200 --argstr arm condensation --argstr shape cycle ./ci/bench/cyclepath-terms.nix
+#     --arg n 200 --argstr arm condensation --argstr shape cycle ./ci/bench/cost-classes.nix
 #   nix-instantiate --eval --raw -E 'let s = builtins.fromJSON (builtins.readFile "/tmp/s.json"); in
 #     "${toString s.list.elements} ${toString s.sets.elements} ${toString s.nrLookups}"'
 {
