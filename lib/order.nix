@@ -23,9 +23,10 @@
 # becomes ready, and a graph whose ready set stays small (any chain) runs in O(n + E).
 # The CYCLE path is deliberately not derived from the Kahn residual — a residual knows
 # only THAT nodes went unemitted, not which cycles they form — so it costs a `global.cycles`
-# call PLUS `condensation`'s O(n²). `cycles` is the dominant term wherever out-degree is not
-# bounded (Θ(n³) on a complete DAG), so the cycle path is cubic there, not quadratic.
-# Ordering succeeds or it throws; the expensive analysis is on the way out.
+# call PLUS `global.condensation`, and it runs only on a CYCLIC graph. NEITHER term may be
+# quoted as the cost alone: which of the two is larger flips with the graph shape and with
+# the allocation axis measured. Ordering succeeds or it throws; the expensive analysis is on
+# the way out.
 { prelude }:
 let
   global = import ./global.nix { inherit prelude; };
