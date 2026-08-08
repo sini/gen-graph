@@ -223,8 +223,12 @@ let
     else
       let
         inherit ((condensation { inherit edges nodes; })) sccOf;
-        # A component's smallest key is its entry point, which makes the representative a pure
-        # function of the node SET rather than of successor order.
+        # The component's smallest key is the ENTRY POINT, so the head of the returned walk is
+        # order-independent. The REST of the walk is not: it follows the order of `edges u` and
+        # of `pathsBetween`'s enumeration, so a component holding several simple cycles can yield
+        # a different representative under a permuted successor list over the SAME edge set.
+        # Deterministic for a given accessor, but not a function of the node set alone — a caller
+        # wanting a witness stable across accessor permutations cannot pin this walk.
         repCycle =
           members:
           let
