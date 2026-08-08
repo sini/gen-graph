@@ -1,14 +1,26 @@
-# Allocation benchmark for the two terms `topoOrder`'s CYCLE PATH pays: a
-# `global.cycles` call and a `global.condensation` call (`lib/order.nix`, the
-# `ok = false` branch).
+# Allocation benchmark for two overlapping cost classes:
+#
+#   1. the two terms `topoOrder`'s CYCLE PATH pays — a `global.cycles` call and a
+#      `global.condensation` call (`lib/order.nix`, the `ok = false` branch);
+#   2. the `fp.transitiveClosure`-INHERITING class — every surface whose cost is a
+#      closure call: `dependents` (`global.nix`), `condensation` (twice: the graph
+#      closure and the quotient closure), and `transitiveReduction` (`fixpoint.nix`).
+#      These share one cost and must be documented from one measurement, or a reader
+#      comparing two rows infers a distinction that does not exist.
 #
 # WHY THIS EXISTS: the cycle path's cost comment once named a single dominant
 # term. It cannot. Which of the two terms is larger flips with the graph shape
 # AND with the allocation axis, so any comparative claim about them has to be
 # measured on both shapes and all three axes rather than argued.
 #
+# ★ THE COUNTERS ARE A LOWER BOUND. `list.elements`/`sets.elements`/`nrLookups`
+# count Nix-heap allocation only. `genericClosure` keeps its done-set in C++, so its
+# key comparisons appear in NONE of the three axes. Every figure here is a floor on
+# the real cost, not the bill; state that limit rather than closing it with a number.
+#
 # INTERFACE — `arm` × `shape` × `n`:
-#   arm   = cycles | condensation | floor
+#   arm   = cycles | condensation | dependents | transitiveClosure
+#         | transitiveReduction | floor
 #   shape = complete | cycle
 #   n     = node count (use doublings, e.g. 50/100/200, so a ratio reads as 2^exp)
 #
@@ -66,7 +78,15 @@ let
     in
     [ (pad (if i + 1 < n then i + 1 else 0)) ];
 
-  edges = if shape == "complete" then completeEdges else cycleEdges;
+  # An unknown SHAPE must refuse exactly as loudly as an unknown ARM. Falling through
+  # to a default fixture would tag a real figure with a shape that was never measured.
+  edges =
+    if shape == "complete" then
+      completeEdges
+    else if shape == "cycle" then
+      cycleEdges
+    else
+      throw "unknown shape ${shape}";
   acc = { inherit nodes edges; };
 
   result =
@@ -74,6 +94,14 @@ let
       g.cycles acc
     else if arm == "condensation" then
       (g.condensation acc).sccs
+    # `dependents` is curried (accessor -> targetId) and computes the FULL closure
+    # before filtering, so the closure cost is paid whichever target is named.
+    else if arm == "dependents" then
+      g.dependents acc (builtins.head nodes)
+    else if arm == "transitiveClosure" then
+      g.transitiveClosure acc
+    else if arm == "transitiveReduction" then
+      g.transitiveReduction acc
     else if arm == "floor" then
       builtins.deepSeq (map edges nodes) nodes
     else
@@ -83,5 +111,13 @@ builtins.deepSeq result {
   inherit arm shape n;
   # SHAPE CONTROL, read on every run: both fixtures must be ONE SCC, or the arm is
   # not measuring the cycle path's regime. `cycles` ⇒ len n, `condensation` ⇒ len 1.
-  len = builtins.length result;
+  # `transitiveClosure` ⇒ len n. `dependents` ⇒ len n-1 (target filtered out).
+  # `transitiveReduction` ⇒ len 0 on `complete`: every edge is implied by a two-hop
+  # path, and `differenceEdges` drops a key whose row empties — producing that answer
+  # still forces the closure, which is the cost being measured.
+  len =
+    if builtins.isList result then
+      builtins.length result
+    else
+      builtins.length (builtins.attrNames result);
 }

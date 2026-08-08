@@ -137,7 +137,7 @@ graph.dependents g "db"       # same result, different algorithm
 
 **`dependentsOf`** builds a reverse edge index once (O(n)), then does C-level BFS from the target in the reversed graph. Fast for one-off queries.
 
-**`dependents`** computes the full transitive closure, transposes it, then looks up the target. Expensive upfront (O(n²)), but if you're querying multiple targets, the closure is computed once and each lookup is O(1).
+**`dependents`** computes the full transitive closure, transposes it, then looks up the target. Expensive upfront (closure class — super-quadratic, see README's Performance section), but if you're querying multiple targets, the closure is computed once and each lookup is O(1).
 
 **`impactOf`** is an alias for `dependentsOf` — the efficient single-target variant. "What's the impact of changing X?"
 
@@ -162,7 +162,7 @@ graph.dependents g "db"  # who transitively reaches "db"
 graph.roots g          # nodes with no incoming edges
 ```
 
-Internally, these functions **materialize** the graph — they build a complete edge map `{ nodeId = [targets]; }` and compute the transitive closure. This is O(n²) in the worst case, but it only happens once per call, and the result is used for O(1) lookups.
+Internally, these functions **materialize** the graph — they build a complete edge map `{ nodeId = [targets]; }` and compute the transitive closure. The closure is **super-quadratic**, not the O(n²) once documented here — see README's "closure class" note for the measurement — but it only happens once per call, and the result is used for O(1) lookups.
 
 ## The transitive closure: seeing everything at once
 
@@ -333,7 +333,7 @@ gen-graph is designed for infrastructure at scale — fleets of hundreds or thou
 For "can A reach B?" questions, don't compute the full transitive closure:
 
 ```nix
-# DON'T: materializes O(n²) closure
+# DON'T: materializes the full closure (super-quadratic)
 closure = graph.transitiveClosure g;
 answer = builtins.elem "db" (closure."web" or []);
 
@@ -360,7 +360,7 @@ Cross-partition edges are rare in practice. The speed-up is shape-dependent: spl
 ### Use `dependentsOf` for single targets
 
 ```nix
-# DON'T: computes full O(n²) closure for one question
+# DON'T: computes the full closure (super-quadratic) for one question
 graph.dependents g "db"
 
 # DO: builds reverse index O(n) + C-level BFS O(reachable)
@@ -390,11 +390,11 @@ g = {
 |----------------|-----|------|
 | "Can A reach B?" | `canReach` | O(reachable from A) |
 | "What depends on X?" (one X) | `dependentsOf` | O(n + reachable) |
-| "What depends on X, Y, Z?" | `dependents` × 1 | O(n²) amortized |
+| "What depends on X, Y, Z?" | `dependents` × 1 | closure class, amortized over targets |
 | "Is this node in a cycle?" | `selfReachable` | O(reachable from node) |
 | "List all cycles" | `cycles` | C-level; O(n × reachable) only at bounded out-degree, Θ(n³) on a dense graph |
 | "Entry points" | `roots` | O(n × degree) |
-| "Minimal diagram" | `transitiveReduction` | O(n²) — needs closure |
+| "Minimal diagram" | `transitiveReduction` | closure class above out-degree 1 — needs closure |
 | "All paths A→B" | `pathsBetween` | O(paths) — small subgraphs only |
 
 Everything labeled "C-level" uses `builtins.genericClosure` — Nix's native C implementation of BFS with built-in dedup. This is ~4-5x faster than equivalent Nix-level traversal on 5000+ node graphs.

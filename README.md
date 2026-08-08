@@ -277,7 +277,7 @@ graph.cycles g       # → [ "b" "c" "d" ]   membership, key-sorted
 graph.cyclePaths g   # → [ [ "b" "d" "c" ] ]   the traversal — b→d, d→c, c→b
 ```
 
-**`dependents g targetId`** — all nodes that transitively reach `targetId` (reverse reachability). Uses full transitive closure + transpose. O(n²) setup, O(1) lookup. Best for multi-target queries (amortized).
+**`dependents g targetId`** — all nodes that transitively reach `targetId` (reverse reachability). Uses full transitive closure + transpose — closure-class cost (super-quadratic, see Performance), O(1) lookup thereafter. Best for multi-target queries (amortized).
 
 ```nix
 graph.dependents g "database"   # → [ "api" "web" "worker" ]
@@ -313,7 +313,7 @@ graph.coScc cyclicGraph "a" "c"   # → true  (a → b → c → a)
 graph.coScc dagGraph     "a" "b"  # → false
 ```
 
-**`condensation g`** — collapses each SCC to a super-node and returns the condensation (quotient) graph. Closure-based, and super-quadratic rather than the O(n²) once documented here — exponent ~3.0 on a complete digraph and ~4.0 on a simple cycle (`ci/bench/cyclepath-terms.nix`). Not Tarjan's linear single-DFS, whose mutable stack is out of reach in pure Nix. Returns a record:
+**`condensation g`** — collapses each SCC to a super-node and returns the condensation (quotient) graph. Closure-based, so it carries the closure-class cost: super-quadratic rather than the O(n²) once documented here (see Performance). Not Tarjan's linear single-DFS, whose mutable stack is out of reach in pure Nix. Returns a record:
 
 | Field | Type | Meaning |
 |-------|------|---------|
@@ -705,21 +705,27 @@ in {
 | `ancestorsOf` | O(depth) | single-path walk |
 | `pathsBetween` | O(paths × depth) | exponential in path count; use on small subgraphs |
 | `materialize` | O(nodes × avg degree) | one-time scan |
-| `transitiveClosure` | O(nodes² × iterations) | fixpoint over materialized map |
-| `transitiveReduction` | O(nodes² × degree) | needs full closure; O(1) membership via attrsets |
+| `transitiveClosure` | **closure class** (see below) | fixpoint over materialized map |
+| `transitiveReduction` | **closure class**, but only above out-degree 1 (see below) | needs full closure; O(1) membership via attrsets |
 | `cycles` | `Θ(Σ_v Σ_{u ∈ reach v} (1 + outdeg u))` — i.e. O(nodes × reachable) only where out-degree is **bounded**; Θ(n³) on a complete DAG | per-node C-level BFS (no full closure needed). The per-visit cost is O(1 + outdeg), not O(1), because `selfReachable`'s `genericClosure` operator re-reads `edges` at every visit |
 | `cyclePaths` | on a DAG, exactly the `cycles` cost above — so Θ(n³) on a complete DAG, **not** O(nodes × reachable); + condensation (super-quadratic, see its own row) and simple-path search once cyclic | short-circuits before any path work when acyclic |
-| `dependents` | O(nodes²) | full transitive closure + transpose |
+| `dependents` | **closure class** (see below) | full transitive closure + transpose |
 | `dependentsOf` | O(nodes + reachable) | reverse index + C-level BFS |
 | `dependentsFrontier` | O(nodes + reachable) | reverse index + level-by-level BFS, pruned early |
 | `coScc` | O(reachable from u, v) | two `canReach` probes, no full closure |
-| `condensation` | super-quadratic and shape-dependent — measured `list.elements` exponent ~3.0 on a complete digraph and ~4.0 on a simple cycle (`ci/bench/cyclepath-terms.nix`), so **not** O(nodes²) | two transitive closures (graph + quotient) |
+| `condensation` | **closure class** (see below) | two transitive closures (graph + quotient) |
 | `coneRank` | O(|cone| + edges-in-cone) | `lib.fix` memoized depth, cone-local (no condensation) |
 | `directDependents` / `directDependentsOf` | O(edges) | one `groupBy` reverse-adjacency map |
 | `seededFixpoint` | O(work per delta) | semi-naive: each iteration touches only the frontier |
 | `roots` / `leaves` | O(nodes × avg degree) | single scan of all edges |
 | `select` | O(nodes) | one pass over node list |
 | `unionEdges` / `intersectEdges` / `differenceEdges` | O(edges) | attrset membership O(1) per edge |
+
+**The closure class.** `transitiveClosure`, `dependents`, `condensation` and `transitiveReduction` each cost one `fp.transitiveClosure` call, and they measure as **one curve**, not four costs: on a complete digraph `list.elements` exponent is ~3.0 for all four, within 0.4% of each other, and `transitiveClosure` alone is 99.7% of `dependents`. On a simple cycle the first three are ~4.0 and remain within 0.03% of each other. It is **super-quadratic on both shapes — not the O(nodes²) once documented here.** The rows above therefore name the class instead of repeating a figure, so the four cannot drift apart into an apparent distinction that does not exist. Re-run: `ci/bench/cyclepath-terms.nix`, arms `transitiveClosure` / `dependents` / `condensation` / `transitiveReduction`.
+
+`transitiveReduction` is the one **partial** member: its redundancy test is guarded by `mid != to` over a node's own target list, so at out-degree 1 the guard short-circuits, the closure is never forced, and it measures **linear** (1,803 allocations at n = 200 on the cycle, against 565,640,803 for the closure). Above out-degree 1 it is on the class curve.
+
+★ These are Nix-heap allocation counters and therefore a **lower bound**, not the bill: `genericClosure` keeps its done-set in C++, so its key comparisons appear on none of the three axes. Read the figures as a floor.
 
 Lazy traversal (`reachableFrom`, `canReach`, `ancestorsOf`, `pathsBetween`) visits only what is reachable. Global operations (`cycles`, `dependents`, `transpose`, `transitiveClosure`, `transitiveReduction`) scan all nodes.
 
@@ -754,14 +760,14 @@ genGraph.reachableFrom { edges = id: result.get id "imports"; } "host:igloo"
 
 | Need | Use | Don't use |
 |------|-----|-----------|
-| "Can A reach B?" | `canReach` (O(reachable)) | `dependents` (O(n²)) |
-| "What depends on X?" (one target) | `dependentsOf` (O(n + reachable)) | `dependents` (O(n²)) |
-| "What depends on X, Y, Z?" (multi-target) | `dependents` (O(n²) amortized) | `dependentsOf` × 3 (rebuilds index 3×) |
-| "Is there a cycle?" | `cycles` (C-level; O(n × reachable) at bounded out-degree, Θ(n³) on a dense graph — see Performance) | `transitiveClosure` (O(n²)) |
+| "Can A reach B?" | `canReach` (O(reachable)) | `dependents` (closure class) |
+| "What depends on X?" (one target) | `dependentsOf` (O(n + reachable)) | `dependents` (closure class) |
+| "What depends on X, Y, Z?" (multi-target) | `dependents` (closure class, amortized over targets) | `dependentsOf` × 3 (rebuilds index 3×) |
+| "Is there a cycle?" | `cycles` (C-level; O(n × reachable) at bounded out-degree, Θ(n³) on a dense graph — see Performance) | `transitiveClosure` (closure class) |
 | "Which loop, in order, for a message?" | `cyclePaths` (free on a DAG) | hand-rolled DFS per node (enumerates every simple path even when acyclic) |
 | "All paths between A and B" | `pathsBetween` (DFS) | Only for small subgraphs |
 | "Full closure for analysis" | `transitiveClosure` | — (use when you genuinely need it) |
-| "Minimal graph for diagrams" | `transitiveReduction` | — (O(n²), needs closure) |
+| "Minimal graph for diagrams" | `transitiveReduction` | — (closure class above out-degree 1) |
 
 ### Partitioning for Fleet Scale
 

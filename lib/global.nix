@@ -63,7 +63,9 @@ let
     builtins.sort builtins.lessThan (builtins.filter (traverse.selfReachable { inherit edges; }) nodes);
 
   # Reverse reachability: who can reach targetId?
-  # Uses full transitive closure + transpose. O(n²) setup, O(1) lookup.
+  # Uses full transitive closure + transpose, so it carries the CLOSURE-CLASS cost
+  # shared with `condensation`/`transitiveReduction` (super-quadratic on every shape
+  # measured; `ci/bench/cyclepath-terms.nix`), then O(1) lookup.
   # Amortized: if querying multiple targets, compute once and reuse.
   # For single-target queries, prefer `dependentsOf`.
   dependents =
@@ -142,9 +144,10 @@ let
   # SCC partition + condensation (quotient) graph, closure-based: u and v are
   # co-SCC iff each reaches the other via transitiveClosure. Not Tarjan's linear
   # O(V+E) single-DFS — its mutable stack/lowlink is out-of-substrate for pure Nix.
-  # COST is SUPER-QUADRATIC and shape-dependent — not the O(n²) this comment used to
-  # claim: `list.elements` measures exponent ~3 on a complete digraph and ~4 on a
-  # simple cycle (`ci/bench/cyclepath-terms.nix`, arm `condensation`).
+  # COST is the CLOSURE-CLASS cost shared with `dependents`/`transitiveReduction` —
+  # SUPER-QUADRATIC and shape-dependent, not the O(n²) this comment used to claim.
+  # The four closure callers measure as ONE curve, so do not quote a figure here that
+  # the siblings do not carry: `ci/bench/cyclepath-terms.nix`, arm `condensation`.
   # `bottomUp` lists each SCC after every SCC it points to (a reverse-topological
   # order over the condensation DAG); `reps == bottomUp`, `sccs == map members reps`.
   # (Tarjan 1972 / Kosaraju for SCCs; Mokhov 2017 §4.6 Preorders and Equivalence
