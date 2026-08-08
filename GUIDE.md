@@ -355,7 +355,7 @@ lib.concatMap (env:
 ) environments
 ```
 
-Cross-partition edges are rare in practice. Per-partition analysis is typically 100-400x faster.
+Cross-partition edges are rare in practice. The speed-up is shape-dependent: splitting into `k` partitions divides the `cycles` term by `k` where out-degree is bounded and by `k²` on a complete DAG, so `k = 20` predicts roughly 20× at the bounded end and 400× at the dense end. Measure your own shape rather than assuming the top of the range.
 
 ### Use `dependentsOf` for single targets
 

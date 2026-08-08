@@ -219,7 +219,9 @@ let
   # exponential in the graph; it is deliberately not provided here.
   #
   # COST: `cycles` short-circuits an acyclic graph before any path work, so the ordinary case pays
-  # only the self-reachability pass. Reconstruction — `condensation`'s O(n²) plus `pathsBetween`,
+  # the self-reachability pass and nothing more — but that pass IS `cycles`, so it carries `cycles`'
+  # shape dependence: O(n × reachable) where out-degree is bounded, Θ(n³) on a complete DAG.
+  # Reconstruction — `condensation`'s O(n²) plus `pathsBetween`,
   # which enumerates simple paths and is worst-case exponential — runs only once the graph is
   # KNOWN cyclic, i.e. only on the branch a caller refuses on. Same discipline `order.nix` states
   # for its own cycle report: the expensive analysis is on the way out.
