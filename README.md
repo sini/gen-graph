@@ -313,7 +313,7 @@ graph.coScc cyclicGraph "a" "c"   # → true  (a → b → c → a)
 graph.coScc dagGraph     "a" "b"  # → false
 ```
 
-**`condensation g`** — collapses each SCC to a super-node and returns the condensation (quotient) graph. Closure-based O(n²) — not Tarjan's linear single-DFS, whose mutable stack is out of reach in pure Nix. Returns a record:
+**`condensation g`** — collapses each SCC to a super-node and returns the condensation (quotient) graph. Closure-based, and super-quadratic rather than the O(n²) once documented here — exponent ~3.0 on a complete digraph and ~4.0 on a simple cycle (`ci/bench/cyclepath-terms.nix`). Not Tarjan's linear single-DFS, whose mutable stack is out of reach in pure Nix. Returns a record:
 
 | Field | Type | Meaning |
 |-------|------|---------|
@@ -708,12 +708,12 @@ in {
 | `transitiveClosure` | O(nodes² × iterations) | fixpoint over materialized map |
 | `transitiveReduction` | O(nodes² × degree) | needs full closure; O(1) membership via attrsets |
 | `cycles` | `Θ(Σ_v Σ_{u ∈ reach v} (1 + outdeg u))` — i.e. O(nodes × reachable) only where out-degree is **bounded**; Θ(n³) on a complete DAG | per-node C-level BFS (no full closure needed). The per-visit cost is O(1 + outdeg), not O(1), because `selfReachable`'s `genericClosure` operator re-reads `edges` at every visit |
-| `cyclePaths` | on a DAG, exactly the `cycles` cost above — so Θ(n³) on a complete DAG, **not** O(nodes × reachable); + O(n²) condensation and simple-path search once cyclic | short-circuits before any path work when acyclic |
+| `cyclePaths` | on a DAG, exactly the `cycles` cost above — so Θ(n³) on a complete DAG, **not** O(nodes × reachable); + condensation (super-quadratic, see its own row) and simple-path search once cyclic | short-circuits before any path work when acyclic |
 | `dependents` | O(nodes²) | full transitive closure + transpose |
 | `dependentsOf` | O(nodes + reachable) | reverse index + C-level BFS |
 | `dependentsFrontier` | O(nodes + reachable) | reverse index + level-by-level BFS, pruned early |
 | `coScc` | O(reachable from u, v) | two `canReach` probes, no full closure |
-| `condensation` | O(nodes²) | two transitive closures (graph + quotient) |
+| `condensation` | super-quadratic and shape-dependent — measured `list.elements` exponent ~3.0 on a complete digraph and ~4.0 on a simple cycle (`ci/bench/cyclepath-terms.nix`), so **not** O(nodes²) | two transitive closures (graph + quotient) |
 | `coneRank` | O(|cone| + edges-in-cone) | `lib.fix` memoized depth, cone-local (no condensation) |
 | `directDependents` / `directDependentsOf` | O(edges) | one `groupBy` reverse-adjacency map |
 | `seededFixpoint` | O(work per delta) | semi-naive: each iteration touches only the frontier |

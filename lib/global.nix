@@ -139,9 +139,12 @@ let
     u: v:
     (u == v) || (traverse.canReach { inherit edges; } u v && traverse.canReach { inherit edges; } v u);
 
-  # SCC partition + condensation (quotient) graph, closure-based O(n²): u and v are
+  # SCC partition + condensation (quotient) graph, closure-based: u and v are
   # co-SCC iff each reaches the other via transitiveClosure. Not Tarjan's linear
   # O(V+E) single-DFS — its mutable stack/lowlink is out-of-substrate for pure Nix.
+  # COST is SUPER-QUADRATIC and shape-dependent — not the O(n²) this comment used to
+  # claim: `list.elements` measures exponent ~3 on a complete digraph and ~4 on a
+  # simple cycle (`ci/bench/cyclepath-terms.nix`, arm `condensation`).
   # `bottomUp` lists each SCC after every SCC it points to (a reverse-topological
   # order over the condensation DAG); `reps == bottomUp`, `sccs == map members reps`.
   # (Tarjan 1972 / Kosaraju for SCCs; Mokhov 2017 §4.6 Preorders and Equivalence
@@ -221,7 +224,7 @@ let
   # COST: `cycles` short-circuits an acyclic graph before any path work, so the ordinary case pays
   # the self-reachability pass and nothing more — but that pass IS `cycles`, so it carries `cycles`'
   # shape dependence: O(n × reachable) where out-degree is bounded, Θ(n³) on a complete DAG.
-  # Reconstruction — `condensation`'s O(n²) plus `pathsBetween`,
+  # Reconstruction — `condensation` (super-quadratic, see its own comment) plus `pathsBetween`,
   # which enumerates simple paths and is worst-case exponential — runs only once the graph is
   # KNOWN cyclic, i.e. only on the branch a caller refuses on. Same discipline `order.nix` states
   # for its own cycle report: the expensive analysis is on the way out.
