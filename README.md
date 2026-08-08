@@ -61,7 +61,7 @@ Functions that only need traversal destructure `{ edges, ... }`. Functions that 
 | [gen-schema](https://github.com/sini/gen-schema) | Typed registries (kinds, instances, collections, refs); re-hosted on gen-merge |
 | [gen-aspects](https://github.com/sini/gen-aspects) | Aspect type system (traits, classification, dispatch); re-hosted on gen-merge |
 | [gen-scope](https://github.com/sini/gen-scope) | HOAG scope-graph evaluator (demand-driven, \_eval memoization, circular attributes) |
-| [gen-graph](https://github.com/sini/gen-graph) | **This lib** — Accessor-based graph query combinators (traversal, condensation, phaseOrder) |
+| [gen-graph](https://github.com/sini/gen-graph) | **This lib** — Accessor-based graph query combinators (traversal, condensation, topoOrder/phaseOrder) |
 | [gen-select](https://github.com/sini/gen-select) | Selector algebra (pattern matching over graph positions) |
 | [gen-bind](https://github.com/sini/gen-bind) | Module binding (inject external args into NixOS modules) |
 | [gen-dispatch](https://github.com/sini/gen-dispatch) | Relational rule dispatch STEP (stratified phases, conflict resolution) |
@@ -334,14 +334,18 @@ graph.directDependentsOf g "A"   # → [ "B" ]      (DIRECT — immediate neighb
 graph.dependentsOf       g "A"   # → [ "B" "X" ]  (TRANSITIVE — full reverse cone)
 ```
 
-### Ordering (phase DAG)
+### Ordering
 
-The ordering front-door: a home-manager-style DAG authored with `before`/`after`
-constraints, resolved to a forward, producers-first order over the `condensation`. This
-is the ergonomic layer some consumers want on top of `condensation` (e.g. dispatching
-rules over stratified phases).
+`topoOrder` is **the** ordering front door for the gen ecosystem — Kahn's algorithm
+(A. B. Kahn 1962; not Gilles Kahn 1974, which `preorder.nix` cites for something else)
+over an accessor. `entry*`/`phaseOrder` are the home-manager-style authoring layer on top
+of it, for consumers that would rather write `before`/`after` constraints than build an
+accessor.
 
 ```
+topoOrder { nodes; edges; keyOf ? id; lessThan ? builtins.lessThan }
+    : { ok = true; order = [ node ]; } | { ok = false; cycles = [ [ node ] ]; }
+
 entryAnywhere            : entry                       ( {} — no constraints )
 entryAfter  [ "a" ]      : entry                       ( comes after "a" )
 entryBefore [ "b" ]      : entry                       ( comes before "b" )
@@ -349,13 +353,46 @@ entryBetween befs afts   : entry
 phaseOrder  { name = entry; ... } : [ name ]           ( forward topological order )
 ```
 
-**`phaseOrder entries`** returns **a** valid topological order (the reverse of
-`condensation.bottomUp`). For genuinely *independent* nodes the tie-break is
-closure-cardinality then name — which may differ from `lib.toposort`'s attr-name seed —
-so treat the result as a valid order, not a specific permutation. A consumer that applies
-a phase's effect only *after* the phase (so later phases see earlier results, never the
-reverse) is output-invariant across any valid order. A cycle (or a self-loop) in the
-constraints throws.
+**`topoOrder accessor`** does **not** throw on a cycle. It returns a producers-first
+ordering, or the cycles that prevented one — as strongly-connected-component member sets,
+sorted within each component, **all** of them, so a caller sees every cycle at once rather
+than fixing one and meeting the next. A self-loop is reported as its own singleton
+component. Consumers that build their own diagnostic (gen-pipe names the channels and the
+operators forming each edge) need the members, not a throw.
+
+- **`keyOf`** projects a node to its string identity, which is also its tie-break key. It
+  is what admits nodes that are not themselves strings — gen-edge orders edge *records* by
+  a canonical sort key. **Not** gen-class's `mkClasses { nodes; keyOf; }` argument, which
+  shares the name and the `node -> string` shape but plays the opposite role: that key
+  *partitions* nodes into share-classes, deliberately mapping many nodes to one key, while
+  this one *identifies* a node and a collision in it is a refusal. (`query.nix` also binds
+  a local `keyOf` internally; it is not part of any public surface.)
+- **`lessThan`** orders those keys. Incomparable nodes emit in ascending key order by
+  default; ordering them by a *frozen* key is what makes the result a function of the node
+  set rather than of the input permutation.
+- A `keyOf` output that is not a string, two nodes sharing a key, and an edge naming a node
+  outside `nodes` are each a **refusal by name** — a `throw` that `tryEval` can catch, not
+  the uncatchable type error those cases would otherwise raise inside `genAttrs`.
+
+**`phaseOrder entries`** is the throwing convenience layer over `topoOrder`: it returns
+**a** valid topological order, and throws on a cycle or a self-loop, preserving the
+contract gen-dispatch's `dag.nix` had.
+
+**Behaviour change — an unknown phase name is now a refusal, and used to be ignored.** An
+`after` or `before` naming a phase that is not a key of `entries` previously composed
+fine, with the constraint silently dropped: `phaseOrder { a = entryAfter [ "ghost" ]; b = entryAnywhere; }` returned an order treating `a` and `b` as independent. It now throws a
+named refusal. A constraint that cannot be honoured is a caller error, and dropping it
+returns a confidently wrong order rather than no order.
+For genuinely *independent* nodes the tie-break is
+ascending name, but treat the result as a valid order rather than a specific permutation —
+a consumer that applies a phase's effect only *after* the phase (so later phases see
+earlier results, never the reverse) is output-invariant across any valid order.
+
+**Edge direction, stated once.** `edges u ∋ v` means "u depends on v" (consumer →
+producer), so an ordering is producers-first. Every ordering surface in this library reads
+an accessor this way — `topoOrder`, `coneRank`, `condensation.bottomUp`, `dependentsOf`,
+`reachableFrom` — and so does `phaseOrder`'s internal construction: `after = [ d ]` on `n`
+builds the edge `n → d`.
 
 ```nix
 graph.phaseOrder {
@@ -748,6 +785,7 @@ The algorithms and design principles draw from:
 - **Arntzenius & Krishnaswami (2016)** — *Datafun: A Functional Datalog*. *Implements.* Monotone fixpoint iteration with convergence guarantees. The `fixpoint` operator enforces monotonicity (edge count must not shrink between iterations), matching Datafun's requirement that fixpoint computations operate over monotone functions on semilattices. Reverse reachability in `dependents`/`dependentsOf` follows the Datafun reverse-query pattern. `directDependents`/`directDependentsOf` expose the underlying reverse-adjacency index directly: the **immediate** reverse neighbours (one edge), in contrast to `dependentsOf`'s **transitive** reverse closure — the distinction matters when a consumer must enumerate only its direct producers' dependents without re-materializing the whole reverse cone.
 - **Tarjan (1983)** — *Data Structures and Network Algorithms (RTD)*. *Implements.* Topological rank by longest incoming path. `coneRank` assigns each node `depth = 1 + max(depth of producers)` — the standard topological-rank recurrence — but **restricted to a cone**: only producers inside the supplied node set count, so the rank is computed in O(|cone| + edges-in-cone) via `lib.fix` memoization rather than over the whole graph. Ordering by ascending depth yields a producers-first (reverse-topological) enumeration without building `condensation`.
 - **Neron et al. (2015)** — *A Theory of Name Resolution*. *Implements.* Parent-chain traversal (`ancestorsOf`) follows scope graph P-edge resolution: walking the `parent` partial function upward through scopes corresponds to following P-edges in the resolution calculus (Neron 2015 §2.3). Silent cycle termination chosen over throwing for composability, matching the well-foundedness requirement on the parent relation.
+- **Kahn, A. B. (1962)** — *Topological sorting of large networks*, CACM 5(11). *Implemented.* `topoOrder` is Kahn's algorithm: an indegree count over the dependency relation, a ready set of indegree-zero nodes, decrement-on-emit restricted to the pick's successors, and the residual-emptiness check that detects a cycle. Incomparable nodes are emitted in ascending key order, which is what makes the result a function of the node set rather than of the input permutation. This is A. B. Kahn 1962 and **not** Gilles Kahn 1974 below — a different author and a different result, a conflation this codebase has made before. Min-extraction over the ready set is the one place the algorithm is not linear: a priority queue would make it O(log n), and pure Nix has no mutable heap — the same substrate bound that keeps `condensation` off Tarjan. The cycle report is deliberately **not** read off the Kahn residual, which knows only that nodes went unemitted and not which cycles they form; it comes from `cycles`/`condensation`, so the failure path costs O(n²) while the success path does not.
 - **Kahn (1974)** — *The Semantics of a Simple Language for Parallel Programming*. *Informed by.* Continuous functions over streams with deterministic dataflow semantics. gen-graph's lazy accessor pattern — traversal only forces nodes it visits — aligns conceptually with Kahn's model where computing stations produce output incrementally as input arrives, and monotonicity ensures that receiving more input can only provoke more output (Kahn 1974 §2.2.4). The pre-order combinators (`preorder.nix`) make this demand property load-bearing: `expandPreorder`'s `edges` read the *resolved* payload, so a node's successors are demand-generated, and a `seen0`-pruned frame is never forced.
 - **Tarjan (1972)** — *Depth-First Search and Linear Graph Algorithms*. *Implements.* Beyond the SCC/condensation use, the pre-order traversal combinators (`foldPreorder`, `expandPreorder`, `foldReach`) fold in DFS pre-order — a frame before its children, siblings in list order, each frame visited once via a first-occurrence visited set. First-occurrence is Tarjan's pre-order discovery numbering; `genericClosure` (BFS, single-keyed, payload-blind) structurally cannot express the order, payload or edge exposure these carry.
 - **Meijer, Fokkinga & Paterson (1991)** — *Functional Programming with Bananas, Lenses, Envelopes and Barbed Wire*. *Informed by.* `foldPreorder` has the shape of a hylomorphism: the visited-set coalgebra unfolds the (possibly cyclic) graph into its finite DFS spanning forest, which `expand` folds (catamorphism) into the accumulator. `expandPreorder` and `foldReach` specialize that accumulator to an ordered witness list — an ordered, payload-carrying fold rather than a set-returning closure.
