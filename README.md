@@ -246,6 +246,7 @@ These functions enumerate all nodes. They require both `edges` and `nodes`.
 
 ```
 cycles             : { edges, nodes, ... } → [id]
+cyclePaths         : { edges, nodes, ... } → [[id]]
 dependents         : { edges, nodes, ... } → id → [id]
 dependentsOf       : { edges, nodes, ... } → id → [id]
 dependentsFrontier : { edges, nodes, ... } → id → (id → bool) → [id]
@@ -262,6 +263,18 @@ directDependentsOf : { edges, nodes, ... } → id → [id]
 
 ```nix
 graph.cycles g   # → [] for a DAG, → [ "a" "b" "c" ] for a → b → c → a
+```
+
+**`cyclePaths g`** — one representative simple cycle per cyclic component, as an **ordered** node list rotated to begin at the component's smallest key. `[]` for a DAG. Where `cycles` answers *which nodes lie on a cycle* (a key-sorted membership set), `cyclePaths` answers *what the loop is*: every consecutive pair in a returned list is a real edge, so a caller may join it with `->` and state something true. Reach for it whenever the cycle is going to be **shown to a human**.
+
+One per component, not all: the SCC is the canonical object, the cycle through it is existential. Enumerating every simple cycle is Johnson 1975 and is deliberately not provided.
+
+Cost is asymmetric by design. `cycles` short-circuits a DAG before any path work, so the acyclic case — the ordinary one — pays only the self-reachability pass; `condensation` and `pathsBetween` run only once the graph is known cyclic, i.e. only on the branch a caller refuses on.
+
+```nix
+# b → d → c → b, keys sorting b < c < d
+graph.cycles g       # → [ "b" "c" "d" ]   membership, key-sorted
+graph.cyclePaths g   # → [ [ "b" "d" "c" ] ]   the traversal — b→d, d→c, c→b
 ```
 
 **`dependents g targetId`** — all nodes that transitively reach `targetId` (reverse reachability). Uses full transitive closure + transpose. O(n²) setup, O(1) lookup. Best for multi-target queries (amortized).
@@ -695,6 +708,7 @@ in {
 | `transitiveClosure` | O(nodes² × iterations) | fixpoint over materialized map |
 | `transitiveReduction` | O(nodes² × degree) | needs full closure; O(1) membership via attrsets |
 | `cycles` | O(nodes × reachable) | per-node C-level BFS (no full closure needed) |
+| `cyclePaths` | O(nodes × reachable) on a DAG; + O(n²) condensation and simple-path search once cyclic | short-circuits before any path work when acyclic |
 | `dependents` | O(nodes²) | full transitive closure + transpose |
 | `dependentsOf` | O(nodes + reachable) | reverse index + C-level BFS |
 | `dependentsFrontier` | O(nodes + reachable) | reverse index + level-by-level BFS, pruned early |
@@ -744,6 +758,7 @@ genGraph.reachableFrom { edges = id: result.get id "imports"; } "host:igloo"
 | "What depends on X?" (one target) | `dependentsOf` (O(n + reachable)) | `dependents` (O(n²)) |
 | "What depends on X, Y, Z?" (multi-target) | `dependents` (O(n²) amortized) | `dependentsOf` × 3 (rebuilds index 3×) |
 | "Is there a cycle?" | `cycles` (O(n × reachable), C-level) | `transitiveClosure` (O(n²)) |
+| "Which loop, in order, for a message?" | `cyclePaths` (free on a DAG) | hand-rolled DFS per node (enumerates every simple path even when acyclic) |
 | "All paths between A and B" | `pathsBetween` (DFS) | Only for small subgraphs |
 | "Full closure for analysis" | `transitiveClosure` | — (use when you genuinely need it) |
 | "Minimal graph for diagrams" | `transitiveReduction` | — (O(n²), needs closure) |

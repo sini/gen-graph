@@ -44,7 +44,8 @@ Entry: `inputs.gen-graph.lib` (flake). Root `default.nix` is a FUNCTION `{ prelu
 
 | Export | Signature |
 |---|---|
-| `cycles` | `{ edges, nodes } -> [id]` |
+| `cycles` | `{ edges, nodes } -> [id]` (membership, key-sorted) |
+| `cyclePaths` | `{ edges, nodes } -> [[id]]` (one ORDERED representative cycle per cyclic component) |
 | `dependents` | `{ edges, nodes } -> id -> [id]` (closure + transpose; amortized for many targets) |
 | `dependentsOf` | `{ edges, nodes } -> id -> [id]` (reverse index + BFS; single target) |
 | `impactOf` | alias of `dependentsOf` |
@@ -145,6 +146,7 @@ Entry: `inputs.gen-graph.lib` (flake). Root `default.nix` is a FUNCTION `{ prelu
 | Immediate reverse neighbours only | `directDependentsOf acc id` / `directDependents acc` |
 | Reverse cone with an early cutoff | `dependentsFrontier acc id prune` |
 | Detect cycles | `cycles acc`, or `selfReachable acc id` for one node |
+| Name the loop in a diagnostic (ordered, edges real) | `cyclePaths acc` — NOT `cycles`, whose key-sorted set renders edges that do not exist |
 | Collapse SCCs / get a quotient DAG | `condensation acc` |
 | Order home-manager-style before/after phases | `entryAfter` / `entryBefore` / `entryBetween` + `phaseOrder` |
 | Rank a dependent cone producers-first without whole-graph condensation | `coneRank acc cone` |
@@ -232,7 +234,7 @@ nix eval --json .#lib --apply 'l: { top = builtins.attrNames l; regex = builtins
 Current output (verbatim):
 
 ```json
-{"fixtures":["chain","cyclic","diamond","disconnected","serviceGraph","tree"],"labeledFixtures":["cyclic","poisoned","world"],"regex":["alt","any","deriv","empty","eps","lit","nullable","opt","parse","plus","seq","star","stateKey"],"top":["ancestorsOf","canReach","coScc","compose","condensation","coneRank","cycles","dependents","dependentsFrontier","dependentsOf","differenceEdges","directDependents","directDependentsOf","entryAfter","entryAnywhere","entryBefore","entryBetween","expandPreorder","field","fields","fixpoint","fixtures","foldPreorder","foldReach","fromRegistry","impactOf","intersectEdges","labeledFixtures","labeledFrom","leaves","materialize","materializeParents","mkGraph","pathsBetween","phaseOrder","query","queryFold","reachableFrom","reachableWhere","regex","roots","seededFixpoint","select","selectEdges","selfReachable","transitiveClosure","transitiveReduction","transpose","unionEdges"]}
+{"fixtures":["chain","cyclic","diamond","disconnected","serviceGraph","tree"],"labeledFixtures":["cyclic","poisoned","world"],"regex":["alt","any","deriv","empty","eps","lit","nullable","opt","parse","plus","seq","star","stateKey"],"top":["ancestorsOf","canReach","coScc","compose","condensation","coneRank","cyclePaths","cycles","dependents","dependentsFrontier","dependentsOf","differenceEdges","directDependents","directDependentsOf","entryAfter","entryAnywhere","entryBefore","entryBetween","expandPreorder","field","fields","fixpoint","fixtures","foldPreorder","foldReach","fromRegistry","impactOf","intersectEdges","labeledFixtures","labeledFrom","leaves","materialize","materializeParents","mkGraph","pathsBetween","phaseOrder","query","queryFold","reachableFrom","reachableWhere","regex","roots","seededFixpoint","select","selectEdges","selfReachable","topoOrder","transitiveClosure","transitiveReduction","transpose","unionEdges"]}
 ```
 
 **Checks.** Test-runner invocation (from the repo root; CI runs the same command with `working-directory: ci`, `.github/workflows/ci.yml:13,18`):

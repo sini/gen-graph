@@ -2,6 +2,9 @@
 #
 # cycles: standard cycle detection (a node is in a cycle iff reachable from
 #   itself). Uses genericClosure per-node for C-level BFS.
+# cyclePaths: one representative simple cycle per cyclic component, ORDERED, so
+#   consecutive pairs are real edges. SCC partition is Tarjan 1972 / Kosaraju;
+#   full simple-cycle enumeration (Johnson 1975) is deliberately not provided.
 # dependents/dependentsOf: Arntzenius 2016 (Datafun reverse reachability).
 #   dependents uses full transitive closure (amortized for multi-target).
 #   dependentsOf uses reverse traversal (O(reachable) for single-target).
@@ -192,6 +195,57 @@ let
       condEdges = condEdgesOf;
     };
 
+  # One representative simple cycle per cyclic component, as an ORDERED node list rotated to
+  # begin at the component's smallest key. Acyclic input => [ ].
+  #
+  # `cycles` above answers WHICH nodes lie on a cycle; it is a membership set, and a caller that
+  # renders it as a traversal states edges the graph does not contain. `cyclePaths` answers the
+  # ordered question: it returns a walk in which every consecutive pair IS an edge, closing back
+  # on its head.
+  #
+  # ONE per component, not all: the strongly connected component is the canonical object (Tarjan
+  # 1972 / Kosaraju — the partition `condensation` above already anchors), while the cycle through
+  # it is existential. Enumerating every simple cycle is Johnson 1975, whose output is itself
+  # exponential in the graph; it is deliberately not provided here.
+  #
+  # COST: `cycles` short-circuits an acyclic graph before any path work, so the ordinary case pays
+  # only the self-reachability pass. Reconstruction — `condensation`'s O(n²) plus `pathsBetween`,
+  # which enumerates simple paths and is worst-case exponential — runs only once the graph is
+  # KNOWN cyclic, i.e. only on the branch a caller refuses on. Same discipline `order.nix` states
+  # for its own cycle report: the expensive analysis is on the way out.
+  cyclePaths =
+    { edges, nodes, ... }:
+    let
+      cyclic = cycles { inherit edges nodes; };
+    in
+    if cyclic == [ ] then
+      [ ]
+    else
+      let
+        inherit ((condensation { inherit edges nodes; })) sccOf;
+        # A component's smallest key is its entry point, which makes the representative a pure
+        # function of the node SET rather than of successor order.
+        repCycle =
+          members:
+          let
+            u = builtins.head (builtins.sort builtins.lessThan members);
+            # u is self-reachable, so at least one in-component successor has a path home.
+            back = builtins.filter (p: p != [ ]) (
+              map (
+                v:
+                let
+                  ps = traverse.pathsBetween { inherit edges; } v u;
+                in
+                if ps == [ ] then [ ] else builtins.head ps
+              ) (builtins.filter (v: sccOf v == sccOf u) (edges u))
+            );
+          in
+          # `back`'s paths end AT u; dropping that last element closes the walk without
+          # repeating the head. A self-loop leaves [ u ].
+          [ u ] ++ (if back == [ ] then [ ] else prelude.init (builtins.head back));
+      in
+      map repCycle (prelude.mapAttrsToList (_: g: g) (builtins.groupBy sccOf cyclic));
+
   # Impact analysis alias (uses efficient single-target path).
   impactOf = dependentsOf;
 
@@ -234,6 +288,7 @@ in
 {
   inherit
     cycles
+    cyclePaths
     dependents
     dependentsOf
     dependentsFrontier

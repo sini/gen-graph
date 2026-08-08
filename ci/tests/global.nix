@@ -2,6 +2,7 @@
 let
   inherit (genGraph)
     cycles
+    cyclePaths
     dependents
     dependentsOf
     dependentsFrontier
@@ -59,6 +60,273 @@ in
       });
       expected = [ "a" ];
     };
+    # --- cyclePaths (ordered representative cycle per component) ---
+
+    # The control that must be present in every run: every other assertion below is a
+    # non-emptiness claim, so an acyclic graph reporting [ ] is what makes them meaningful.
+    test-cyclePaths-acyclic = {
+      expr = cyclePaths fixtures.chain;
+      expected = [ ];
+    };
+    test-cyclePaths-self-loop = {
+      expr = cyclePaths (mkGraph {
+        edges = [
+          {
+            from = "a";
+            to = "a";
+          }
+        ];
+      });
+      expected = [ [ "a" ] ];
+    };
+    test-cyclePaths-2-cycle = {
+      expr = cyclePaths (mkGraph {
+        edges = [
+          {
+            from = "a";
+            to = "b";
+          }
+          {
+            from = "b";
+            to = "a";
+          }
+        ];
+      });
+      expected = [
+        [
+          "a"
+          "b"
+        ]
+      ];
+    };
+    # ORDER is the point: traversal order and key order disagree here. b -> d -> c -> b, with
+    # keys sorting b < c < d. A membership set would report [ b c d ]; the path is [ b d c ].
+    test-cyclePaths-order-is-traversal-not-key-sort = {
+      expr = cyclePaths (mkGraph {
+        edges = [
+          {
+            from = "b";
+            to = "d";
+          }
+          {
+            from = "d";
+            to = "c";
+          }
+          {
+            from = "c";
+            to = "b";
+          }
+        ];
+      });
+      expected = [
+        [
+          "b"
+          "d"
+          "c"
+        ]
+      ];
+    };
+    # ...and the membership set for that same graph IS key-sorted — the live contrast that
+    # shows the two surfaces answer different questions.
+    test-cyclePaths-contrast-with-cycles-membership = {
+      expr = cycles (mkGraph {
+        edges = [
+          {
+            from = "b";
+            to = "d";
+          }
+          {
+            from = "d";
+            to = "c";
+          }
+          {
+            from = "c";
+            to = "b";
+          }
+        ];
+      });
+      expected = [
+        "b"
+        "c"
+        "d"
+      ];
+    };
+    # Disjoint components: one representative each, ordered by component tag.
+    test-cyclePaths-disjoint-components = {
+      expr = cyclePaths (mkGraph {
+        edges = [
+          {
+            from = "a";
+            to = "b";
+          }
+          {
+            from = "b";
+            to = "a";
+          }
+          {
+            from = "x";
+            to = "y";
+          }
+          {
+            from = "y";
+            to = "x";
+          }
+        ];
+      });
+      expected = [
+        [
+          "a"
+          "b"
+        ]
+        [
+          "x"
+          "y"
+        ]
+      ];
+    };
+    # Figure-eight: ONE component holding two distinct simple cycles (a->b->a, a->c->a) yields
+    # ONE representative. The component is canonical; the cycle through it is existential.
+    test-cyclePaths-figure-eight-one-representative = {
+      expr = cyclePaths (mkGraph {
+        edges = [
+          {
+            from = "a";
+            to = "b";
+          }
+          {
+            from = "b";
+            to = "a";
+          }
+          {
+            from = "a";
+            to = "c";
+          }
+          {
+            from = "c";
+            to = "a";
+          }
+        ];
+      });
+      expected = [
+        [
+          "a"
+          "b"
+        ]
+      ];
+    };
+    # A cyclic component with an acyclic tail: only the component's nodes appear in the path.
+    test-cyclePaths-excludes-acyclic-tail = {
+      expr = cyclePaths (mkGraph {
+        edges = [
+          {
+            from = "a";
+            to = "b";
+          }
+          {
+            from = "b";
+            to = "c";
+          }
+          {
+            from = "c";
+            to = "a";
+          }
+          {
+            from = "a";
+            to = "d";
+          }
+          {
+            from = "x";
+            to = "a";
+          }
+        ];
+      });
+      expected = [
+        [
+          "a"
+          "b"
+          "c"
+        ]
+      ];
+    };
+    # Node keys are opaque strings: a key containing the ':' separator a consumer uses to build
+    # a compound address (gen-settings keys nodes "id_hash:field") round-trips untouched, so
+    # field-level granularity is a property of the KEY, not something this library coarsens.
+    test-cyclePaths-compound-key-with-separator = {
+      expr = cyclePaths (mkGraph {
+        edges = [
+          {
+            from = "a1b2c3d4deadbeef:f";
+            to = "f1f2f3f4f5f6f7f8:h";
+          }
+          {
+            from = "f1f2f3f4f5f6f7f8:h";
+            to = "e5f6a7b8cafef00d:g";
+          }
+          {
+            from = "e5f6a7b8cafef00d:g";
+            to = "a1b2c3d4deadbeef:f";
+          }
+        ];
+      });
+      expected = [
+        [
+          "a1b2c3d4deadbeef:f"
+          "f1f2f3f4f5f6f7f8:h"
+          "e5f6a7b8cafef00d:g"
+        ]
+      ];
+    };
+    # Field granularity, negatively: aspect-level mutual reference is NOT a cycle when the
+    # fields differ. theme:f -> terminal:g and terminal:h -> theme:k share no field address.
+    test-cyclePaths-field-granular-permissive = {
+      expr = cyclePaths (mkGraph {
+        edges = [
+          {
+            from = "a1b2c3d4deadbeef:f";
+            to = "e5f6a7b8cafef00d:g";
+          }
+          {
+            from = "e5f6a7b8cafef00d:h";
+            to = "a1b2c3d4deadbeef:k";
+          }
+        ];
+      });
+      expected = [ ];
+    };
+    # Every consecutive pair in a reported path is a real edge (the property the " -> " join
+    # in a consumer's diagnostic asserts), checked on the discriminating fixture.
+    test-cyclePaths-consecutive-pairs-are-edges = {
+      expr =
+        let
+          adj = {
+            b = [ "d" ];
+            d = [ "c" ];
+            c = [ "b" ];
+          };
+          g = mkGraph {
+            edges = [
+              {
+                from = "b";
+                to = "d";
+              }
+              {
+                from = "d";
+                to = "c";
+              }
+              {
+                from = "c";
+                to = "b";
+              }
+            ];
+          };
+          path = builtins.head (cyclePaths g);
+          closed = path ++ [ (builtins.head path) ];
+          pairs = lib.lists.zipLists closed (builtins.tail closed);
+        in
+        builtins.all (p: builtins.elem p.snd (adj.${p.fst} or [ ])) pairs;
+      expected = true;
+    };
+
     test-dependents-db = {
       expr = builtins.sort builtins.lessThan (dependents fixtures.serviceGraph "db");
       expected = [
