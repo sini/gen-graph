@@ -706,7 +706,7 @@ in {
 | `pathsBetween` | O(paths × depth) | exponential in path count; use on small subgraphs |
 | `materialize` | O(nodes × avg degree) | one-time scan |
 | `transitiveClosure` | **closure class** (see below) | fixpoint over materialized map |
-| `transitiveReduction` | **closure class**, but only above out-degree 1 (see below) | needs full closure; O(1) membership via attrsets |
+| `transitiveReduction` | **closure class** unless *every* node has out-degree ≤ 1 (see below) | needs full closure; O(1) membership via attrsets |
 | `cycles` | `Θ(Σ_v Σ_{u ∈ reach v} (1 + outdeg u))` — i.e. O(nodes × reachable) only where out-degree is **bounded**; Θ(n³) on a complete DAG | per-node C-level BFS (no full closure needed). The per-visit cost is O(1 + outdeg), not O(1), because `selfReachable`'s `genericClosure` operator re-reads `edges` at every visit |
 | `cyclePaths` | on a DAG, exactly the `cycles` cost above — so Θ(n³) on a complete DAG, **not** O(nodes × reachable); + condensation (super-quadratic, see its own row) and simple-path search once cyclic | short-circuits before any path work when acyclic |
 | `dependents` | **closure class** (see below) | full transitive closure + transpose |
@@ -723,7 +723,9 @@ in {
 
 **The closure class.** `transitiveClosure`, `dependents`, `condensation` and `transitiveReduction` each cost one `fp.transitiveClosure` call, and they measure as **one curve**, not four costs: on a complete digraph `list.elements` exponent is ~3.0 for all four, within 0.4% of each other, and `transitiveClosure` alone is 99.7% of `dependents`. On a simple cycle the first three are ~4.0 and remain within 0.03% of each other. It is **super-quadratic on both shapes — not the O(nodes²) once documented here.** The rows above therefore name the class instead of repeating a figure, so the four cannot drift apart into an apparent distinction that does not exist. Re-run: `ci/bench/cost-classes.nix`, arms `transitiveClosure` / `dependents` / `condensation` / `transitiveReduction`.
 
-`transitiveReduction` is the one **partial** member: its redundancy test is guarded by `mid != to` over a node's own target list, so at out-degree 1 the guard short-circuits, the closure is never forced, and it measures **linear** (1,803 allocations at n = 200 on the cycle, against 565,640,803 for the closure). Above out-degree 1 it is on the class curve.
+`transitiveReduction` is the one **partial** member, and its carve-out is a property of the **whole graph, not of a node**. Its `closure` is a single binding shared by every node, and the only thing that forces it is the `closureSets.${mid}` lookup sitting behind the `mid != to &&` guard. When *every* node has out-degree ≤ 1 that guard is false everywhere, the shared binding is never forced, and the call measures **linear** — 1,803 allocations at n = 200 on the cycle, against 565,640,803 for the closure. But **one** node with out-degree ≥ 2 anywhere in the graph forces that shared binding, and then the *entire* call pays closure class: adding a single edge to the n = 200 cycle takes it from 1,803 to 571,115,707, a factor of **316,759**, landing within 0.001% of the full closure on the same fixture.
+
+There is no middle reading — an *average* or *typical* out-degree of 1 buys nothing, so on any realistic dependency graph or host fleet treat `transitiveReduction` as closure class. The carve-out covers exactly those graphs in which every node has at most one successor. In-degree is irrelevant to it, so it holds on in-trees and in-stars as well as on disjoint unions of paths and cycles, and fails on anything denser. Re-run: `ci/bench/cost-classes.nix`, arm `transitiveReduction`, shape `cycle`.
 
 ★ These are Nix-heap allocation counters and therefore a **lower bound**, not the bill: `genericClosure` keeps its done-set in C++, so its key comparisons appear on none of the three axes. Read the figures as a floor.
 
@@ -767,7 +769,7 @@ genGraph.reachableFrom { edges = id: result.get id "imports"; } "host:igloo"
 | "Which loop, in order, for a message?" | `cyclePaths` (free on a DAG) | hand-rolled DFS per node (enumerates every simple path even when acyclic) |
 | "All paths between A and B" | `pathsBetween` (DFS) | Only for small subgraphs |
 | "Full closure for analysis" | `transitiveClosure` | — (use when you genuinely need it) |
-| "Minimal graph for diagrams" | `transitiveReduction` | — (closure class above out-degree 1) |
+| "Minimal graph for diagrams" | `transitiveReduction` | — (closure class unless every node has out-degree ≤ 1) |
 
 ### Partitioning for Fleet Scale
 

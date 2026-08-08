@@ -394,7 +394,7 @@ g = {
 | "Is this node in a cycle?" | `selfReachable` | O(reachable from node) |
 | "List all cycles" | `cycles` | C-level; O(n × reachable) only at bounded out-degree, Θ(n³) on a dense graph |
 | "Entry points" | `roots` | O(n × degree) |
-| "Minimal diagram" | `transitiveReduction` | closure class above out-degree 1 — needs closure |
+| "Minimal diagram" | `transitiveReduction` | closure class unless every node has out-degree ≤ 1 — needs closure |
 | "All paths A→B" | `pathsBetween` | O(paths) — small subgraphs only |
 
 Everything labeled "C-level" uses `builtins.genericClosure` — Nix's native C implementation of BFS with built-in dedup. This is ~4-5x faster than equivalent Nix-level traversal on 5000+ node graphs.

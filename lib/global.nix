@@ -64,8 +64,10 @@ let
 
   # Reverse reachability: who can reach targetId?
   # Uses full transitive closure + transpose, so it carries the CLOSURE-CLASS cost
-  # shared with `condensation`/`transitiveReduction` (super-quadratic on every shape
-  # measured; `ci/bench/cost-classes.nix`), then O(1) lookup.
+  # shared with `condensation` (super-quadratic on every shape measured;
+  # `ci/bench/cost-classes.nix`), then O(1) lookup. `transitiveReduction` makes the same
+  # closure call but does not always FORCE it, so it is not super-quadratic on every
+  # shape: see README's closure-class note for the graph-global carve-out.
   # Amortized: if querying multiple targets, compute once and reuse.
   # For single-target queries, prefer `dependentsOf`.
   dependents =
@@ -146,8 +148,11 @@ let
   # O(V+E) single-DFS — its mutable stack/lowlink is out-of-substrate for pure Nix.
   # COST is the CLOSURE-CLASS cost shared with `dependents`/`transitiveReduction` —
   # SUPER-QUADRATIC and shape-dependent, not the O(n²) this comment used to claim.
-  # The four closure callers measure as ONE curve, so do not quote a figure here that
-  # the siblings do not carry: `ci/bench/cost-classes.nix`, arm `condensation`.
+  # The four closure callers measure as ONE curve on `list.elements`, so do not quote a
+  # figure here that the siblings do not carry: `ci/bench/cost-classes.nix`, arm
+  # `condensation`. `transitiveReduction` leaves that curve on graphs whose every node
+  # has out-degree <= 1, where its shared closure is never forced (README's note); this
+  # comment's own closure below is always forced, so no such carve-out applies here.
   # `bottomUp` lists each SCC after every SCC it points to (a reverse-topological
   # order over the condensation DAG); `reps == bottomUp`, `sccs == map members reps`.
   # (Tarjan 1972 / Kosaraju for SCCs; Mokhov 2017 §4.6 Preorders and Equivalence
