@@ -17,6 +17,18 @@
 #      closure and the quotient closure), and `transitiveReduction` (`fixpoint.nix`).
 #      These share one cost and must be documented from one measurement, or a reader
 #      comparing two rows infers a distinction that does not exist.
+#   3. the ORDERING loop — `topoOrder`'s Kahn emission loop, whose cost is dominated by
+#      the two accumulators it carries: `emitted`, a fresh k-element vector at step k, and
+#      the indegree map, copied whole per step. Both are Θ(n²) in allocation and neither is
+#      visible on a shape that never enters the loop.
+#
+# ★ THE FIRST TWO CLASSES CANNOT SEE THE THIRD, AND THE REASON IS STRUCTURAL. `complete`
+# and `cycle` are cyclic BY CONSTRUCTION — they exist to price the cycle path, which needs
+# a cycle — so on both of them every node has indegree ≥ 1, the initial ready set is EMPTY,
+# and the emission loop runs ZERO STEPS. A file whose only two shapes are cyclic prices the
+# library's failure path and nothing about its success path. Hence the acyclic shapes below:
+# the requirement was new SHAPES, not only new arms. `initialReady` is read on every run and
+# is the control that says which of the two regimes a cell is in.
 #
 # WHY THIS EXISTS: the cycle path's cost comment once named a single dominant
 # term. It cannot. Which of the two terms is larger flips with the graph shape
@@ -30,11 +42,11 @@
 #
 # INTERFACE — `arm` × `shape` × `n`:
 #   arm   = cycles | condensation | dependents | transitiveClosure
-#         | transitiveReduction | floor
-#   shape = complete | cycle
+#         | transitiveReduction | topoOrder | floor
+#   shape = complete | cycle | chain | wide | fleet | discrim | deepwide
 #   n     = node count (use doublings, e.g. 50/100/200, so a ratio reads as 2^exp)
 #
-# FIXTURES, and why these two:
+# CYCLIC FIXTURES, and why these two:
 #   `complete` — the complete digraph: every node points at every other. Out-degree
 #     is n-1 (UNBOUNDED) and the whole graph is ONE SCC, so the cycle path really
 #     runs. This is the shape a "dense" claim quantifies over.
@@ -44,6 +56,24 @@
 #   Both are CYCLIC by construction: a complete DAG is acyclic and orders
 #   successfully, so it never reaches the cycle path at all and cannot be used
 #   to price it.
+#
+# ACYCLIC FIXTURES, for the ordering loop. ★ A shape name does not identify a fixture: the
+# KEY ORDER is part of it. Two constructions of the same graph, differing only in whether a
+# deep leg's keys sort before or after a wide part's, differ by 3x in ready-set cost. Each
+# shape below therefore states its key order, and `initialReady` is read on every run.
+#   `chain` — node i depends on i-1. The ready set never holds more than one element, so it
+#     is where the ready-set term is a DEAD PREDICATE. Keys ascend with depth.
+#   `wide` — n/2 independent 2-chains. n/2 ready at the start and an arrival on n/2
+#     consecutive steps. Every producer key (`a`) sorts below every consumer key (`b`).
+#   `fleet` — n/10 independent 10-chains: the shape a host fleet produces.
+#   `discrim` — n/2 nodes ready at the start, each releasing one whose key sorts BELOW every
+#     node still waiting, so greedy min-key must interleave where a tail-append would not.
+#     The one shape here on which two DIFFERENT valid topological orders are distinguishable.
+#   `deepwide` — one 4000-node chain PLUS (n-4000)/2 independent 2-chains, so depth and
+#     width are ADDITIVE rather than multiplicative. It REFUSES below n = 4002 rather than
+#     degrading to a shape that was never measured, so it does not run at this file's small
+#     default sizes; give it 8000/16000/32000.
+#
 #   `floor` deep-forces the caller's edge set alone — the fixture's own cost,
 #   containing no gen-graph work — so a library figure can be read against it.
 #
@@ -72,7 +102,7 @@ let
       z = builtins.substring 0 (5 - builtins.stringLength s) "00000";
     in
     "n${z}${s}";
-  nodes = builtins.genList pad n;
+  ringNodes = builtins.genList pad n;
   idxOf = builtins.listToAttrs (
     builtins.genList (i: {
       name = pad i;
@@ -80,7 +110,7 @@ let
     }) n
   );
 
-  completeEdges = id: builtins.filter (x: x != id) nodes;
+  completeEdges = id: builtins.filter (x: x != id) ringNodes;
   cycleEdges =
     id:
     let
@@ -88,16 +118,103 @@ let
     in
     [ (pad (if i + 1 < n then i + 1 else 0)) ];
 
+  ix = m: builtins.genList (i: i) m;
+  # Every acyclic fixture precomputes a dependency attrset and exposes the SAME accessor
+  # shape, `k: m.${k} or [ ]`, so the accessor is a Θ(n) preamble cost in each and no shape
+  # gets a cheaper one than another.
+  fromPairs = ns: pairs: {
+    nodes = ns;
+    edges =
+      let
+        m = builtins.listToAttrs pairs;
+      in
+      k: m.${k} or [ ];
+  };
+  key = p: i: p + builtins.substring 0 (6 - builtins.stringLength (toString i)) "000000" + toString i;
+
+  # The deep leg's length, past the rank recurrence's ceiling.
+  deepwideD = 4000;
+
+  fixtures = {
+    complete = {
+      nodes = ringNodes;
+      edges = completeEdges;
+    };
+    cycle = {
+      nodes = ringNodes;
+      edges = cycleEdges;
+    };
+    chain = fromPairs (map (key "n") (ix n)) (
+      map (i: {
+        name = key "n" i;
+        value = if i == 0 then [ ] else [ (key "n" (i - 1)) ];
+      }) (ix n)
+    );
+    wide =
+      let
+        m = n / 2;
+      in
+      fromPairs (map (key "a") (ix m) ++ map (key "b") (ix m)) (
+        map (i: {
+          name = key "b" i;
+          value = [ (key "a" i) ];
+        }) (ix m)
+      );
+    fleet =
+      let
+        c = n / 10;
+        k =
+          i: d:
+          "h"
+          + builtins.substring 0 (6 - builtins.stringLength (toString i)) "000000"
+          + toString i
+          + "-"
+          + toString d;
+      in
+      fromPairs (builtins.concatLists (map (i: map (k i) (ix 10)) (ix c))) (
+        builtins.concatLists (
+          map (
+            i:
+            map (d: {
+              name = k i d;
+              value = if d == 0 then [ ] else [ (k i (d - 1)) ];
+            }) (ix 10)
+          ) (ix c)
+        )
+      );
+    discrim =
+      let
+        m = n / 2;
+      in
+      fromPairs (map (key "m") (ix m) ++ map (key "a") (ix m)) (
+        map (i: {
+          name = key "a" i;
+          value = [ (key "m" i) ];
+        }) (ix m)
+      );
+    deepwide =
+      let
+        m = (n - deepwideD) / 2;
+      in
+      if n < deepwideD + 2 then
+        throw "shape deepwide requires n >= ${toString (deepwideD + 2)} (one ${toString deepwideD}-chain plus at least one pair); got ${toString n}"
+      else
+        fromPairs (map (key "c") (ix deepwideD) ++ map (key "a") (ix m) ++ map (key "b") (ix m)) (
+          map (i: {
+            name = key "c" i;
+            value = if i == 0 then [ ] else [ (key "c" (i - 1)) ];
+          }) (ix deepwideD)
+          ++ map (i: {
+            name = key "b" i;
+            value = [ (key "a" i) ];
+          }) (ix m)
+        );
+  };
+
   # An unknown SHAPE must refuse exactly as loudly as an unknown ARM. Falling through
   # to a default fixture would tag a real figure with a shape that was never measured.
-  edges =
-    if shape == "complete" then
-      completeEdges
-    else if shape == "cycle" then
-      cycleEdges
-    else
-      throw "unknown shape ${shape}";
-  acc = { inherit nodes edges; };
+  acc = fixtures.${shape} or (throw "unknown shape ${shape}");
+  inherit (acc) nodes edges;
 
   result =
     if arm == "cycles" then
@@ -112,6 +229,14 @@ let
       g.transitiveClosure acc
     else if arm == "transitiveReduction" then
       g.transitiveReduction acc
+    # The ORDERING loop. On an acyclic shape this returns `.order` and the emission loop
+    # runs n steps; on `complete`/`cycle` it returns the cycle REPORT instead and prices the
+    # failure path, which is arms 1 and 2 over again. `initialReady` below says which.
+    else if arm == "topoOrder" then
+      let
+        r = g.topoOrder acc;
+      in
+      if r.ok then r.order else r.cycles
     else if arm == "floor" then
       builtins.deepSeq (map edges nodes) nodes
     else
@@ -119,6 +244,12 @@ let
 in
 builtins.deepSeq result {
   inherit arm shape n;
+  # SHAPE CONTROL for the ordering class, read on every run: how many nodes have no
+  # dependencies, i.e. how many steps the Kahn loop starts with. ZERO means the emission
+  # loop never runs and the cell says nothing about the ordering cost — which is exactly
+  # what `complete` and `cycle` report, and why they could not price this class.
+  initialReady = builtins.length (builtins.filter (k: edges k == [ ]) nodes);
+  nodeCount = builtins.length nodes;
   # SHAPE CONTROL, read on every run: both fixtures must be ONE SCC, or the arm is
   # not measuring the cycle path's regime. `cycles` ⇒ len n, `condensation` ⇒ len 1.
   # `transitiveClosure` ⇒ len n. `dependents` ⇒ len n-1 (target filtered out).
