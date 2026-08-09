@@ -240,9 +240,13 @@ let
 
   # ── THE HARNESS SENTINEL ──────────────────────────────────────────────────────────
   # A shared bench file is a MUTABLE INSTRUMENT. Adding one attribute to the dispatch
-  # attrset shifts `sets.elements` on every arm reached through it — measured on THIS file at
-  # +1, uniform across all twelve pre-existing arm x shape cells, when the ordering class was
-  # added — so a `sets` figure quoted across an edit is wrong by a constant nobody sees. The sentinel exists to make that constant visible instead of silent.
+  # attrset shifts `sets.elements` on every arm reached through it — measured on THIS file, by
+  # replaying four revisions of it against one fixed library: adding the SENTINEL shifted
+  # `sets` +1 on every pre-existing cell with `list.elements` bit-identical on all of them,
+  # and the revision that added the shape controls shifted `sets` again while ALSO adding
+  # `list` (+n on `cycle`, +n(n-1) on `complete` — the controls force `edges k` per node, and
+  # on a complete digraph that is the whole edge set). So a `sets` figure quoted across an
+  # edit is wrong by a constant nobody sees, and a `list` figure can be too. The sentinel exists to make that constant visible instead of silent.
   #
   # It is ON THE EVALUATION PATH BOTH WAYS, because either alone is insufficient: it is
   # dispatched through the same `table` as every other arm AND it calls gen-graph. A guard
@@ -275,19 +279,19 @@ let
   # here and do not read `n`/`shape` — a pin against a caller-chosen size is not a pin.
   sentinelPins = {
     sentinel = {
-      list = 3549;
-      sets = 3112;
-      nrLookups = 3066;
+      list = 3545;
+      sets = 3106;
+      nrLookups = 3054;
     };
     peerOrder = {
-      list = 3270;
-      sets = 4279;
-      nrLookups = 6501;
+      list = 3266;
+      sets = 4273;
+      nrLookups = 6489;
     };
     peerClosure = {
-      list = 490794;
-      sets = 8073;
-      nrLookups = 29012;
+      list = 490790;
+      sets = 8067;
+      nrLookups = 29000;
     };
   };
   sentinelCells = {
@@ -307,6 +311,13 @@ let
       n = 32;
     };
   };
+  sentinelArmOf = {
+    sentinel = "sentinel";
+    sentinelPeerOrder = "peerOrder";
+    sentinelPeerClosure = "peerClosure";
+  };
+  sentinelCell = sentinelArmOf ? ${arm};
+  sentinelCellName = sentinelArmOf.${arm} or "";
   sentinelAxes = [
     "list"
     "sets"
@@ -403,6 +414,27 @@ if arm == "sentinelVerdict" then
         )
       else
         { };
+  }
+# ★★ A SENTINEL CELL MUST NOT FORCE THE CALLER'S FIXTURE. The pins are readings of the whole
+# EVALUATION, not of the arm's body alone, so anything else the run forces is inside them —
+# and the shape controls below force `nodes` and every `edges k`. With them, the same
+# `arm=sentinel` reads `list.elements` 3,549 at `n=1 shape=chain` and **64,003,545** at
+# `n=8000 shape=complete`: a pin off by four orders of magnitude, decided by two arguments the
+# sentinel does not otherwise use. That is not a caveat to document, it is a dependency to
+# remove — a guard whose reading depends on how it happens to be invoked reports on the
+# invocation, and the next reader re-pins from whichever one they ran. The sentinel arms
+# therefore skip the shape controls entirely, and their reading is now invariant under
+# `n`/`shape` (verified across `n=1 chain`, `n=200 chain`, `n=200 complete`, `n=8000
+# complete`). Do not add a control here that touches `nodes` or `edges`.
+else if sentinelCell then
+  builtins.deepSeq result {
+    inherit arm;
+    cell = sentinelCells.${sentinelCellName};
+    len =
+      if builtins.isList result then
+        builtins.length result
+      else
+        builtins.length (builtins.attrNames result);
   }
 else
   builtins.deepSeq result {
