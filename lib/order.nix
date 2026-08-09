@@ -21,6 +21,10 @@
 # mutable heap in the substrate, the same bound that keeps `condensation` off Tarjan. The
 # ready set is held sorted and consumed by cursor, so a re-sort costs only when a node
 # becomes ready, and a graph whose ready set stays small (any chain) runs in O(n + E).
+# The loop is driven by a bounded iteration over the key list, so its EVALUATOR FRAME cost
+# is constant in n — a self-applying step spends one frame per node, which caps ordering at
+# the interpreter's call depth with an abort no caller can catch. Cost is the only bound on
+# the ordering surface; there is no size at which it declines.
 # The CYCLE path is deliberately not derived from the Kahn residual — a residual knows
 # only THAT nodes went unemitted, not which cycles they form — so it costs a `global.cycles`
 # call PLUS `global.condensation`, and it runs only on a CYCLIC graph. NEITHER term may be
@@ -144,19 +148,35 @@ let
               builtins.length st.ready - st.cursor - 1
             );
           in
-          step {
+          {
             inherit indeg;
             ready = if newly == [ ] then st.ready else sortKeys (residue ++ newly);
             cursor = if newly == [ ] then st.cursor + 1 else 0;
             emitted = st.emitted ++ [ pick ];
           };
 
-      final = step {
+      # The loop-carried fields, for the driver to force at every step: `indeg` accumulates
+      # `//` updates and `ready`/`emitted` accumulate list spines, and WHNF on the state
+      # record reaches none of them. `cursor` is not among them — the step's own guard forces
+      # it at the top of the next iteration.
+      carried =
+        st: builtins.seq st.indeg (builtins.seq (builtins.length st.ready) (builtins.length st.emitted));
+
+      # The loop is DRIVEN, not recursed. A step that applies itself costs one evaluator frame
+      # per node — Nix does not reuse the frame of a tail call — so the descent depth is the
+      # node count and ordering a large graph aborts with a stack overflow that `tryEval`
+      # cannot contain; a bounded iteration's frame cost is constant in n. `keys` is the bound
+      # on two counts: it has exactly the right length, and it is already materialized, so the
+      # driver allocates nothing. n steps suffice — each productive step emits exactly one
+      # node, `emitted` draws distinct keys from `keys`, and the step is the identity once the
+      # ready set is exhausted, so every surplus step idles. A cyclic graph emits fewer than n
+      # and the residual check below reads that unchanged.
+      final = prelude.iterateBounded carried step {
         indeg = indeg0;
         ready = sortKeys (builtins.filter (k: indeg0.${k} == 0) keys);
         cursor = 0;
         emitted = [ ];
-      };
+      } keys;
 
       # The cycle report is SCC MEMBERSHIP, named by `cycles`/`condensation` rather than
       # read off the residual: every node in a cycle, grouped by its component, sorted

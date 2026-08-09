@@ -607,6 +607,49 @@ in
       expected = false;
     };
 
+    # The loop's frame cost is constant in n, so no node count caps an ordering. A chain is
+    # the shape that would cap it: a self-applying loop spends one frame per node and aborts
+    # here, uncatchably, at the interpreter's call depth. 12000 is past that depth; the
+    # accessors are checked separately because each forces a different amount (`.ok` forces
+    # the branch condition only, `length` the spine, `head` one element).
+    # The bands past what a suite can afford, and the negative control that a stack overflow
+    # aborts rather than throwing, are SHELL arms: no in-language assertion observes an
+    # abort, so a red arm cannot be a case here.
+    test-topo-long-chain-has-no-frame-ceiling = {
+      expr =
+        let
+          n = 12000;
+          pad = i: "n${toString i}";
+          idxOf = builtins.listToAttrs (
+            builtins.genList (i: {
+              name = pad i;
+              value = i;
+            }) n
+          );
+          r = topoOrder {
+            nodes = builtins.genList pad n;
+            edges =
+              id:
+              let
+                i = idxOf.${id};
+              in
+              if i + 1 < n then [ (pad (i + 1)) ] else [ ];
+          };
+        in
+        {
+          inherit (r) ok;
+          len = builtins.length r.order;
+          first = builtins.head r.order;
+          last = builtins.elemAt r.order (n - 1);
+        };
+      expected = {
+        ok = true;
+        len = 12000;
+        first = "n11999";
+        last = "n0";
+      };
+    };
+
     # A repeated dependency is one arc: the indegree must not count what the decrement
     # pays only once.
     test-topo-duplicate-edge-counted-once = {
