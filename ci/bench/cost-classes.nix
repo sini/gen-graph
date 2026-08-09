@@ -46,7 +46,7 @@
 #   arm   = cycles | condensation | dependents | transitiveClosure
 #         | transitiveReduction | topoOrder | floor
 #         | sentinel | sentinelPeerOrder | sentinelPeerClosure | sentinelVerdict
-#   shape = complete | cycle | chain | wide | fleet | discrim | deepwide
+#   shape = complete | cycle | chain | wide | fleet | discrim | total | deepwide
 #   n     = node count (use doublings, e.g. 50/100/200, so a ratio reads as 2^exp)
 #
 # The four `sentinel*` arms ignore `shape` and `n` — their cells are fixed in the file (see
@@ -75,6 +75,18 @@
 #   `discrim` — n/2 nodes ready at the start, each releasing one whose key sorts BELOW every
 #     node still waiting, so greedy min-key must interleave where a tail-append would not.
 #     The one shape here on which two DIFFERENT valid topological orders are distinguishable.
+#   `total` — the total order: node i depends on every j > i. The ACYCLIC counterpart of
+#     `complete`, and the only shape here that is two things at once. It is the DENSE shape,
+#     `E = n(n-1)/2`, so a per-edge figure divides by 1,999,000 at n = 2000 — the shape any
+#     "dense" claim about ordering quantifies over, and the one the cyclic `complete` cannot
+#     supply because it never enters the emission loop. It is also the MAXIMUM-FAN-IN shape:
+#     one node is ready at the start and its emission decrements every other node at once, so
+#     the indegree residue is Θ(n) wide immediately. Every other acyclic shape here has
+#     indegree exactly one, which leaves the residue empty at every step and the loop's
+#     residue-fold branch unreached — this is the only committed cell that reaches it.
+#     ★ Its FIXTURE is Θ(n²) by construction (`fromPairs` materializes n dependency lists
+#     averaging n/2), so `arm=floor` is the term to read a library figure against here, and
+#     it is large. Cap it at n = 2000 unless you mean to wait.
 #   `deepwide` — one 4000-node chain PLUS (n-4000)/2 independent 2-chains, so depth and
 #     width are ADDITIVE rather than multiplicative. It REFUSES below n = 4002 rather than
 #     degrading to a shape that was never measured, so it does not run at this file's small
@@ -215,6 +227,12 @@ let
             value = [ (key "m" i) ];
           }) (ix m)
         );
+      total = fromPairs (map (key "n") (ix n)) (
+        map (i: {
+          name = key "n" i;
+          value = map (j: key "n" (i + 1 + j)) (ix (n - i - 1));
+        }) (ix n)
+      );
       deepwide =
         let
           m = (n - deepwideD) / 2;
@@ -272,13 +290,21 @@ let
   #
   # ★★ THE SAME VERDICT IS ALSO WHAT A GENUINE SUBJECT MOVE PRODUCES, and the third cell is
   # what tells the two apart: `peerClosure` reaches no ordering code, so a change to the
-  # ordering loop leaves it bit-identical while both `topoOrder` cells move. The pins below
-  # were last re-derived from exactly that signature — an ordering-loop change measuring
-  # `sentinel` list −805 / sets −316 / nrLookups +1214 and `peerOrder` list −805 / sets −93 /
-  # nrLookups +1152, against `peerClosure` 0 / 0 / 0 on all three axes. A harness edit is the
-  # opposite shape: it moves every cell, including the one that calls no changed code. Read
-  # the decomposition before the verdict, and re-pin from the frozen file in the same commit
-  # as the change that moved it.
+  # ordering loop leaves it bit-identical while both `topoOrder` cells move. A harness edit is
+  # the opposite shape — it moves every cell, including the one that calls no changed code.
+  # Read the decomposition before the verdict, and re-pin from the frozen file in the same
+  # commit as the change that moved it.
+  #
+  # ★★★ AND THE WAY TO DECOMPOSE A DELTA THAT IS BOTH AT ONCE IS TO MEASURE THEM APART: check
+  # the harness edit out against the OLD library in a detached worktree, read the cells there,
+  # and the residue is the library's. Done for the pins below, which carry both:
+  #   · adding one shape to `mkFixtures` — `list` and `nrLookups` bit-identical on every cell,
+  #     `sets` +1 UNIFORMLY on all three, i.e. SHIFTED-BENIGN, the dispatch-attrset offset
+  #     this guard was built to make visible;
+  #   · the ordering loop's own change — `nrLookups` +64 on both `topoOrder` cells and 0 on
+  #     `peerClosure`, `list` and `sets` untouched.
+  # Summed they are single-cell-non-uniform and read SHIFTED-STRUCTURAL, which is correct and
+  # says nothing about either part. Neither is legible in the sum; both are obvious apart.
   #
   # The pins are the readings of THIS file at the revision that last re-derived them. They
   # are `sets.elements`-bearing and therefore comparable only within one bench revision:
@@ -292,17 +318,17 @@ let
   sentinelPins = {
     sentinel = {
       list = 2740;
-      sets = 2790;
-      nrLookups = 4268;
+      sets = 2791;
+      nrLookups = 4332;
     };
     peerOrder = {
       list = 2461;
-      sets = 4180;
-      nrLookups = 7641;
+      sets = 4181;
+      nrLookups = 7705;
     };
     peerClosure = {
       list = 490790;
-      sets = 8067;
+      sets = 8068;
       nrLookups = 29000;
     };
   };

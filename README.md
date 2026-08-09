@@ -424,9 +424,23 @@ binary tree, and 0% on a chain, whose ready set never holds two nodes at once.
 **The heap's price is now the leading set-axis term, as it was predicted to become.** It adds
 one attrset per node on each merge path, 63 → 89 attrsets per node across n = 1000 → 8000;
 with the indegree map's quadratic gone, that Θ(n log n) term is what the `wide` set axis
-mostly is — 106.8 `sets.elements` per node at n = 4000 against the heap's own ~80. It is
-stated rather than netted, and it is the reason `sets` grows a little faster than `list` on
-the shapes with real out-degree.
+mostly is — 427,094 ÷ 4000 = **106.8** `sets.elements` per node at n = 4000, against the
+heap's own ~80. It is stated rather than netted, and it is the reason `sets` grows a little
+faster than `list` on the shapes with real out-degree.
+
+**The set axis is shape-dependent where the list axis is not**, because it is the one the
+indegree residue is charged to: exponent 0.99 on a chain, 1.02 on a fleet, 1.09 on `discrim`,
+1.12 on `wide`, and 1.21 off the committed shapes where consumers really do accumulate
+waiting on a late common producer. On a driver chain with √n waiters it reads 1.49 — and
+there `E` is itself n^1.5, so 1.49 is E-linear and is the floor, not a defect. What keeps
+those numbers off a quadratic is *when* the residue is folded back into its base; the `width`
+comment in `lib/order.nix` derives the trigger and prices getting it wrong.
+
+**None of this is a claim about dense inputs.** On the total order (`shape=total`, node i
+depends on every j > i, E = n(n−1)/2) the loop costs 12.05 `list.elements` per edge at
+n = 2000 against 12.01 before the change: unmoved, because both accumulators are already
+small there and what dominates is the reverse index — 4.00 per edge, 36.3% of the total —
+which neither remedy touches.
 
 Re-run, and the figures above have **two different producers**, split by whether they are a
 reading or a comparison. The growth rates and the per-node counts are readings of the shipped
@@ -437,9 +451,13 @@ exists at neither the tip nor in any arm of `ci/bench/cost-classes.nix`, so no c
 repository produces a share or a delta, and none can. Those come from the committed
 two-revision harness: `den-architecture`,
 `specs/2026-08-08-gen-graph-ready-set-quadratic.r1-*`, whose `.r1-data-note.md` carries the
-procedure, the pinned revisions and the md5 anchors. **Post-change** cells — what the shipped
-`topoOrder` costs on any shape, as it stands — come from `ci/bench/cost-classes.nix`, arm
-`topoOrder`, shapes `wide` / `fleet` / `discrim` / `deepwide`. ★ Before quoting a
+procedure, the pinned revisions and the md5 anchors. The **1.21 and 1.49 exponents** have a
+third producer again: their shapes are in no arm of this bench, and they are recorded with
+`den-architecture`, `specs/2026-08-09-gen-graph-accumulator-remedies-spec.md`, alongside the
+arm-against-arm measurement the residue's fold trigger is derived from. **Post-change** cells
+— what the shipped `topoOrder` costs on any shape, as it stands — come from
+`ci/bench/cost-classes.nix`, arm `topoOrder`, shapes `wide` / `fleet` / `discrim` / `total` /
+`deepwide`. ★ Before quoting a
 `sets.elements` figure from that bench, read `ci/bench/sentinel.sh`: `sets` figures are
 comparable only within one revision of the bench file, and the sentinel is what says which
 revision you are on.

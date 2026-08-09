@@ -286,21 +286,54 @@ let
             dropped = prelude.genAttrs succs (s: (residue.${s} or base.${s}) - 1);
             newly = builtins.filter (s: dropped.${s} == 0) succs;
             waiting = builtins.filter (s: dropped.${s} != 0) succs;
+            entering = builtins.filter (s: !(residue ? ${s})) waiting;
             satisfied = builtins.filter (s: residue ? ${s}) newly;
-            residue' =
-              if waiting == [ ] && satisfied == [ ] then
-                residue
-              else
-                removeAttrs (residue // prelude.genAttrs waiting (s: dropped.${s})) satisfied;
-            # An UPPER BOUND on the residue's width, not its size: a node decremented twice
-            # while it waits is counted twice. Over-counting can only fold the residue back
-            # early, never late, so the bound is the safe direction and costs one addition.
-            width = st.width + builtins.length waiting - builtins.length satisfied;
+            # The residue's width EXACTLY, maintained incrementally: `entering` is what this
+            # step adds to the residue and `satisfied` what it removes, the two are disjoint,
+            # and nothing else changes the key set — so the count needs no pass over the
+            # residue. That is the point of maintaining it rather than asking: the obvious
+            # spelling, `length (attrNames residue)`, is O(w) per step, which is exactly the
+            # cost the residue exists to avoid. The exact count costs one membership test per
+            # node the step decrements, i.e. O(E) over the whole loop.
+            #
+            # ★ It must count DISTINCT NODES and not DECREMENTS, and the difference is not a
+            # rounding error. The trigger prices the residue's WIDTH: a residue `w` wide costs
+            # ~w to carry per step AND took ~w steps to reach that width, which is what makes
+            # `w² ≥ n` the point where carrying and rebuilding meet. Counting decrements
+            # reaches the same number in ~w/d steps at out-degree d, so the rebuild's Θ(n)
+            # amortizes against a d-th of the work the derivation assumed and folds fire with
+            # no warrant. Measured on three shapes built to separate the two counts, one arm
+            # against the other with only this line different: where every waiting node is
+            # decremented exactly once the two are BIT-IDENTICAL on both allocation axes and
+            # the exact count costs `n` extra lookups, nothing more; where each node waits on
+            # eight producers the decrement count costs +4.8% / +8.4% / +15.3% of
+            # `sets.elements` at n = 1,000 / 4,000 / 16,000, climbing with n; and on a driver
+            # chain whose waiters are re-decremented at every step it moves the `sets`
+            # exponent from 1.49 — E-linear, the floor for that shape — to 1.90, a factor of
+            # 5.15 at n = 4,000, which is enough to put that shape BEHIND the whole-map copy
+            # this residue replaced. PRODUCER: those three shapes are in no arm of
+            # `ci/bench/cost-classes.nix`; they are recorded with the remedy spec in
+            # `den-architecture`, `specs/2026-08-09-gen-graph-accumulator-remedies-spec.md`.
+            width = st.width + builtins.length entering - builtins.length satisfied;
             fold = width * width >= nodeCount;
           in
           {
-            base = if fold then base // residue' else base;
-            residue = if fold then { } else residue';
+            # ★ The two branches build DIFFERENT THINGS, and neither builds the other's. A
+            # fold discards the residue, so on a shape that folds at every step — a total
+            # order does — spelling this as "rebuild the residue, then throw it away" pays a
+            # `removeAttrs` over the whole residue per step for a value nothing reads. The
+            # fold absorbs `dropped` directly instead, and it may: `dropped` carries the new
+            # count for every successor, `residue` the older partial counts for everything
+            # else, and a node left at zero is one whose dependencies are all emitted, so it
+            # is never decremented again and the zero is never read.
+            base = if fold then base // residue // dropped else base;
+            residue =
+              if fold then
+                { }
+              else if waiting == [ ] && satisfied == [ ] then
+                residue
+              else
+                removeAttrs (residue // prelude.genAttrs waiting (s: dropped.${s})) satisfied;
             width = if fold then 0 else width;
             ready = insertAll (mergeH st.ready.l st.ready.r) newly;
             emitted = pushRun st.count st.emitted pick;
