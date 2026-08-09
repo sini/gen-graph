@@ -387,6 +387,16 @@ operators forming each edge) need the members, not a throw.
   outside `nodes` are each a **refusal by name** — a `throw` that `tryEval` can catch, not
   the uncatchable type error those cases would otherwise raise inside `genAttrs`.
 
+**No node-count ceiling.** The Kahn loop is *driven* by a bounded iteration over the key
+list rather than by a step that applies itself, so its evaluator frame cost is constant in
+`n`. There is no graph size at which ordering aborts with
+`stack overflow; max-call-depth exceeded` — an abort `tryEval` cannot catch — and no size at
+which the front door declines to order. Measured: a 20,000-node chain orders under
+`--option max-call-depth 1000`, twenty times the setting, on every public accessor of both
+`topoOrder` and `phaseOrder`. **Cost is the only remaining bound**: allocation grows
+quadratically in `n` (measured exponent 2.00 on `list.elements`, chain and wide), so a large
+graph gets slow rather than refused.
+
 **`phaseOrder entries`** is the throwing convenience layer over `topoOrder`: it returns
 **a** valid topological order, and throws on a cycle or a self-loop, preserving the
 contract gen-dispatch's `dag.nix` had.
@@ -715,6 +725,7 @@ in {
 | `coScc` | O(reachable from u, v) | two `canReach` probes, no full closure |
 | `condensation` | **closure class** (see below) | two transitive closures (graph + quotient) |
 | `coneRank` | O(|cone| + edges-in-cone) | `lib.fix` memoized depth, cone-local (no condensation) |
+| `topoOrder` / `phaseOrder` | O(n + E) decrements, but **quadratic in allocation** — exponent 2.00 on `list.elements`, chain and wide | three accumulators pay it: the emitted list, the indegree map, and the ready-set rebuild. No frame ceiling — the loop is a bounded iteration, so no node count aborts or is refused |
 | `directDependents` / `directDependentsOf` | O(edges) | one `groupBy` reverse-adjacency map |
 | `seededFixpoint` | O(work per delta) | semi-naive: each iteration touches only the frontier |
 | `roots` / `leaves` | O(nodes × avg degree) | single scan of all edges |
