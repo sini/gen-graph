@@ -520,6 +520,186 @@ in
       ];
     };
 
+    # ── the ready set's DISCRIMINATING shape ──
+    # `discrim` below is built so that greedy min-key and tail-append DISAGREE, and it is
+    # the only shape here that can tell them apart. Three nodes `m<i>` are ready at the
+    # start; emitting `m<i>` releases `a<i>`, whose key sorts BELOW every unconsumed `m`.
+    # Greedy min-key must therefore interleave; anything that appends arrivals to a tail
+    # and never revisits them emits every `m` first.
+    #
+    # A TIE-PRODUCING shape is not automatically a discriminating one, so this is not a
+    # substitute for the shapes above: on a chain the ready set never holds two elements;
+    # on `wide` all producer keys sort below all consumer keys, so re-sorting and appending
+    # agree; on a binary tree the two children arrive already in order. All three admit a
+    # wrong ready set. This one does not.
+    test-topo-discriminating-interleaves = {
+      expr =
+        (topoOrder (
+          acc
+            [
+              "m0"
+              "m1"
+              "m2"
+              "a0"
+              "a1"
+              "a2"
+            ]
+            {
+              a0 = [ "m0" ];
+              a1 = [ "m1" ];
+              a2 = [ "m2" ];
+            }
+        )).order;
+      expected = [
+        "m0"
+        "a0"
+        "m1"
+        "a1"
+        "m2"
+        "a2"
+      ];
+    };
+
+    # ★ And this is why the case above asserts the WHOLE list. `first | last | length` is
+    # the oracle a reordering passes: on this fixture the tail-append order `m0 m1 m2 a0 a1
+    # a2` agrees with the true order on all three. An ordering assertion that reads only
+    # the ends certifies nothing about the middle, which is the entire ready-set contract.
+    test-topo-discriminating-ends-cannot-discriminate = {
+      expr =
+        let
+          ends =
+            xs:
+            builtins.head xs
+            + "|"
+            + builtins.elemAt xs (builtins.length xs - 1)
+            + "|"
+            + toString (builtins.length xs);
+        in
+        ends
+          (topoOrder (
+            acc
+              [
+                "m0"
+                "m1"
+                "m2"
+                "a0"
+                "a1"
+                "a2"
+              ]
+              {
+                a0 = [ "m0" ];
+                a1 = [ "m1" ];
+                a2 = [ "m2" ];
+              }
+          )).order == ends [
+          "m0"
+          "m1"
+          "m2"
+          "a0"
+          "a1"
+          "a2"
+        ];
+      expected = true;
+    };
+
+    # The comparator reaches the ready set, not just the initial sort: under reverse
+    # lexicographic order the same graph drains the `m`s largest-first, and each `a<i>`
+    # then sorts ABOVE the remaining `m`s rather than below, so the interleaving inverts
+    # into two runs.
+    test-topo-discriminating-reversed-comparator = {
+      expr =
+        (topoOrder {
+          nodes = [
+            "m0"
+            "m1"
+            "m2"
+            "a0"
+            "a1"
+            "a2"
+          ];
+          edges =
+            id:
+            {
+              a0 = [ "m0" ];
+              a1 = [ "m1" ];
+              a2 = [ "m2" ];
+            }
+            .${id} or [ ];
+          lessThan = a: b: a > b;
+        }).order;
+      expected = [
+        "m2"
+        "m1"
+        "m0"
+        "a2"
+        "a1"
+        "a0"
+      ];
+    };
+
+    # ── a ready set that is Θ(n) for the whole run, not two or three elements ──
+    # 25 independent producer/consumer pairs: 25 nodes are ready at the start and an
+    # arrival fires on 25 consecutive steps, so the container is exercised at a width the
+    # cases above never reach.
+    #
+    # ★ The two cases differ ONLY in the key prefixes, and that alone decides the answer:
+    # which of `a`/`b` or `p`/`c` a pair uses determines whether a released consumer sorts
+    # above or below the producers still waiting. Neither answer is more correct — both are
+    # min-key at every step — but a shape name does not identify a fixture, and a test that
+    # named only "25 independent pairs" would be under-determined.
+    #
+    # Producers sort BELOW consumers ⇒ every producer drains before any consumer.
+    test-topo-wide-ready-set-producers-first = {
+      expr =
+        let
+          k = p: i: p + (if i < 10 then "0" else "") + toString i;
+        in
+        (topoOrder (
+          acc (builtins.genList (k "a") 25 ++ builtins.genList (k "b") 25) (
+            builtins.listToAttrs (
+              builtins.genList (i: {
+                name = k "b" i;
+                value = [ (k "a" i) ];
+              }) 25
+            )
+          )
+        )).order;
+      expected =
+        let
+          k = p: i: p + (if i < 10 then "0" else "") + toString i;
+        in
+        builtins.genList (k "a") 25 ++ builtins.genList (k "b") 25;
+    };
+
+    # Consumers sort BELOW the waiting producers ⇒ each arrival wins the very next pick,
+    # and the run interleaves for its whole length.
+    test-topo-wide-ready-set-arrival-wins = {
+      expr =
+        let
+          k = p: i: p + (if i < 10 then "0" else "") + toString i;
+        in
+        (topoOrder (
+          acc (builtins.genList (k "p") 25 ++ builtins.genList (k "c") 25) (
+            builtins.listToAttrs (
+              builtins.genList (i: {
+                name = k "c" i;
+                value = [ (k "p" i) ];
+              }) 25
+            )
+          )
+        )).order;
+      expected =
+        let
+          k = p: i: p + (if i < 10 then "0" else "") + toString i;
+        in
+        builtins.concatLists (
+          builtins.genList (i: [
+            (k "p" i)
+            (k "c" i)
+          ]) 25
+        );
+    };
+
     # ── the type domain: `keyOf` admits nodes that are not strings ──
     # gen-prelude's retired `toposort` was polymorphic; the accessor model is string-keyed.
     # The projection is what keeps integer and record nodes expressible.
