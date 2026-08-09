@@ -16,11 +16,20 @@
 # way, and callers that build their own accessor (gen-vars) do too.
 #
 # COST: building the reverse index and the indegree map is O(n + E) via groupBy; the loop
-# performs exactly E decrements. The residual is min-extraction over the ready set, which
-# a priority queue would make O(log n) and which pure Nix cannot express — there is no
-# mutable heap in the substrate, the same bound that keeps `condensation` off Tarjan. The
-# ready set is held sorted and consumed by cursor, so a re-sort costs only when a node
-# becomes ready, and a graph whose ready set stays small (any chain) runs in O(n + E).
+# performs exactly E decrements. The residual is min-extraction over the ready set, which a
+# priority queue makes O(log m) at m live nodes — and pure Nix CAN express one. A persistent
+# priority queue with O(log m) worst-case merge and delete-min does not require mutation:
+# leftist heaps (Crane 1972; Knuth, TAOCP vol. 3 §5.2.3), skew heaps (Sleator & Tarjan 1986)
+# and pairing heaps (Fredman, Sedgewick, Sleator & Tarjan 1986) are all purely functional,
+# and Okasaki (*Purely Functional Data Structures*, 1998, §3.1) takes exactly this substrate
+# restriction as its subject. The ready set here is a leftist heap, so the loop's ready-set
+# term is Θ(n log n); holding it as a sorted array instead costs Θ(n²), because every arrival
+# rebuilds the unconsumed residue and re-sorts it. ★ The absence of a mutable heap is also
+# the reason `condensation` gives for not being Tarjan's algorithm (`lib/global.nix`); it is
+# not a bound on either surface, and that justification is NOT re-derived here.
+# The floor: emitting the ready set in min-key order under a caller-supplied comparator sorts
+# that set, so the loop inherits the comparison-sorting bound of Ω(m log m) comparisons. The
+# heap attains it, and no comparison-based container beats it without changing the contract.
 # The loop is driven by a bounded iteration over the key list, so its EVALUATOR FRAME cost
 # is constant in n — a self-applying step spends one frame per node, which caps ordering at
 # the interpreter's call depth with an abort no caller can catch. Cost is the only bound on
@@ -54,6 +63,17 @@ let
   # incomparable nodes by a frozen key is what makes an ordering a pure function of the
   # node SET rather than of the input permutation. `lessThan` orders those keys, so a
   # caller wanting a different tie-break over the same identities supplies it there.
+  #
+  # `lessThan` must be a STRICT TOTAL ORDER on distinct keys — a PRECONDITION, and the one
+  # place this library documents a requirement instead of refusing by name. The ready set is
+  # a heap, and a heap is not stable, so a comparator that is not a strict total order can
+  # separate this ordering from the one a stable whole-array sort would produce. Keys are
+  # distinct by construction (`collisions` below refuses the rest). A guard is not available
+  # at an acceptable cost: establishing totality of a caller-supplied comparator means
+  # exercising it on every pair, Ω(m²) comparisons — asymptotically worse than the quadratic
+  # the heap removes, and paid on every call including the overwhelming majority whose
+  # comparator is `builtins.lessThan`. Recorded with its reason so it is not re-proposed as a
+  # missing check.
   #
   # A `keyOf` output that is not a string, two nodes sharing a key, and an edge naming a
   # node outside `nodes` are all REFUSALS BY NAME. Each would otherwise reach `genAttrs`
@@ -127,40 +147,91 @@ let
         )
       );
 
-      sortKeys = builtins.sort lessThan;
       indeg0 = prelude.mapAttrs (_: ds: builtins.length ds) depsOf;
 
-      # The ready set is a sorted array walked by cursor: while nothing new becomes ready
-      # the pick is a pointer bump, and a re-sort is paid only for the nodes that actually
-      # arrive. Re-sorting the whole residue on every pick is what makes the shipped
-      # gen-edge loop cubic.
+      # ── the ready set: a leftist heap ──
+      # `null | { k; l; r; rank; }`, where `rank` is the length of the right spine and the
+      # LEFTIST INVARIANT is `rank l >= rank r` at every node, which bounds that spine at
+      # O(log m). `mergeH` walks the two right spines and rebuilds them, so merge — and with
+      # it insert (merge against a singleton) and delete-min (merge the root's two children)
+      # — is O(log m) worst case. Crane 1972; Knuth, TAOCP vol. 3 §5.2.3; Okasaki, *Purely
+      # Functional Data Structures* 1998 §3.1.
+      #
+      # Immutability is paid in PATH COPYING, not in asymptotics: no node is overwritten, so
+      # each merge allocates one attrset per node on the spine walk it rebuilds, and n
+      # inserts with n delete-mins allocate Θ(n log n) attrsets. That is the trade — Θ(n log n)
+      # on the set axis for the Θ(n²) list allocation a rebuilt-and-re-sorted array pays. It
+      # is an achieved upper bound, not a proven optimum.
+      rankOf = h: if h == null then 0 else h.rank;
+      mergeH =
+        a: b:
+        if a == null then
+          b
+        else if b == null then
+          a
+        else if lessThan b.k a.k then
+          mergeH b a
+        else
+          let
+            r = mergeH a.r b;
+            rl = rankOf a.l;
+            rr = rankOf r;
+          in
+          if rl >= rr then
+            {
+              inherit (a) k;
+              l = a.l;
+              r = r;
+              rank = rr + 1;
+            }
+          else
+            {
+              inherit (a) k;
+              l = r;
+              r = a.l;
+              rank = rl + 1;
+            };
+      singleton = k: {
+        inherit k;
+        l = null;
+        r = null;
+        rank = 1;
+      };
+      insertAll = builtins.foldl' (h: k: mergeH h (singleton k));
+
+      # The pick is the heap's root, which IS the minimum key under `lessThan`, so the emitted
+      # order is the same greedy min-key sequence a sorted array consumed by cursor produces —
+      # the keys are distinct, so that minimum is unique and the two agree element for element.
       step =
         st:
-        if st.cursor >= builtins.length st.ready then
+        if st.ready == null then
           st
         else
           let
-            pick = builtins.elemAt st.ready st.cursor;
+            pick = st.ready.k;
             succs = dependentsOf.${pick} or [ ];
             indeg = st.indeg // prelude.genAttrs succs (s: st.indeg.${s} - 1);
             newly = builtins.filter (s: indeg.${s} == 0) succs;
-            residue = builtins.genList (i: builtins.elemAt st.ready (st.cursor + 1 + i)) (
-              builtins.length st.ready - st.cursor - 1
-            );
           in
           {
             inherit indeg;
-            ready = if newly == [ ] then st.ready else sortKeys (residue ++ newly);
-            cursor = if newly == [ ] then st.cursor + 1 else 0;
+            ready = insertAll (mergeH st.ready.l st.ready.r) newly;
             emitted = st.emitted ++ [ pick ];
           };
 
       # The loop-carried fields, for the driver to force at every step: `indeg` accumulates
-      # `//` updates and `ready`/`emitted` accumulate list spines, and WHNF on the state
-      # record reaches none of them. `cursor` is not among them — the step's own guard forces
-      # it at the top of the next iteration.
-      carried =
-        st: builtins.seq st.indeg (builtins.seq (builtins.length st.ready) (builtins.length st.emitted));
+      # `//` updates and `emitted` accumulates a list spine, and WHNF on the state record
+      # reaches neither.
+      #
+      # WHNF on `ready` is enough, and that is a property of the heap rather than a shortcut.
+      # A ready set the loop rebuilds lazily layers one thunk per step and overflows the C
+      # stack when it is finally forced — a distinct abort from `max-call-depth`, and one the
+      # array implementation was silently insured against because `builtins.sort` must force
+      # every element to compare it. `mergeH` supplies that barrier structurally: reaching
+      # WHNF runs the comparison at the root, which forces both operands' keys, and the rank
+      # test forces both children to WHNF before the node is built. So a heap node in WHNF has
+      # its children in WHNF, and forcing the root leaves no layer behind it.
+      carried = st: builtins.seq st.indeg (builtins.seq st.ready (builtins.length st.emitted));
 
       # The loop is DRIVEN, not recursed. A step that applies itself costs one evaluator frame
       # per node — Nix does not reuse the frame of a tail call — so the descent depth is the
@@ -173,8 +244,9 @@ let
       # and the residual check below reads that unchanged.
       final = prelude.iterateBounded carried step {
         indeg = indeg0;
-        ready = sortKeys (builtins.filter (k: indeg0.${k} == 0) keys);
-        cursor = 0;
+        # Heapified by repeated insert, Θ(m log m). Not sorted first: the heap orders what it
+        # holds, so a sort feeding it would be discarded work.
+        ready = insertAll null (builtins.filter (k: indeg0.${k} == 0) keys);
         emitted = [ ];
       } keys;
 
