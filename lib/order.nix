@@ -227,9 +227,13 @@ let
       # NOT by a `genList` of `elemAt` — which allocates the same number of list cells but
       # makes each carried run a fresh indirection onto the previous list. Those indirections
       # compose: a run untouched for k carries is an `elemAt` chain k deep, and forcing it at
-      # the end costs k C-stack frames, so the `genList` spelling of this same function aborts
-      # with `error: stack overflow (possible infinite recursion)` on a chain of 8,000 nodes
-      # while returning correctly at 4,000. The cost axis is identical; only the sharing is.
+      # the end descends that chain, one evaluator frame per link. So the `genList` spelling of
+      # this same function aborts with `error: stack overflow; max-call-depth exceeded` on a
+      # chain of 8,000 nodes while returning correctly at 4,000. The bound is the evaluator's
+      # CALL-DEPTH COUNTER, not the C stack, and the way to tell is to raise it: under
+      # `--option max-call-depth 100000000` that same spelling returns correctly at 8,000,
+      # 12,000 and 20,000, which an exhausted C stack would not do. The cost axis is identical
+      # between the two spellings; only the sharing is.
       mergeRuns = rs: [ (builtins.elemAt rs 1 ++ builtins.head rs) ] ++ builtins.tail (builtins.tail rs);
       carryRuns = c: rs: if c - 2 * (c / 2) == 1 then carryRuns (c / 2) (mergeRuns rs) else rs;
       pushRun =
