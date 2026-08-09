@@ -852,5 +852,52 @@ in
         "a"
       ];
     };
+
+    # The indegree residue is folded back into its base once carrying it costs about what
+    # rebuilding costs, and every fixture whose indegrees are all ONE leaves that branch
+    # unreached: the residue is empty at every step, so the trigger never fires. This shape
+    # fires it. Eight producers are ready at the start and eight consumers each wait on their
+    # own producer AND on the LAST one, so consumers accumulate in the residue while the
+    # producers drain — the fold triggers partway through, moving four of them into the base,
+    # and the remaining ones are read from the residue. The assertion is the ORDER, because
+    # what a fold must not do is change which count a later step reads.
+    test-topo-indegree-residue-folds-and-preserves-order = {
+      expr =
+        let
+          ix = builtins.genList (i: i) 8;
+          last = "a7";
+        in
+        (topoOrder (
+          acc (map (i: "a${toString i}") ix ++ map (i: "b${toString i}") ix) (
+            builtins.listToAttrs (
+              map (i: {
+                name = "b${toString i}";
+                value = [
+                  "a${toString i}"
+                  last
+                ];
+              }) ix
+            )
+          )
+        )).order;
+      expected = [
+        "a0"
+        "a1"
+        "a2"
+        "a3"
+        "a4"
+        "a5"
+        "a6"
+        "a7"
+        "b0"
+        "b1"
+        "b2"
+        "b3"
+        "b4"
+        "b5"
+        "b6"
+        "b7"
+      ];
+    };
   };
 }

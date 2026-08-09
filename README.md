@@ -400,26 +400,40 @@ list rather than by a step that applies itself, so its evaluator frame cost is c
 `stack overflow; max-call-depth exceeded` — an abort `tryEval` cannot catch — and no size at
 which the front door declines to order. Measured: a 20,000-node chain orders under
 `--option max-call-depth 1000`, twenty times the setting, on every public accessor of both
-`topoOrder` and `phaseOrder`. **Cost is the only remaining bound**: allocation grows
-quadratically in `n` (measured exponent 2.00 on `list.elements`, chain and wide), so a large
-graph gets slow rather than refused.
+`topoOrder` and `phaseOrder`. **Cost is the only remaining bound**, and it is no longer a
+quadratic one: over `n = 1000 / 2000 / 4000` the loop's allocation grows by ×2.10–×2.12 per
+doubling on `list.elements` (exponent 1.07–1.08) and ×1.99–×2.18 on `sets.elements`
+(exponent 0.99–1.12), on all four acyclic shapes. A large graph gets slower rather than
+refused, and it gets slower roughly in proportion to itself.
 
-**What pays that quadratic is now two accumulators, not three.** The loop carries the
-emitted list, which allocates a fresh `k`-element vector at step `k`, and the indegree map,
-which is copied whole per step; both are Θ(n²). The **ready set is not among them**: it is a
-leftist heap with O(log m) insert and delete-min, so it costs Θ(n log n). Holding it as a
-sorted array instead — rebuilding the unconsumed residue and re-sorting it on every arrival —
-was a third, independent quadratic, and on shapes with out-degree it was the largest single
-term: 60% of the loop's `list.elements` on independent pairs, 21% on a fleet of ten-chains,
-43% on a binary tree, and 0% on a chain, whose ready set never holds two nodes at once. The
-trade is stated rather than netted: the heap **adds** to `sets.elements`, one attrset per
-node on each merge path, measured at 63 → 89 attrsets per node across n = 1000 → 8000 — a
-Θ(n log n) term, today dominated by the indegree map's Θ(n²) and the leading set-axis cost
-once that is fixed.
+**None of the loop's three carried structures is a quadratic.** The emitted sequence is held
+as *runs* whose lengths are the binary representation of the number of nodes emitted, so
+appending is the increment of a binary counter and an element is copied once per carry it
+survives: Θ(n log n), where appending to one vector copied `k` elements at step `k` and cost
+Θ(n²). The indegree map is a *residue* over a base that is not rewritten — only nodes
+decremented but not yet at zero are carried, so on a graph whose indegrees are all one the
+residue is empty at every step — and the residue is folded back into a rebuilt base once
+carrying it has cost about what rebuilding costs, which is what keeps a graph that satisfies
+many nodes partially from paying the same quadratic in a smaller font. The **ready set** is a
+leftist heap with O(log m) insert and delete-min, Θ(n log n). Held as a sorted array instead
+— rebuilding the unconsumed residue and re-sorting it on every arrival — it was a third,
+independent quadratic, and on shapes with out-degree it was the largest single term: 60% of
+the loop's `list.elements` on independent pairs, 21% on a fleet of ten-chains, 43% on a
+binary tree, and 0% on a chain, whose ready set never holds two nodes at once.
 
-Re-run, and the two halves have **different producers**. Every figure in the paragraph above
-is a comparison between **two revisions of this library**, and the array ready set exists at
-neither the tip nor in any arm of `ci/bench/cost-classes.nix` — so no command in this
+**The heap's price is now the leading set-axis term, as it was predicted to become.** It adds
+one attrset per node on each merge path, 63 → 89 attrsets per node across n = 1000 → 8000;
+with the indegree map's quadratic gone, that Θ(n log n) term is what the `wide` set axis
+mostly is — 106.8 `sets.elements` per node at n = 4000 against the heap's own ~80. It is
+stated rather than netted, and it is the reason `sets` grows a little faster than `list` on
+the shapes with real out-degree.
+
+Re-run, and the figures above have **two different producers**, split by whether they are a
+reading or a comparison. The growth rates and the per-node counts are readings of the shipped
+library: `ci/bench/cost-classes.nix`, arm `topoOrder`, at `n = 1000 / 2000 / 4000`. The
+**shares and deltas** — the ready set's 60% / 21% / 43% / 0%, and the heap's 63 → 89 attrsets
+per node — are comparisons between **two revisions of this library**, and the array ready set
+exists at neither the tip nor in any arm of `ci/bench/cost-classes.nix`, so no command in this
 repository produces a share or a delta, and none can. Those come from the committed
 two-revision harness: `den-architecture`,
 `specs/2026-08-08-gen-graph-ready-set-quadratic.r1-*`, whose `.r1-data-note.md` carries the
@@ -758,7 +772,7 @@ in {
 | `coScc` | O(reachable from u, v) | two `canReach` probes, no full closure |
 | `condensation` | **closure class** (see below) | two transitive closures (graph + quotient) |
 | `coneRank` | O(|cone| + edges-in-cone) | `lib.fix` memoized depth, cone-local (no condensation) |
-| `topoOrder` / `phaseOrder` | O(n + E) decrements, but **quadratic in allocation** — exponent 2.00 on `list.elements`, chain and wide | **two** accumulators pay it: the emitted list and the indegree map. The ready set does not — it is a leftist heap, Θ(n log n), where a re-sorted array was a third quadratic worth 60% of the `wide` list allocation. The heap's price is on `sets.elements`, 63 → 89 attrsets per node over n = 1000 → 8000. No frame ceiling — the loop is a bounded iteration, so no node count aborts or is refused |
+| `topoOrder` / `phaseOrder` | O(n + E) decrements, and **near-linear in allocation** — exponent 1.07–1.08 on `list.elements` and 0.99–1.12 on `sets.elements`, all four acyclic shapes | nothing the loop carries is quadratic: the emitted sequence is a binary-counter run list (Θ(n log n)), the indegree map is a residue over a rebuilt base, and the ready set is a leftist heap (Θ(n log n)), where a re-sorted array was a third quadratic worth 60% of the `wide` list allocation. The heap's `sets.elements` price, 63 → 89 attrsets per node over n = 1000 → 8000, is now the leading set-axis term. No frame ceiling — the loop is a bounded iteration, so no node count aborts or is refused |
 | `directDependents` / `directDependentsOf` | O(edges) | one `groupBy` reverse-adjacency map |
 | `seededFixpoint` | O(work per delta) | semi-naive: each iteration touches only the frontier |
 | `roots` / `leaves` | O(nodes × avg degree) | single scan of all edges |

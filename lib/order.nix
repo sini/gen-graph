@@ -16,8 +16,14 @@
 # way, and callers that build their own accessor (gen-vars) do too.
 #
 # COST: building the reverse index and the indegree map is O(n + E) via groupBy; the loop
-# performs exactly E decrements. The residual is min-extraction over the ready set, which a
-# priority queue makes O(log m) at m live nodes — and pure Nix CAN express one. A persistent
+# performs exactly E decrements. What the loop ALLOCATES is a separate question from what it
+# computes, and in a language whose only aggregate update is a whole-value copy it is the
+# larger one: a step that appends to a vector or updates an attrset pays the size of the
+# whole thing. Both loop-carried aggregates are therefore held in shapes that pay their
+# UPDATE rather than their SIZE — the emitted sequence as a numerical representation and the
+# indegree map as a residue over a rebuilt base, each argued where it is built below.
+# The residual is min-extraction over the ready set, which a priority queue makes O(log m) at
+# m live nodes — and pure Nix CAN express one. A persistent
 # priority queue with O(log m) worst-case merge and delete-min does not require mutation:
 # leftist heaps (Crane 1972; Knuth, TAOCP vol. 3 §5.2.3), skew heaps (Sleator & Tarjan 1986)
 # and pairing heaps (Fredman, Sedgewick, Sleator & Tarjan 1986) are all purely functional,
@@ -148,6 +154,7 @@ let
       );
 
       indeg0 = prelude.mapAttrs (_: ds: builtins.length ds) depsOf;
+      nodeCount = builtins.length keys;
 
       # ── the ready set: a leftist heap ──
       # `null | { k; l; r; rank; }`, where `rank` is the length of the right spine and the
@@ -199,6 +206,69 @@ let
       };
       insertAll = builtins.foldl' (h: k: mergeH h (singleton k));
 
+      # ── the emitted sequence: a numerical representation ──
+      # A Nix list is a VECTOR, so `emitted ++ [ pick ]` allocates a fresh k-element vector at
+      # step k and recording an answer of size n costs Θ(n²). Prepending is not an escape —
+      # `[ pick ] ++ emitted` copies exactly the same k+1 elements — and neither is a cons
+      # chain, which trades the copy for an O(k) walk at every read. There is no O(1) append
+      # in the substrate to reach for, so the accumulator has to stop being ONE list.
+      #
+      # THEORY: a NUMERICAL REPRESENTATION (Okasaki, *Purely Functional Data Structures* 1998
+      # §9.1; §9.2.1 builds binary random-access lists from exactly this correspondence). The
+      # sequence is held as RUNS whose lengths are the binary representation of the number of
+      # nodes emitted, newest run first. Appending is then the INCREMENT of a binary counter:
+      # prepend a one-element run, then carry while the low bit is set, each carry
+      # concatenating the two equal-length runs at the front. An element is copied once per
+      # carry it survives and no element survives more than ⌊log₂ n⌋ of them, so the loop
+      # allocates Θ(n log n) in place of Θ(n²). The carry reads the COUNTER rather than
+      # measuring the runs, which is the representation's whole point — the number is the
+      # shape — and it is why the count is loop-carried rather than recovered at the end.
+      # ★ The untouched runs are carried over by `tail`/`++`, which copy element POINTERS, and
+      # NOT by a `genList` of `elemAt` — which allocates the same number of list cells but
+      # makes each carried run a fresh indirection onto the previous list. Those indirections
+      # compose: a run untouched for k carries is an `elemAt` chain k deep, and forcing it at
+      # the end costs k C-stack frames, so the `genList` spelling of this same function aborts
+      # with `error: stack overflow (possible infinite recursion)` on a chain of 8,000 nodes
+      # while returning correctly at 4,000. The cost axis is identical; only the sharing is.
+      mergeRuns = rs: [ (builtins.elemAt rs 1 ++ builtins.head rs) ] ++ builtins.tail (builtins.tail rs);
+      carryRuns = c: rs: if c - 2 * (c / 2) == 1 then carryRuns (c / 2) (mergeRuns rs) else rs;
+      pushRun =
+        c: rs: x:
+        carryRuns c ([ [ x ] ] ++ rs);
+      # Runs are newest-first and each run holds its own elements in emission order, so the
+      # sequence is the runs reversed and concatenated — one pass over ⌊log₂ n⌋ + 1 runs.
+      flushRuns =
+        rs:
+        let
+          m = builtins.length rs;
+        in
+        prelude.concatLists (builtins.genList (i: builtins.elemAt rs (m - 1 - i)) m);
+
+      # ── the indegree map: a residue over a base that is rebuilt, not rewritten ──
+      # `indeg // genAttrs succs …` copies the WHOLE map at every step: Θ(n) allocated to
+      # record |succs| decrements, Θ(n²) over the loop, and the map is n wide whether or not
+      # the step touches two entries. The map is therefore split in two — a `base` that is not
+      # rewritten, and a `residue` carrying only the nodes whose count has been decremented
+      # and has NOT yet reached zero. A node enters the residue when one of its dependencies
+      # is emitted and leaves it when its last one is, so where every indegree is one the
+      # residue is empty at every step and the loop allocates nothing for it at all. A read is
+      # the residue first and the base behind it.
+      #
+      # The residue alone is not enough, and the shape that breaks it is ordinary: a graph
+      # that satisfies many nodes PARTIALLY and leaves them waiting carries a wide residue for
+      # many steps, which is the same quadratic in a smaller font. So the residue is folded
+      # back into the base — AMORTIZED REBUILDING (Overmars, *The Design of Dynamic Data
+      # Structures*, 1983; Bentley & Saxe 1980 for the static-to-dynamic decomposition it
+      # generalizes) — once carrying it has cost about what rebuilding costs. A residue `w`
+      # wide costs ~w per step and took ~w steps to reach that width, so `w² ≥ n` is the point
+      # where the two meet; that comparison IS the trigger, and no tuning constant enters,
+      # because the balance is derived from the two costs rather than picked.
+      #
+      # ★ Amortized bounds do not survive PERSISTENT re-use of a structure's old versions —
+      # Okasaki 1998 §5 makes that the objection to naive amortization in this setting. The
+      # bound holds here because the loop is a fold: `iterateBounded` threads one state, every
+      # version is consumed exactly once, and no step reaches back to an earlier one.
+      #
       # The pick is the heap's root, which IS the minimum key under `lessThan`, so the emitted
       # order is the same greedy min-key sequence a sorted array consumed by cursor produces —
       # the keys are distinct, so that minimum is unique and the two agree element for element.
@@ -210,18 +280,42 @@ let
           let
             pick = st.ready.k;
             succs = dependentsOf.${pick} or [ ];
-            indeg = st.indeg // prelude.genAttrs succs (s: st.indeg.${s} - 1);
-            newly = builtins.filter (s: indeg.${s} == 0) succs;
+            # Read each loop-carried field once per step rather than once per successor.
+            base = st.base;
+            residue = st.residue;
+            dropped = prelude.genAttrs succs (s: (residue.${s} or base.${s}) - 1);
+            newly = builtins.filter (s: dropped.${s} == 0) succs;
+            waiting = builtins.filter (s: dropped.${s} != 0) succs;
+            satisfied = builtins.filter (s: residue ? ${s}) newly;
+            residue' =
+              if waiting == [ ] && satisfied == [ ] then
+                residue
+              else
+                removeAttrs (residue // prelude.genAttrs waiting (s: dropped.${s})) satisfied;
+            # An UPPER BOUND on the residue's width, not its size: a node decremented twice
+            # while it waits is counted twice. Over-counting can only fold the residue back
+            # early, never late, so the bound is the safe direction and costs one addition.
+            width = st.width + builtins.length waiting - builtins.length satisfied;
+            fold = width * width >= nodeCount;
           in
           {
-            inherit indeg;
+            base = if fold then base // residue' else base;
+            residue = if fold then { } else residue';
+            width = if fold then 0 else width;
             ready = insertAll (mergeH st.ready.l st.ready.r) newly;
-            emitted = st.emitted ++ [ pick ];
+            emitted = pushRun st.count st.emitted pick;
+            count = st.count + 1;
           };
 
-      # The loop-carried fields, for the driver to force at every step: `indeg` accumulates
-      # `//` updates and `emitted` accumulates a list spine, and WHNF on the state record
-      # reaches neither.
+      # The loop-carried fields, for the driver to force at every step: WHNF on the state
+      # record reaches none of them, and every one of them accumulates. `base` and `residue`
+      # accumulate `//` and `removeAttrs`; `width` and `count` accumulate arithmetic; the runs
+      # accumulate a chain of pending carries. ★ The last of those is not covered by forcing
+      # the count, and the difference is an abort rather than a slowdown: with `count` forced
+      # and the runs left alone, `deepSeq` over the answer dies with `error: stack overflow;
+      # max-call-depth exceeded` on a chain of 2,000 nodes, because the carries are one
+      # `mergeRuns` thunk deep per step. `builtins.length` on the runs forces the spine each
+      # step, which is what keeps that chain one carry deep instead of n.
       #
       # WHNF on `ready` is enough, and that is a property of the heap rather than a shortcut.
       # A ready set the loop rebuilds lazily layers one thunk per step and overflows the C
@@ -231,7 +325,13 @@ let
       # WHNF runs the comparison at the root, which forces both operands' keys, and the rank
       # test forces both children to WHNF before the node is built. So a heap node in WHNF has
       # its children in WHNF, and forcing the root leaves no layer behind it.
-      carried = st: builtins.seq st.indeg (builtins.seq st.ready (builtins.length st.emitted));
+      carried =
+        st:
+        builtins.seq st.base (
+          builtins.seq st.residue (
+            builtins.seq st.width (builtins.seq st.ready (builtins.seq st.count (builtins.length st.emitted)))
+          )
+        );
 
       # The loop is DRIVEN, not recursed. A step that applies itself costs one evaluator frame
       # per node — Nix does not reuse the frame of a tail call — so the descent depth is the
@@ -243,11 +343,14 @@ let
       # ready set is exhausted, so every surplus step idles. A cyclic graph emits fewer than n
       # and the residual check below reads that unchanged.
       final = prelude.iterateBounded carried step {
-        indeg = indeg0;
+        base = indeg0;
+        residue = { };
+        width = 0;
         # Heapified by repeated insert, Θ(m log m). Not sorted first: the heap orders what it
         # holds, so a sort feeding it would be discarded work.
         ready = insertAll null (builtins.filter (k: indeg0.${k} == 0) keys);
         emitted = [ ];
+        count = 0;
       } keys;
 
       # The cycle report is SCC MEMBERSHIP, named by `cycles`/`condensation` rather than
@@ -265,7 +368,7 @@ let
     in
     if refusal != null then
       throw "gen-graph.topoOrder: ${refusal}"
-    else if builtins.length final.emitted < builtins.length keys then
+    else if final.count < nodeCount then
       {
         ok = false;
         inherit cycles;
@@ -273,7 +376,7 @@ let
     else
       {
         ok = true;
-        order = map (k: nodeOf.${k}) final.emitted;
+        order = map (k: nodeOf.${k}) (flushRuns final.emitted);
       };
 
   # after=[d] on n => n depends on d (edge n->d); before=[t] on n => t depends on n

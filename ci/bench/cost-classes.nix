@@ -17,10 +17,12 @@
 #      closure and the quotient closure), and `transitiveReduction` (`fixpoint.nix`).
 #      These share one cost and must be documented from one measurement, or a reader
 #      comparing two rows infers a distinction that does not exist.
-#   3. the ORDERING loop — `topoOrder`'s Kahn emission loop, whose cost is dominated by
-#      the two accumulators it carries: `emitted`, a fresh k-element vector at step k, and
-#      the indegree map, copied whole per step. Both are Θ(n²) in allocation and neither is
-#      visible on a shape that never enters the loop.
+#   3. the ORDERING loop — `topoOrder`'s Kahn emission loop, whose cost is the two
+#      accumulators it carries plus the ready set. None of the three is visible on a shape
+#      that never enters the loop. The emitted sequence is a run list under a binary-counter
+#      carry (Θ(n log n)) and the indegree map is a residue over a periodically rebuilt base,
+#      so the loop's allocation now tracks what each step CHANGES rather than the width of
+#      what it carries; the shapes below are what say whether that holds on a given graph.
 #
 # ★ THE FIRST TWO CLASSES CANNOT SEE THE THIRD, AND THE REASON IS STRUCTURAL. `complete`
 # and `cycle` are cyclic BY CONSTRUCTION — they exist to price the cycle path, which needs
@@ -268,6 +270,16 @@ let
   # nothing about the subject had moved. On a SHIFTED-STRUCTURAL reading, first ask whether
   # more than one thing changed; the verdict is a prompt to decompose, not a conviction.
   #
+  # ★★ THE SAME VERDICT IS ALSO WHAT A GENUINE SUBJECT MOVE PRODUCES, and the third cell is
+  # what tells the two apart: `peerClosure` reaches no ordering code, so a change to the
+  # ordering loop leaves it bit-identical while both `topoOrder` cells move. The pins below
+  # were last re-derived from exactly that signature — an ordering-loop change measuring
+  # `sentinel` list −805 / sets −316 / nrLookups +1214 and `peerOrder` list −805 / sets −93 /
+  # nrLookups +1152, against `peerClosure` 0 / 0 / 0 on all three axes. A harness edit is the
+  # opposite shape: it moves every cell, including the one that calls no changed code. Read
+  # the decomposition before the verdict, and re-pin from the frozen file in the same commit
+  # as the change that moved it.
+  #
   # The pins are the readings of THIS file at the revision that last re-derived them. They
   # are `sets.elements`-bearing and therefore comparable only within one bench revision:
   # when the sentinel reports SHIFTED-BENIGN, re-run every cell on the frozen bench, re-pin
@@ -279,14 +291,14 @@ let
   # here and do not read `n`/`shape` — a pin against a caller-chosen size is not a pin.
   sentinelPins = {
     sentinel = {
-      list = 3545;
-      sets = 3106;
-      nrLookups = 3054;
+      list = 2740;
+      sets = 2790;
+      nrLookups = 4268;
     };
     peerOrder = {
-      list = 3266;
-      sets = 4273;
-      nrLookups = 6489;
+      list = 2461;
+      sets = 4180;
+      nrLookups = 7641;
     };
     peerClosure = {
       list = 490790;
