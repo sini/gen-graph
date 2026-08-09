@@ -415,8 +415,20 @@ term: 60% of the loop's `list.elements` on independent pairs, 21% on a fleet of 
 trade is stated rather than netted: the heap **adds** to `sets.elements`, one attrset per
 node on each merge path, measured at 63 → 89 attrsets per node across n = 1000 → 8000 — a
 Θ(n log n) term, today dominated by the indegree map's Θ(n²) and the leading set-axis cost
-once that is fixed. Re-run: `ci/bench/cost-classes.nix`, arm `topoOrder`, shapes `wide` /
-`fleet` / `discrim` / `deepwide`.
+once that is fixed.
+
+Re-run, and the two halves have **different producers**. Every figure in the paragraph above
+is a comparison between **two revisions of this library**, and the array ready set exists at
+neither the tip nor in any arm of `ci/bench/cost-classes.nix` — so no command in this
+repository produces a share or a delta, and none can. Those come from the committed
+two-revision harness: `den-architecture`,
+`specs/2026-08-08-gen-graph-ready-set-quadratic.r1-*`, whose `.r1-data-note.md` carries the
+procedure, the pinned revisions and the md5 anchors. **Post-change** cells — what the shipped
+`topoOrder` costs on any shape, as it stands — come from `ci/bench/cost-classes.nix`, arm
+`topoOrder`, shapes `wide` / `fleet` / `discrim` / `deepwide`. ★ Before quoting a
+`sets.elements` figure from that bench, read `ci/bench/sentinel.sh`: `sets` figures are
+comparable only within one revision of the bench file, and the sentinel is what says which
+revision you are on.
 
 **`phaseOrder entries`** is the throwing convenience layer over `topoOrder`: it returns
 **a** valid topological order, and throws on a cycle or a self-loop, preserving the
