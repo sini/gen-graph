@@ -43,8 +43,12 @@
 # INTERFACE — `arm` × `shape` × `n`:
 #   arm   = cycles | condensation | dependents | transitiveClosure
 #         | transitiveReduction | topoOrder | floor
+#         | sentinel | sentinelPeerOrder | sentinelPeerClosure | sentinelVerdict
 #   shape = complete | cycle | chain | wide | fleet | discrim | deepwide
 #   n     = node count (use doublings, e.g. 50/100/200, so a ratio reads as 2^exp)
+#
+# The four `sentinel*` arms ignore `shape` and `n` — their cells are fixed in the file (see
+# the sentinel block). Read them through `./ci/bench/sentinel.sh`, not by hand.
 #
 # CYCLIC FIXTURES, and why these two:
 #   `complete` — the complete digraph: every node points at every other. Out-degree
@@ -81,6 +85,16 @@
 # to every cyclic key, which forces the same transitive closure, so this arm's
 # cost class is the one the cycle path actually pays.
 #
+# ★ BEFORE QUOTING ANY `sets.elements` FIGURE FROM THIS FILE, read the harness sentinel:
+#
+#   ./ci/bench/sentinel.sh     ⇒ verdict = "STABLE" | "SHIFTED-BENIGN"
+#                                        | "SHIFTED-STRUCTURAL" | "UNUSABLE"
+#
+# `sets` figures are comparable only within one revision of this file, and the sentinel is
+# what says which revision you are on. `STABLE` publishes. `SHIFTED-BENIGN` means re-run
+# every cell on the frozen file, re-pin, and publish WITH THE OFFSET LEFT IN. The other two
+# do not publish. See the sentinel block below for its operating assumption.
+#
 # RUN (all three axes; a single-axis read is what this file exists to prevent):
 #   NIX_SHOW_STATS=1 NIX_SHOW_STATS_PATH=/tmp/s.json nix-instantiate --eval --strict \
 #     --arg n 200 --argstr arm condensation --argstr shape cycle ./ci/bench/cost-classes.nix
@@ -90,6 +104,7 @@
   n ? 50,
   arm ? "cycles",
   shape ? "complete",
+  observed ? null,
 }:
 let
   g = import ../../default.nix { };
@@ -102,22 +117,6 @@ let
       z = builtins.substring 0 (5 - builtins.stringLength s) "00000";
     in
     "n${z}${s}";
-  ringNodes = builtins.genList pad n;
-  idxOf = builtins.listToAttrs (
-    builtins.genList (i: {
-      name = pad i;
-      value = i;
-    }) n
-  );
-
-  completeEdges = id: builtins.filter (x: x != id) ringNodes;
-  cycleEdges =
-    id:
-    let
-      i = idxOf.${id};
-    in
-    [ (pad (if i + 1 < n then i + 1 else 0)) ];
-
   ix = m: builtins.genList (i: i) m;
   # Every acyclic fixture precomputes a dependency attrset and exposes the SAME accessor
   # shape, `k: m.${k} or [ ]`, so the accessor is a Θ(n) preamble cost in each and no shape
@@ -135,86 +134,217 @@ let
   # The deep leg's length, past the rank recurrence's ceiling.
   deepwideD = 4000;
 
-  fixtures = {
-    complete = {
-      nodes = ringNodes;
-      edges = completeEdges;
-    };
-    cycle = {
-      nodes = ringNodes;
-      edges = cycleEdges;
-    };
-    chain = fromPairs (map (key "n") (ix n)) (
-      map (i: {
-        name = key "n" i;
-        value = if i == 0 then [ ] else [ (key "n" (i - 1)) ];
-      }) (ix n)
-    );
-    wide =
-      let
-        m = n / 2;
-      in
-      fromPairs (map (key "a") (ix m) ++ map (key "b") (ix m)) (
+  # Parameterised by SIZE rather than closing over the caller's `n`, so the sentinel below
+  # can instantiate its own fixed cells from the same builders every other arm uses.
+  mkFixtures =
+    n:
+    let
+      # Shared per instantiation, NOT rebuilt per edge call: `cycleEdges` is O(1) amortised
+      # because `idxOf` is one binding the whole fixture reads. Rebuilding it inside `edges`
+      # would make the accessor O(n) per call and silently move every closure-class figure
+      # this file already publishes.
+      ringNodes = builtins.genList pad n;
+      idxOf = builtins.listToAttrs (
+        builtins.genList (i: {
+          name = pad i;
+          value = i;
+        }) n
+      );
+    in
+    {
+      complete = {
+        nodes = ringNodes;
+        edges = id: builtins.filter (x: x != id) ringNodes;
+      };
+      cycle = {
+        nodes = ringNodes;
+        edges =
+          id:
+          let
+            i = idxOf.${id};
+          in
+          [ (pad (if i + 1 < n then i + 1 else 0)) ];
+      };
+      chain = fromPairs (map (key "n") (ix n)) (
         map (i: {
-          name = key "b" i;
-          value = [ (key "a" i) ];
-        }) (ix m)
+          name = key "n" i;
+          value = if i == 0 then [ ] else [ (key "n" (i - 1)) ];
+        }) (ix n)
       );
-    fleet =
-      let
-        c = n / 10;
-        k =
-          i: d:
-          "h"
-          + builtins.substring 0 (6 - builtins.stringLength (toString i)) "000000"
-          + toString i
-          + "-"
-          + toString d;
-      in
-      fromPairs (builtins.concatLists (map (i: map (k i) (ix 10)) (ix c))) (
-        builtins.concatLists (
-          map (
-            i:
-            map (d: {
-              name = k i d;
-              value = if d == 0 then [ ] else [ (k i (d - 1)) ];
-            }) (ix 10)
-          ) (ix c)
-        )
-      );
-    discrim =
-      let
-        m = n / 2;
-      in
-      fromPairs (map (key "m") (ix m) ++ map (key "a") (ix m)) (
-        map (i: {
-          name = key "a" i;
-          value = [ (key "m" i) ];
-        }) (ix m)
-      );
-    deepwide =
-      let
-        m = (n - deepwideD) / 2;
-      in
-      if n < deepwideD + 2 then
-        throw "shape deepwide requires n >= ${toString (deepwideD + 2)} (one ${toString deepwideD}-chain plus at least one pair); got ${toString n}"
-      else
-        fromPairs (map (key "c") (ix deepwideD) ++ map (key "a") (ix m) ++ map (key "b") (ix m)) (
+      wide =
+        let
+          m = n / 2;
+        in
+        fromPairs (map (key "a") (ix m) ++ map (key "b") (ix m)) (
           map (i: {
-            name = key "c" i;
-            value = if i == 0 then [ ] else [ (key "c" (i - 1)) ];
-          }) (ix deepwideD)
-          ++ map (i: {
             name = key "b" i;
             value = [ (key "a" i) ];
           }) (ix m)
         );
-  };
+      fleet =
+        let
+          c = n / 10;
+          k =
+            i: d:
+            "h"
+            + builtins.substring 0 (6 - builtins.stringLength (toString i)) "000000"
+            + toString i
+            + "-"
+            + toString d;
+        in
+        fromPairs (builtins.concatLists (map (i: map (k i) (ix 10)) (ix c))) (
+          builtins.concatLists (
+            map (
+              i:
+              map (d: {
+                name = k i d;
+                value = if d == 0 then [ ] else [ (k i (d - 1)) ];
+              }) (ix 10)
+            ) (ix c)
+          )
+        );
+      discrim =
+        let
+          m = n / 2;
+        in
+        fromPairs (map (key "m") (ix m) ++ map (key "a") (ix m)) (
+          map (i: {
+            name = key "a" i;
+            value = [ (key "m" i) ];
+          }) (ix m)
+        );
+      deepwide =
+        let
+          m = (n - deepwideD) / 2;
+        in
+        if n < deepwideD + 2 then
+          throw "shape deepwide requires n >= ${toString (deepwideD + 2)} (one ${toString deepwideD}-chain plus at least one pair); got ${toString n}"
+        else
+          fromPairs (map (key "c") (ix deepwideD) ++ map (key "a") (ix m) ++ map (key "b") (ix m)) (
+            map (i: {
+              name = key "c" i;
+              value = if i == 0 then [ ] else [ (key "c" (i - 1)) ];
+            }) (ix deepwideD)
+            ++ map (i: {
+              name = key "b" i;
+              value = [ (key "a" i) ];
+            }) (ix m)
+          );
+    };
 
   # An unknown SHAPE must refuse exactly as loudly as an unknown ARM. Falling through
   # to a default fixture would tag a real figure with a shape that was never measured.
+  fixtures = mkFixtures n;
   acc = fixtures.${shape} or (throw "unknown shape ${shape}");
   inherit (acc) nodes edges;
+
+  # ── THE HARNESS SENTINEL ──────────────────────────────────────────────────────────
+  # A shared bench file is a MUTABLE INSTRUMENT. Adding one attribute to the dispatch
+  # attrset shifts `sets.elements` on every arm reached through it — measured on THIS file at
+  # +1, uniform across all twelve pre-existing arm x shape cells, when the ordering class was
+  # added — so a `sets` figure quoted across an edit is wrong by a constant nobody sees. The sentinel exists to make that constant visible instead of silent.
+  #
+  # It is ON THE EVALUATION PATH BOTH WAYS, because either alone is insufficient: it is
+  # dispatched through the same `table` as every other arm AND it calls gen-graph. A guard
+  # sees a harness change iff the change is on the guard's own evaluation path, and calling
+  # the library is one sufficient way onto that path rather than the only one.
+  #
+  # ★ It reports a CLASSIFICATION, not pass/fail. The shift a bench edit produces is benign
+  # — one axis, uniform, no exponent or ratio moves — and an arm that cries red on a benign
+  # shift gets disabled, which leaves the class unguarded while looking guarded.
+  #
+  # ★★ ITS OPERATING ASSUMPTION IS ONE CHANGE AT A TIME, and a future reader needs this to
+  # interpret a SHIFTED-STRUCTURAL reading. Uniformity is what separates a harness edit from
+  # a subject move, but TWO benign changes on DIFFERENT evaluation paths sum to a
+  # non-uniform delta and read as structural. Measured instance: a bench edit (+3 on every
+  # cell, via the dispatch attrset) landing together with a gen-prelude bump (+6 on the
+  # cells whose evaluation path reaches the prelude, and 0 on the rest) produced a delta of
+  # +9 on some cells and +3 on others — single-axis and non-uniform, i.e. SHIFTED-STRUCTURAL
+  # by the rule, while `list.elements` and `nrLookups` were bit-identical on every cell and
+  # nothing about the subject had moved. On a SHIFTED-STRUCTURAL reading, first ask whether
+  # more than one thing changed; the verdict is a prompt to decompose, not a conviction.
+  #
+  # The pins are the readings of THIS file at the revision that last re-derived them. They
+  # are `sets.elements`-bearing and therefore comparable only within one bench revision:
+  # when the sentinel reports SHIFTED-BENIGN, re-run every cell on the frozen bench, re-pin
+  # from that run, and publish WITH THE OFFSET LEFT IN. Never subtract it — subtracting
+  # makes the published figure irreproducible from the stated command.
+  #
+  # Three cells, because uniformity cannot be established from one: the sentinel proper and
+  # TWO further library arms, so it is never read alone. Their shapes and sizes are FIXED
+  # here and do not read `n`/`shape` — a pin against a caller-chosen size is not a pin.
+  sentinelPins = {
+    sentinel = {
+      list = 3549;
+      sets = 3112;
+      nrLookups = 3066;
+    };
+    peerOrder = {
+      list = 3270;
+      sets = 4279;
+      nrLookups = 6501;
+    };
+    peerClosure = {
+      list = 490794;
+      sets = 8073;
+      nrLookups = 29012;
+    };
+  };
+  sentinelCells = {
+    sentinel = {
+      arm = "topoOrder";
+      shape = "chain";
+      n = 64;
+    };
+    peerOrder = {
+      arm = "topoOrder";
+      shape = "wide";
+      n = 64;
+    };
+    peerClosure = {
+      arm = "condensation";
+      shape = "cycle";
+      n = 32;
+    };
+  };
+  sentinelAxes = [
+    "list"
+    "sets"
+    "nrLookups"
+  ];
+  sentinelNames = builtins.attrNames sentinelPins;
+
+  # ★ UNUSABLE NEVER COLLAPSES TO STABLE. A reading that is absent, non-integer or
+  # incomplete is a sentinel that did not run, and "did not run" must never be reported as
+  # "did not move" — that is the failure mode where a comparator compares two empty
+  # readings and prints the reassuring answer.
+  sentinelUsable =
+    observed != null
+    && builtins.isAttrs observed
+    && builtins.all (
+      nm:
+      observed ? ${nm}
+      && builtins.all (a: observed.${nm} ? ${a} && builtins.isInt observed.${nm}.${a}) sentinelAxes
+    ) sentinelNames;
+  sentinelDelta = nm: a: observed.${nm}.${a} - sentinelPins.${nm}.${a};
+  sentinelMoved = builtins.filter (
+    a: builtins.any (nm: sentinelDelta nm a != 0) sentinelNames
+  ) sentinelAxes;
+  sentinelUniform =
+    a:
+    let
+      ds = map (nm: sentinelDelta nm a) sentinelNames;
+    in
+    builtins.all (d: d == builtins.head ds) ds;
+  sentinelVerdict =
+    if !sentinelUsable then
+      "UNUSABLE"
+    else if sentinelMoved == [ ] then
+      "STABLE"
+    else if builtins.length sentinelMoved == 1 && sentinelUniform (builtins.head sentinelMoved) then
+      "SHIFTED-BENIGN"
+    else
+      "SHIFTED-STRUCTURAL";
 
   result =
     if arm == "cycles" then
@@ -239,26 +369,59 @@ let
       if r.ok then r.order else r.cycles
     else if arm == "floor" then
       builtins.deepSeq (map edges nodes) nodes
+    # The sentinel's own measurable body: `topoOrder` over a FIXED tiny graph, so the cell
+    # is dispatched through this same table AND calls gen-graph. It ignores `n`/`shape` by
+    # design — see sentinelCells.
+    else if arm == "sentinel" then
+      (g.topoOrder (mkFixtures 64).chain).order
+    else if arm == "sentinelPeerOrder" then
+      (g.topoOrder (mkFixtures 64).wide).order
+    else if arm == "sentinelPeerClosure" then
+      (g.condensation (mkFixtures 32).cycle).sccs
     else
       throw "unknown arm ${arm}";
 in
-builtins.deepSeq result {
-  inherit arm shape n;
-  # SHAPE CONTROL for the ordering class, read on every run: how many nodes have no
-  # dependencies, i.e. how many steps the Kahn loop starts with. ZERO means the emission
-  # loop never runs and the cell says nothing about the ordering cost — which is exactly
-  # what `complete` and `cycle` report, and why they could not price this class.
-  initialReady = builtins.length (builtins.filter (k: edges k == [ ]) nodes);
-  nodeCount = builtins.length nodes;
-  # SHAPE CONTROL, read on every run: both fixtures must be ONE SCC, or the arm is
-  # not measuring the cycle path's regime. `cycles` ⇒ len n, `condensation` ⇒ len 1.
-  # `transitiveClosure` ⇒ len n. `dependents` ⇒ len n-1 (target filtered out).
-  # `transitiveReduction` ⇒ len 0 on `complete`: every edge is implied by a two-hop
-  # path, and `differenceEdges` drops a key whose row empties — producing that answer
-  # still forces the closure, which is the cost being measured.
-  len =
-    if builtins.isList result then
-      builtins.length result
-    else
-      builtins.length (builtins.attrNames result);
-}
+if arm == "sentinelVerdict" then
+  {
+    verdict = sentinelVerdict;
+    pins = sentinelPins;
+    cells = sentinelCells;
+    inherit observed;
+    movedAxes = if sentinelUsable then sentinelMoved else [ ];
+    deltas =
+      if sentinelUsable then
+        builtins.listToAttrs (
+          map (nm: {
+            name = nm;
+            value = builtins.listToAttrs (
+              map (a: {
+                name = a;
+                value = sentinelDelta nm a;
+              }) sentinelAxes
+            );
+          }) sentinelNames
+        )
+      else
+        { };
+  }
+else
+  builtins.deepSeq result {
+    inherit arm shape n;
+    # SHAPE CONTROL for the ordering class, read on every run: how many nodes have no
+    # dependencies, i.e. how many steps the Kahn loop starts with. ZERO means the emission
+    # loop never runs and the cell says nothing about the ordering cost — which is exactly
+    # what `complete` and `cycle` report, and why they could not price this class.
+    initialReady = builtins.length (builtins.filter (k: edges k == [ ]) nodes);
+    nodeCount = builtins.length nodes;
+    # SHAPE CONTROL, read on every run: both fixtures must be ONE SCC, or the arm is
+    # not measuring the cycle path's regime. `cycles` ⇒ len n, `condensation` ⇒ len 1.
+    # `transitiveClosure` ⇒ len n. `dependents` ⇒ len n-1 (target filtered out).
+    # `transitiveReduction` ⇒ len 0 on `complete`: every edge is implied by a two-hop
+    # path, and `differenceEdges` drops a key whose row empties — producing that answer
+    # still forces the closure, which is the cost being measured.
+    len =
+      if builtins.isList result then
+        builtins.length result
+      else
+        builtins.length (builtins.attrNames result);
+  }
