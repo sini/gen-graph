@@ -582,6 +582,7 @@ Top-level helpers for building accessor records, exported flat (no `mock` namesp
 ```
 mkGraph      : { edges?, parents?, nodeData? } → accessorRecord
 fromRegistry : { registry, edges, parent? } → accessorRecord
+fromScan     : { items, scan, project, nodeData? } → accessorRecord + { derivedEdges }
 field        : name → id → entry → [id]
 fields       : [name] → id → entry → [id]
 fixtures     : { diamond, chain, cyclic, tree, serviceGraph, disconnected }
@@ -605,6 +606,26 @@ g = graph.mkGraph {
 graph.reachableFrom g "a"             # → [ "b" "c" ]
 graph.select g (d: d ? label)         # → [ "a" "c" ]
 ```
+
+**`fromScan`** — the graph a **reference scan** derives. Where `mkGraph` takes an edge list you already have, `fromScan` takes the values and *constructs* one: `items` are `{ id; value; }` pairs, `scan` reads the references out of a value, and `project` maps a reference to the id it names. The dependency structure is then a function of the values alone, knowable before any of them is used — Mokhov, Mitchell & Peyton Jones, *Build Systems à la Carte* (ICFP 2018) §3, applicative task dependencies.
+
+```nix
+g = graph.fromScan {
+  items = [
+    { id = "theme:font"; value = { size = mkRef "terminal:size"; }; }
+    { id = "terminal:size"; value = { }; }
+  ];
+  scan = v: builtins.filter isRef (builtins.attrValues v);
+  project = r: r.target;
+  nodeData = { "theme:font" = { field = "font"; }; };
+};
+
+g.edges "theme:font"                  # → [ "terminal:size" ]
+graph.cyclePaths g                    # → [ ]
+g.derivedEdges                        # → [ { from; to; item; ref; } ]
+```
+
+Nothing here knows what a reference is: `scan` and `project` arrive as arguments, so the scanned domain's vocabulary never enters gen-graph, and ids stay opaque strings — the compound `"<identity>:<field>"` addresses above are never split. Two contract points. `nodeData`'s keys **seed** nodes and items do not, so an item the scan finds nothing in, and that nothing references, is absent unless you name it. And `derivedEdges` comes back beside the accessor carrying the `item` and the `ref` behind each edge — that is where a caller reads a reference's own payload, instead of running the scan a second time.
 
 **`fromRegistry`** — wraps an arbitrary registry attrset. `edges`/`parent` are `id → entry → …` projections applied per node; `field`/`fields` build common projections.
 

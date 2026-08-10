@@ -77,6 +77,69 @@ let
         nodeData = id: nodeData.${id} or { };
       };
 
+    # fromScan — the graph a REFERENCE SCAN derives. Given a collection of scannable items, a
+    # scan reading the references out of an item's value, and a projection from a reference to the
+    # id it names, the edge set is CONSTRUCTED rather than declared — which is what makes the
+    # dependency structure knowable before any value is produced (Mokhov, Mitchell & Peyton Jones,
+    # *Build Systems à la Carte*, ICFP 2018, §3: applicative task dependencies are a function of
+    # the task description, not of running it).
+    #
+    # Nothing here knows what a reference IS. The scan and the projection arrive as arguments, so
+    # the scanned domain's vocabulary stays with the caller and ids stay opaque strings: a caller
+    # keying nodes by a compound address such as `<identity>:<field>` is indistinguishable from one
+    # keying by a bare name, and no separator is ever interpreted.
+    #
+    # Two contract points a caller depends on. `nodeData`'s keys SEED nodes, as they do for
+    # mkGraph, and items do not: an item the scan finds nothing in, and that nothing references,
+    # is absent from an edge-derived node set unless the caller names it here. And the derived
+    # edges come back beside the accessor, each carrying the item and the reference that produced
+    # it, so a caller wanting the reference's own payload reads it off the edge rather than
+    # scanning a second time. ★ That second point DEPARTS from a pure "returns an accessor"
+    # signature, and it is deliberate: the alternative is running the scan twice over every value
+    # — once to derive the edges here, once in the caller to name what each hop meant — and this
+    # is the shipped ref-graph path, not a cold one.
+    #
+    # `parents` forwards to mkGraph untouched. A derived graph still has a containment dimension:
+    # gen-schema's kind topology unions a `parent` edge set with the ref edges this derives, and a
+    # constructor that dropped `parents` would push that caller back to mkGraph and out of the
+    # derivation entirely.
+    #
+    # NOT the other three constructors, and each for its own reason. `mkGraph` takes an edge list
+    # a caller already holds — the derivation is precisely what it does not do. `fromRegistry`
+    # sets `nodes = builtins.attrNames registry`, so EVERY entry is a node whether or not anything
+    # touches it: the exact negation of the seeding contract above, which
+    # `test-items-do-not-seed-nodes` pins — building on it would silently widen a scanned
+    # collection into a node set. It also returns no derived edges, so the reference behind a hop
+    # would be unrecoverable without a second scan. `field`/`fields` are edge extractors reading a
+    # DECLARED list off an entry — a declaration is what a derivation replaces — and they hand
+    # back no reference either.
+    fromScan =
+      {
+        items,
+        scan,
+        project,
+        nodeData ? { },
+        parents ? [ ],
+      }:
+      let
+        derivedEdges = builtins.concatMap (
+          item:
+          map (r: {
+            from = item.id;
+            to = project r;
+            inherit item;
+            ref = r;
+          }) (scan item.value)
+        ) items;
+      in
+      self.mkGraph {
+        edges = map (e: { inherit (e) from to; }) derivedEdges;
+        inherit nodeData parents;
+      }
+      // {
+        inherit derivedEdges;
+      };
+
     fixtures = {
       diamond = self.mkGraph {
         edges = [
