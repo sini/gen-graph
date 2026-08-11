@@ -270,7 +270,9 @@ in
     # POSITIVE CONTROL for that zero, same instrument same run: derive the back-hop instead of
     # declaring it and the cycle is found.
     test-control-derived-back-edge-is-a-cycle = {
-      expr = builtins.length (cyclePaths { inherit (derivedBackEdge) nodes edges; });
+      expr = builtins.length (cyclePaths {
+        inherit (derivedBackEdge) nodes edges;
+      });
       expected = 1;
     };
 
@@ -286,19 +288,23 @@ in
       expected = true;
     };
     test-throwing-scan-propagates-on-force = {
-      expr = throws (fromScan {
-        items = [ (item addrA [ (refTo addrB "hop-1") ]) ];
-        scan = _: throw "scan boom";
-        inherit project;
-      }).nodes;
+      expr =
+        throws
+          (fromScan {
+            items = [ (item addrA [ (refTo addrB "hop-1") ]) ];
+            scan = _: throw "scan boom";
+            inherit project;
+          }).nodes;
       expected = true;
     };
     test-throwing-projection-propagates-on-force = {
-      expr = throws (fromScan {
-        items = [ (item addrA [ (refTo addrB "hop-1") ]) ];
-        inherit scan;
-        project = _: throw "project boom";
-      }).nodes;
+      expr =
+        throws
+          (fromScan {
+            items = [ (item addrA [ (refTo addrB "hop-1") ]) ];
+            inherit scan;
+            project = _: throw "project boom";
+          }).nodes;
       expected = true;
     };
     # The zero arm of that predicate: a well-formed graph forces clean through the same `throws`.
@@ -312,11 +318,15 @@ in
     # field alone. A derivation that split on ":" would report a three-node cycle over "a1b2c3d4",
     # "e5f6a7b8", "f1f2f3f4" — or no cycle at all.
     test-cycle-over-compound-keys = {
-      expr = lib.length (cyclePaths { inherit (cyclic) nodes edges; });
+      expr = lib.length (cyclePaths {
+        inherit (cyclic) nodes edges;
+      });
       expected = 1;
     };
     test-cycle-walk-is-ordered-over-compound-keys = {
-      expr = lib.head (cyclePaths { inherit (cyclic) nodes edges; });
+      expr = lib.head (cyclePaths {
+        inherit (cyclic) nodes edges;
+      });
       expected = [
         addrA
         addrB
