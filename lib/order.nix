@@ -488,10 +488,16 @@ let
       inConeProducers = id: builtins.filter (d: coneSet ? ${d}) (accessor.edges id);
 
       # The driver ranges over the DISTINCT ids: the memo map is keyed by id, so a repeated
-      # cone entry is one memo cell and one warming step. `cone` itself is left alone —
-      # `order` sorts what the caller handed over, as it always did.
+      # cone entry is one memo cell and one warming step, and ordering keys must be unique
+      # or the arm refuses the duplicate by name. `cone` itself is left alone — `order`
+      # sorts what the caller handed over, as it always did.
+      # ★ The distinct ids come from `coneSet`, which is already built: `prelude.unique` is
+      # Θ(n²) on the LIST axis — 8,010,002 list elements on a 4,000-element input, measured
+      # — and reaching for it here made the whole surface quadratic in what it allocates
+      # while the ceiling it was removing was a depth problem. Reading the keys off the
+      # membership set is the same answer for the cost of the `attrNames` list.
       driver = topoOrderKahn {
-        nodes = prelude.unique cone;
+        nodes = builtins.attrNames coneSet;
         edges = inConeProducers;
       };
 

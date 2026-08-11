@@ -74,7 +74,7 @@ let
 
       # Computed in EVERY arm. What varies is when its verdict is read, never whether it exists.
       driver = g.topoOrderKahn {
-        nodes = prelude.unique cone;
+        nodes = builtins.attrNames coneSet;
         edges = inConeProducers;
       };
 
