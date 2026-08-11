@@ -10,13 +10,20 @@
 #
 # The two classes measured here:
 #
-#   1. the two terms `topoOrder`'s CYCLE PATH pays — a `global.cycles` call and a
-#      `global.condensation` call (`lib/order.nix`, the `ok = false` branch);
+#   1. the two terms `topoOrder`'s CYCLE PATH pays — a `global.cycles` call and a partition
+#      call (`lib/order.nix`, the `ok = false` branch);
 #   2. the `fp.transitiveClosure`-INHERITING class — every surface whose cost is a
-#      closure call: `dependents` (`global.nix`), `condensation` (twice: the graph
-#      closure and the quotient closure), and `transitiveReduction` (`fixpoint.nix`).
-#      These share one cost and must be documented from one measurement, or a reader
-#      comparing two rows infers a distinction that does not exist.
+#      closure call: `dependents` (`global.nix`), `condensationClosure` (`global.nix`), and
+#      `transitiveReduction` (`fixpoint.nix`). These share one cost and must be documented
+#      from one measurement, or a reader comparing two rows infers a distinction that does
+#      not exist. ★ `condensation` LEFT THIS CLASS: it is the partition front door and now
+#      defaults to a forward–backward arm, which reaches no closure at all. It also used to
+#      contribute TWO closure calls (the graph closure and a second one over the quotient);
+#      the quotient closure is gone from every arm, so `condensationClosure` carries one.
+#   2a. the PARTITION arms — `fbNode` (the door's default, two `genericClosure` calls per
+#      node) and `fbWork` (one forward–backward pass per component over a `foldl'`
+#      accumulator). They are complementary rather than ranked, so the pair is the
+#      measurement: neither figure means anything without the other's on the same shape.
 #   3. the ORDERING loop — `topoOrder`'s Kahn emission loop, whose cost is the two
 #      accumulators it carries plus the ready set. None of the three is visible on a shape
 #      that never enters the loop. The emitted sequence is a run list under a binary-counter
@@ -57,6 +64,7 @@
 # INTERFACE — `arm` × `shape` × `n`:
 #   arm   = cycles | condensation | dependents | transitiveClosure
 #         | transitiveReduction | topoOrder | coneRank | coneRankShipped | floor
+#         | fbNode | fbWork | condensationClosure
 #         | sentinel | sentinelPeerOrder | sentinelPeerClosure | sentinelVerdict
 #   shape = complete | cycle | chain | wide | fleet | discrim | total | deepwide
 #   n     = node count (use doublings, e.g. 50/100/200, so a ratio reads as 2^exp)
@@ -107,9 +115,13 @@
 #   `floor` deep-forces the caller's edge set alone — the fixture's own cost,
 #   containing no gen-graph work — so a library figure can be read against it.
 #
-# The `condensation` arm forces `.sccs`. `lib/order.nix` instead applies `.sccOf`
-# to every cyclic key, which forces the same transitive closure, so this arm's
-# cost class is the one the cycle path actually pays.
+# The partition arms all force `.sccs`, so the four are read on one axis. `lib/order.nix`
+# instead reads `.sccOf`, which forces the same partition, so `fbNode`'s figure is the one
+# the cycle path actually pays — it binds that arm by name.
+#
+# ★ `condensation` AND `fbNode` MEASURE THE SAME CONSTRUCTION TODAY, and the pair is kept
+# anyway: the door's default is a separate decision from the arm's identity, and a single
+# arm named for the door would stop measuring the default the moment the default moved.
 #
 # ★ BEFORE QUOTING ANY `sets.elements` FIGURE FROM THIS FILE, read the harness sentinel:
 #
@@ -381,21 +393,57 @@ let
   # (reaching no ordering code) moved. Decomposed as the block above prescribes: the bench
   # edit that added the `coneRank` arms contributed ZERO — the three cells read the same on
   # the edited file as on the unedited one — so the whole +10 is the library's.
+  #
+  # ★★ RE-PINNED AGAIN, AND THE THIRD CELL'S SUBJECT MOVED — which is a different event from a
+  # harness shift and is recorded as one. The partition front door acquired arms, so the cell
+  # named `peerClosure` is now bound to `condensationClosure` rather than to `condensation`:
+  # the door left the closure class it was chosen to represent, and a peer cell that follows
+  # the door would have stopped spanning that class without saying so. Read on the unedited
+  # bench against the OLD pins, the movement decomposes into exactly two parts, and neither is
+  # legible in the sum:
+  #   · `sets` +7 UNIFORMLY on `sentinel` and `peerOrder`, `list` and `nrLookups` bit-identical
+  #     on both — the dispatch-attrset offset of one more module in the library's merge, the
+  #     SHIFTED-BENIGN signature this guard exists to make visible;
+  #   · `peerClosure` reading `list` 13,008 against a pin of 490,790 — a 97.3% drop that is
+  #     not drift at all but the door answering with a forward–backward arm where it used to
+  #     answer with a closure. On the same 32-node ring the closure construction is the arm
+  #     the pin was taken against, and repointing the cell restores the comparison.
+  # With the cell repointed, that second part collapses to `list` +107, `sets` +152 and
+  # `nrLookups` +181 — the closure arm's own change, which dropped a second closure over the
+  # quotient and took one ordering pass in its place. On a 32-node ring the quotient it
+  # dropped has ONE node, so what is visible here is almost all the pass it gained; the
+  # trade only pays on graphs whose quotient is large, and the arm rows are where that is
+  # read rather than here.
+  # ★ AND RE-PINNED ONCE MORE IN THE SAME ARC, for a movement that decomposes as cleanly as the
+  # first one did. The closure arm stopped finishing its own record and now calls the shared
+  # finisher by name, so that every arm returns one record BY CONSTRUCTION rather than by three
+  # copies being kept in step. Read against the previous pins:
+  #   · `sets` +3 UNIFORMLY on all three cells, `list` and `nrLookups` bit-identical on the two
+  #     ordering cells — one more name in the library's merged export set, which sits on every
+  #     cell's evaluation path. The same shape as the +10 recorded above, and benign for the
+  #     same reason;
+  #   · `peerClosure` alone taking a further `sets` +10 and `nrLookups` +1 with `list`
+  #     UNCHANGED at 490,897 — the arm's own rewiring. `list` not moving at all is the reading
+  #     worth keeping: the closure it is named for is untouched, and what changed is only where
+  #     the record around it is built.
+  # Summed, two axes move non-uniformly and the verdict reads SHIFTED-STRUCTURAL, which is
+  # correct and says nothing about either part. Both are obvious apart.
+  # The pins below are read from the FROZEN bench at this revision, with the offsets LEFT IN.
   sentinelPins = {
     sentinel = {
       list = 2740;
-      sets = 2801;
+      sets = 2811;
       nrLookups = 4332;
     };
     peerOrder = {
       list = 2461;
-      sets = 4191;
+      sets = 4201;
       nrLookups = 7705;
     };
     peerClosure = {
-      list = 490790;
-      sets = 8078;
-      nrLookups = 29000;
+      list = 490897;
+      sets = 8240;
+      nrLookups = 29182;
     };
   };
   sentinelCells = {
@@ -410,7 +458,7 @@ let
       n = 64;
     };
     peerClosure = {
-      arm = "condensation";
+      arm = "condensationClosure";
       shape = "cycle";
       n = 32;
     };
@@ -466,6 +514,14 @@ let
       g.cycles acc
     else if arm == "condensation" then
       (g.condensation acc).sccs
+    # The two forward–backward arms, and the closure construction the door demoted. All three
+    # force `.sccs`, so a row is comparable across them.
+    else if arm == "fbNode" then
+      (g.fbNode acc).sccs
+    else if arm == "fbWork" then
+      (g.fbWork acc).sccs
+    else if arm == "condensationClosure" then
+      (g.condensationClosure acc).sccs
     # `dependents` is curried (accessor -> targetId) and computes the FULL closure
     # before filtering, so the closure cost is paid whichever target is named.
     else if arm == "dependents" then
@@ -507,7 +563,7 @@ let
     else if arm == "sentinelPeerOrder" then
       (g.topoOrder (mkFixtures 64).wide).order
     else if arm == "sentinelPeerClosure" then
-      (g.condensation (mkFixtures 32).cycle).sccs
+      (g.condensationClosure (mkFixtures 32).cycle).sccs
     else
       throw "unknown arm ${arm}";
 in
