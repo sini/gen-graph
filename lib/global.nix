@@ -276,36 +276,9 @@ let
   # Impact analysis alias (uses efficient single-target path).
   impactOf = dependentsOf;
 
-  # Cone-local producers-first rank: depth id = 1 + max(depth of in-cone producers).
-  # O(|cone| + edges_in_cone) via prelude.fix memoization; NOT whole-graph condensation.
-  # RTD 1983 topological enumeration restricted to a dependent cone.
-  # Precondition: `cone` is acyclic (a data-change dependent cone is). A cyclic cone
-  # makes the prelude.fix recurrence self-referential → uncatchable infinite recursion.
-  coneRank =
-    accessor: cone:
-    let
-      coneSet = prelude.genAttrs cone (_: true);
-      inConeProducers = id: builtins.filter (d: coneSet ? ${d}) (accessor.edges id);
-      # prelude.fix binds `depth` once, so each node's depth is forced at most once
-      # (a plain recursive `let` would re-expand shared producers, blowing up to
-      # exponential) — this is what delivers the O(|cone| + edges_in_cone) bound.
-      depth = prelude.fix (
-        d:
-        prelude.genAttrs cone (
-          id:
-          let
-            ps = inConeProducers id;
-          in
-          if ps == [ ] then 0 else 1 + prelude.foldl' (m: p: prelude.max m d.${p}) 0 ps
-        )
-      );
-      order = builtins.sort (
-        a: b: if depth.${a} == depth.${b} then a < b else depth.${a} < depth.${b}
-      ) cone;
-    in
-    {
-      inherit order depth;
-    };
+  # `coneRank` used to live here. It is an ORDERING surface — it emits an order, and it now
+  # takes its warming order from the ordering arm by name — so it lives with the ordering
+  # family in `lib/order.nix`. The export set is unchanged: `lib/default.nix` merges both.
 
   # DIRECT reverse-adjacency (full map) — the public face of _reverseIndex.
   # DIRECT (immediate dependents), in contrast to dependentsOf's TRANSITIVE closure.
@@ -323,7 +296,6 @@ in
     impactOf
     condensation
     coScc
-    coneRank
     directDependents
     directDependentsOf
     ;

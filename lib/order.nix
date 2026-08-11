@@ -438,6 +438,97 @@ let
   # a caller of `topoOrderKahn` depends on.
   topoOrder = topoOrderKahn;
 
+  # Cone-local producers-first rank: depth id = 1 + max(depth of in-cone producers).
+  # O(|cone| + edges_in_cone) via prelude.fix memoization; NOT whole-graph condensation.
+  # RTD 1983 topological enumeration restricted to a dependent cone.
+  #
+  # ── WHY THERE IS A DRIVER ──
+  # The recurrence memoizes, which is what makes it linear, and memoization is also what
+  # made it a DESCENT: reading the deepest node first walks the whole chain one evaluator
+  # frame per link, and the interpreter's call-depth counter ends that walk with a
+  # `stack overflow; max-call-depth exceeded` no caller can catch. Measured on the shipped
+  # surface: `.order` returns at a 3,997-node chain and aborts at 3,998, and a whole-map
+  # `.depth` read is clean to 32,000 on a chain whose keys ascend with depth while dying
+  # between 1,999 and 2,000 on the SAME chain with the edges reversed — nothing changed but
+  # the orientation, because `genAttrs` forces in sorted key order and that order is
+  # topological in one direction and anti-topological in the other. The ceiling was never a
+  # property of the accessor; it was a property of the ORDER the map was forced in.
+  #
+  # So the map is forced in a topological order taken in-library, and the descent flattens:
+  # every node's producers are already forced when it is reached, so each entry costs one
+  # frame instead of a chain of them. No ceiling found to 32,000 on `chain` or on
+  # `deepwide` (`ci/bench/cone-ceiling.sh`), so per the ordering law this surface states
+  # that and refuses nothing at a size. The recurrence, the memo and the `(depth, id)` sort
+  # are untouched — the emitted order is identical element for element, which is the
+  # oracle the remediation is held to, and it is why this is a removal rather than a
+  # re-implementation. The price is one ordering pass, filed in `ci/bench/cost-classes.nix`
+  # (arm `coneRank`) rather than accepted silently.
+  #
+  # ★ THE DRIVER IS THE ARM, BY NAME. `topoOrderKahn`, never the front door: if the door's
+  # default ever becomes the rank recurrence, a `coneRank` warming from the door would be
+  # the rank recurrence calling itself. Binding the arm is non-circular either way.
+  #
+  # ★★ THE VERDICT IS CONSULTED BEFORE THE MEMO MAP IS ENTERED, and that ordering is the
+  # requirement — not merely that a driver exists. A cyclic cone makes the recurrence
+  # self-referential, so the first re-entry of a thunk fires the black-hole detector: an
+  # uncatchable `infinite recursion encountered`, reached after traversing the cycle exactly
+  # once and therefore long before any bound. Measured: the same construction with the
+  # driver COMPUTED but the memo read first aborts exactly that way, while reading the
+  # verdict first refuses by name. An implementer who keeps the driver and moves the read
+  # ahead of it has the remedy nominally in place and the black hole back.
+  #
+  # The refusal is therefore a BY-PRODUCT of the construction rather than a guard bolted on:
+  # the ordering call that supplies the warming order is the same call that reports the
+  # cycle, and it names it. Two consumers were answering this precondition two different
+  # ways — one guarding by hand, one documenting it and not guarding — and neither had to.
+  coneRank =
+    accessor: cone:
+    let
+      coneSet = prelude.genAttrs cone (_: true);
+      inConeProducers = id: builtins.filter (d: coneSet ? ${d}) (accessor.edges id);
+
+      # The driver ranges over the DISTINCT ids: the memo map is keyed by id, so a repeated
+      # cone entry is one memo cell and one warming step. `cone` itself is left alone —
+      # `order` sorts what the caller handed over, as it always did.
+      driver = topoOrderKahn {
+        nodes = prelude.unique cone;
+        edges = inConeProducers;
+      };
+
+      # prelude.fix binds `depth` once, so each node's depth is forced at most once
+      # (a plain recursive `let` would re-expand shared producers, blowing up to
+      # exponential) — this is what delivers the O(|cone| + edges_in_cone) bound.
+      depth = prelude.fix (
+        d:
+        prelude.genAttrs cone (
+          id:
+          let
+            ps = inConeProducers id;
+          in
+          if ps == [ ] then 0 else 1 + prelude.foldl' (m: p: prelude.max m d.${p}) 0 ps
+        )
+      );
+
+      # `builtins.foldl'` forces its accumulator at every step, so each step forces exactly
+      # one memo cell, in the driver's order, and the fold carries no aggregate of its own:
+      # iterative, no accumulator, no recursion added.
+      warmed = builtins.foldl' (acc: id: builtins.seq depth.${id} acc) true driver.order;
+      # Every read of the map goes through the warming pass, so no caller can reach an
+      # unwarmed cell by reading `depth` directly.
+      warmDepth = builtins.seq warmed depth;
+
+      order = builtins.sort (
+        a: b: if warmDepth.${a} == warmDepth.${b} then a < b else warmDepth.${a} < warmDepth.${b}
+      ) cone;
+    in
+    if !driver.ok then
+      throw "gen-graph.coneRank: cyclic cone has no producers-first rank; cycles ${builtins.toJSON driver.cycles}"
+    else
+      {
+        inherit order;
+        depth = warmDepth;
+      };
+
   # after=[d] on n => n depends on d (edge n->d); before=[t] on n => t depends on n
   # (edge t->n). Both readings are the library direction stated in the header, so the
   # order comes straight off the front door with nothing to compensate for.
@@ -477,5 +568,6 @@ in
     topoOrder
     topoOrderKahn
     phaseOrder
+    coneRank
     ;
 }

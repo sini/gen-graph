@@ -14,6 +14,7 @@
 {
   lib,
   genGraph,
+  genPrelude,
   ...
 }:
 let
@@ -25,6 +26,36 @@ let
     dependentsOf
     condensation
     ;
+  prelude = genPrelude;
+
+  # THE PRE-REMEDIATION `coneRank`, verbatim at `f3b520f`. `coneRank` now warms its memo map
+  # along the ordering arm's order, which removed a ceiling; the claim that it removed
+  # NOTHING ELSE is only assertable by running both arms over the same fixtures in the same
+  # cell, so the old construction is reproduced here rather than described.
+  coneRankShipped =
+    accessor: cone:
+    let
+      coneSet = prelude.genAttrs cone (_: true);
+      inConeProducers = id: builtins.filter (d: coneSet ? ${d}) (accessor.edges id);
+      depth = prelude.fix (
+        d:
+        prelude.genAttrs cone (
+          id:
+          let
+            ps = inConeProducers id;
+          in
+          if ps == [ ] then 0 else 1 + prelude.foldl' (m: p: prelude.max m d.${p}) 0 ps
+        )
+      );
+      order = builtins.sort (
+        a: b: if depth.${a} == depth.${b} then a < b else depth.${a} < depth.${b}
+      ) cone;
+    in
+    {
+      inherit order depth;
+    };
+  reversed =
+    xs: builtins.genList (i: builtins.elemAt xs (builtins.length xs - 1 - i)) (builtins.length xs);
 
   # --- A -> B -> X chain (edges: B deps A, X deps B). Producer A first. ---------
   chain = mkGraph {
@@ -203,6 +234,47 @@ in
         coneRank = true;
         cond = true;
       };
+    };
+
+    # --- coneRank before against after, on THIS FILE'S fixtures -----------------
+    # The generated shapes are in `arms.nix`; these are the shipped guard fixtures, the
+    # sub-cone among them, because the cone-local reading is what a whole-graph driver
+    # could most easily have broken. Whole `order` and whole `depth` map, per fixture.
+    test-conerank-pre-post-diamond = {
+      expr = coneRank diamond diamond.nodes;
+      expected = coneRankShipped diamond diamond.nodes;
+    };
+    test-conerank-pre-post-widefan = {
+      expr = coneRank wideFan wideFan.nodes;
+      expected = coneRankShipped wideFan wideFan.nodes;
+    };
+    test-conerank-pre-post-chain = {
+      expr = coneRank chain chain.nodes;
+      expected = coneRankShipped chain chain.nodes;
+    };
+    test-conerank-pre-post-subcone = {
+      expr = coneRank chain [
+        "B"
+        "X"
+      ];
+      expected = coneRankShipped chain [
+        "B"
+        "X"
+      ];
+    };
+    # ARMED CONTROL for the four cells above: a reversed order must not compare equal on
+    # any of them, so the comparison is not agreeing with whatever it is handed.
+    test-conerank-pre-post-armed-control = {
+      expr = map (fx: (coneRank fx fx.nodes).order == reversed (coneRankShipped fx fx.nodes).order) [
+        diamond
+        wideFan
+        chain
+      ];
+      expected = [
+        false
+        false
+        false
+      ];
     };
 
     # --- the ordering door against the ordering arm, on these fixtures ----------

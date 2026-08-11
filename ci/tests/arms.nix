@@ -14,12 +14,49 @@
 #
 # The shapes are the bench's, verbatim, so a figure measured in `ci/bench/cost-classes.nix`
 # and a verdict asserted here are about the same graphs.
-{ genGraph, ... }:
+#
+# ── AND `coneRank` BEFORE AGAINST AFTER ──
+# `coneRank` now warms its memo map along the arm's order. The claim that makes that a
+# REMOVAL rather than a re-implementation is that the answer did not move, so the
+# PRE-REMEDIATION construction is reproduced below and both arms run in the same cell. The
+# whole `depth` map and the whole `order` are compared; the sizes here stay under the
+# shipped arm's own ceilings, because a control that aborts proves nothing about agreement.
+# The ceiling itself is not assertable in this suite — a `max-call-depth` abort is caught by
+# neither runner — and lives in `ci/bench/cone-ceiling.sh`.
+{ genGraph, genPrelude, ... }:
 let
   inherit (genGraph)
     topoOrder
     topoOrderKahn
+    coneRank
     ;
+  prelude = genPrelude;
+
+  # THE PRE-REMEDIATION ARM, verbatim at `f3b520f`: the memoized recurrence and the
+  # `(depth, id)` sort, with nothing forcing the map in any particular order. Reproduced
+  # rather than referenced because the point of the cell is to run both at once.
+  coneRankShipped =
+    accessor: cone:
+    let
+      coneSet = prelude.genAttrs cone (_: true);
+      inConeProducers = id: builtins.filter (d: coneSet ? ${d}) (accessor.edges id);
+      depth = prelude.fix (
+        d:
+        prelude.genAttrs cone (
+          id:
+          let
+            ps = inConeProducers id;
+          in
+          if ps == [ ] then 0 else 1 + prelude.foldl' (m: p: prelude.max m d.${p}) 0 ps
+        )
+      );
+      order = builtins.sort (
+        a: b: if depth.${a} == depth.${b} then a < b else depth.${a} < depth.${b}
+      ) cone;
+    in
+    {
+      inherit order depth;
+    };
 
   ix = m: builtins.genList (i: i) m;
   key = p: i: p + builtins.substring 0 (6 - builtins.stringLength (toString i)) "000000" + toString i;
@@ -117,6 +154,16 @@ let
     fleet = fleet small;
     discrim = discrim small;
     deepwide = deepwide 4002;
+  };
+
+  # The rank cells run BOTH arms, and the pre-remediation one has ceilings of its own — a
+  # whole-map `depth` read on `chainRev` aborts between 1,999 and 2,000 — so these stay
+  # small. Agreement is the subject here; scale is `cone-ceiling.sh`'s.
+  rankShapes = {
+    chain = chain small;
+    chainRev = chainRev small;
+    fleet = fleet small;
+    discrim = discrim small;
   };
 
   doorOrder = fx: (topoOrder fx).order;
@@ -235,6 +282,44 @@ in
           }) true
         )).success;
       expected = false;
+    };
+
+    # ── coneRank: the emitted order and the whole depth map did not move ──
+    # One cell per shape, both arms run in it, and the comparison is over the WHOLE map and
+    # the WHOLE list. `deepwide` is absent by necessity: its deep leg is 4,000 nodes and the
+    # shipped arm cannot return there, which is the ceiling `cone-ceiling.sh` measures.
+    test-conerank-pre-post-chain = {
+      expr = coneRank rankShapes.chain rankShapes.chain.nodes;
+      expected = coneRankShipped rankShapes.chain rankShapes.chain.nodes;
+    };
+    test-conerank-pre-post-chain-rev = {
+      expr = coneRank rankShapes.chainRev rankShapes.chainRev.nodes;
+      expected = coneRankShipped rankShapes.chainRev rankShapes.chainRev.nodes;
+    };
+    test-conerank-pre-post-fleet = {
+      expr = coneRank rankShapes.fleet rankShapes.fleet.nodes;
+      expected = coneRankShipped rankShapes.fleet rankShapes.fleet.nodes;
+    };
+    test-conerank-pre-post-discrim = {
+      expr = coneRank rankShapes.discrim rankShapes.discrim.nodes;
+      expected = coneRankShipped rankShapes.discrim rankShapes.discrim.nodes;
+    };
+
+    # ARMED CONTROLS for the four cells above, one per axis they compare.
+    # ORDER: a reversal must NOT compare equal on any shape — otherwise the list comparison
+    # is agreeing with anything. DEPTH: a map with every rank shifted by one must NOT
+    # compare equal either, which is what says the map comparison reads the values and not
+    # merely the key set.
+    test-conerank-pre-post-armed-controls = {
+      expr = builtins.mapAttrs (_: fx: {
+        order = (coneRank fx fx.nodes).order == reversed (coneRankShipped fx fx.nodes).order;
+        depth =
+          (coneRank fx fx.nodes).depth == builtins.mapAttrs (_: v: v + 1) (coneRankShipped fx fx.nodes).depth;
+      }) rankShapes;
+      expected = builtins.mapAttrs (_: _: {
+        order = false;
+        depth = false;
+      }) rankShapes;
     };
   };
 }
