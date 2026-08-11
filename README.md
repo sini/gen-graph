@@ -968,16 +968,27 @@ Cross-partition edges are rare in practice. The speed-up is shape-dependent: spl
 
 ## Testing
 
+**Two test outputs, and both need running.**
+
 ```bash
-nix flake check --override-input gen-graph . ./ci        # all suites
-nix flake check --override-input gen-graph . ./ci 2>&1   # with test output
+nix-unit --flake ./ci#tests        # cells asserting a VALUE
+nix-unit --flake ./ci#testsError   # cells asserting an ERROR (nix-unit `expectedError`)
+nix flake check ./ci               # the batch gate, which covers ./ci#tests
 ```
 
-**232 tests** across **13 suites** (`edge-maps`, `enumerate`, `fixpoint`, `global`,
-`integration`, `order`, `preorder`, `purity`, `query`, `regex`, `registry`, `topo`, `traverse`), run under
-[nix-unit](https://github.com/nix-community/nix-unit) via the gen CI harness
-(`gen.lib.mkCi`). The `purity` suite asserts the library source stays nixpkgs-lib-free
-(gen-prelude only).
+**339 tests** across **17 suites** in `./ci#tests` (`arms`, `edge-maps`, `enumerate`,
+`fixpoint-tests`, `global`, `integration`, `labeled-global`, `order`, `order-front-door`,
+`preorder`, `purity`, `query`, `regex`, `registry`, `scan`, `topo`, `traverse`), plus **3**
+in `./ci#testsError` — run under [nix-unit](https://github.com/nix-community/nix-unit) via
+the gen CI harness (`gen.lib.mkCi`). The `purity` suite asserts the library source stays
+nixpkgs-lib-free (gen-prelude only).
+
+**Why two outputs.** `checks.default` is a batch asserter that evaluates `expr == expected`
+unconditionally over `flake.tests` and nothing else, so a cell with no `expected` and a
+throwing `expr` crashes that gate rather than failing a case. Cells whose subject IS the
+error therefore live on `flake.testsError` (`ci/tests-error.nix`, outside the `./ci/tests`
+tree by construction) — out of the asserter's quantifier and still under nix-unit, which
+does read `expectedError`. Both outputs carry a pre-commit hook: `ci` and `ci-error`.
 
 ## Theoretical Foundations
 

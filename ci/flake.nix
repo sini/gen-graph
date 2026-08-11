@@ -20,7 +20,14 @@
     gen.lib.mkCi {
       inherit inputs;
       name = "gen-graph";
+      # `testModules` is the whole of `flake.tests`, and `flake.tests` is the whole of what
+      # the batch asserter behind `checks.default` quantifies over. Cells that assert an
+      # ERROR cannot live there — the asserter forces `expr` unconditionally, so a throwing
+      # `expr` crashes the gate rather than failing a cell. They are therefore outside this
+      # tree by construction, on their own output: `./tests-error.nix`, read by
+      # `nix-unit --flake ./ci#testsError`.
       testModules = ./tests;
       specialArgs = { inherit genGraph; };
+      extraModules = [ ./tests-error.nix ];
     };
 }
