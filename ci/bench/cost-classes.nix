@@ -42,9 +42,21 @@
 # key comparisons appear in NONE of the three axes. Every figure here is a floor on
 # the real cost, not the bill; state that limit rather than closing it with a number.
 #
+#   4. the CONE RANK, which is the ordering loop plus a memoized recurrence: `coneRank`
+#      warms its memo map along `topoOrderKahn`'s order, so it pays one ordering pass that
+#      the pre-remediation construction did not. That constant is what the `coneRank` /
+#      `coneRankShipped` pair prices. ★ There is NO BUDGET here and none is invented: the
+#      pair exists so the price is filed with its derivation rather than accepted silently,
+#      and it is to be re-derived whenever the construction changes.
+#      ★ THE BASELINE ARM IS NOT MEASURABLE EVERYWHERE, which is the point of the surface
+#      it replaced: `coneRankShipped` ABORTS (`max-call-depth`, uncatchable) on `chain` past
+#      ~4,000 and on `deepwide` at every size, so its column simply stops there. Reading a
+#      ratio against a cell that aborted is not a comparison; `ci/bench/cone-ceiling.sh` is
+#      where that abort is the subject rather than a missing figure.
+#
 # INTERFACE — `arm` × `shape` × `n`:
 #   arm   = cycles | condensation | dependents | transitiveClosure
-#         | transitiveReduction | topoOrder | floor
+#         | transitiveReduction | topoOrder | coneRank | coneRankShipped | floor
 #         | sentinel | sentinelPeerOrder | sentinelPeerClosure | sentinelVerdict
 #   shape = complete | cycle | chain | wide | fleet | discrim | total | deepwide
 #   n     = node count (use doublings, e.g. 50/100/200, so a ratio reads as 2^exp)
@@ -121,7 +133,53 @@
   observed ? null,
 }:
 let
-  g = import ../../default.nix { };
+  # `default.nix`'s prelude shim, spelled out here so the library and the baseline arm below
+  # share ONE prelude: a copy of the rank recurrence built on a second evaluation of
+  # gen-prelude would price that second evaluation as if it were the construction.
+  prelude =
+    let
+      lock = builtins.fromJSON (builtins.readFile ../../flake.lock);
+      node = lock.nodes.gen-prelude.locked;
+    in
+    import "${
+      builtins.fetchTree {
+        inherit (node)
+          type
+          owner
+          repo
+          rev
+          narHash
+          ;
+      }
+    }/lib";
+  g = import ../../lib { inherit prelude; };
+
+  # THE PRE-REMEDIATION `coneRank`, verbatim at `f3b520f`: the memoized recurrence and the
+  # `(depth, id)` sort, with nothing forcing the map in any particular order. It is the
+  # BASELINE the remediated arm is priced against, and it is reproduced rather than cited
+  # because a price quoted from a figure nobody can re-run is not a price.
+  coneRankShipped =
+    accessor: cone:
+    let
+      coneSet = prelude.genAttrs cone (_: true);
+      inConeProducers = id: builtins.filter (d: coneSet ? ${d}) (accessor.edges id);
+      depth = prelude.fix (
+        d:
+        prelude.genAttrs cone (
+          id:
+          let
+            ps = inConeProducers id;
+          in
+          if ps == [ ] then 0 else 1 + prelude.foldl' (m: p: prelude.max m d.${p}) 0 ps
+        )
+      );
+      order = builtins.sort (
+        a: b: if depth.${a} == depth.${b} then a < b else depth.${a} < depth.${b}
+      ) cone;
+    in
+    {
+      inherit order depth;
+    };
 
   # zero-padded so ids sort lexicographically in index order
   pad =
@@ -315,20 +373,28 @@ let
   # Three cells, because uniformity cannot be established from one: the sentinel proper and
   # TWO further library arms, so it is never read alone. Their shapes and sizes are FIXED
   # here and do not read `n`/`shape` — a pin against a caller-chosen size is not a pin.
+  # ★ RE-PINNED, and the offset is LEFT IN. The previous pins read `sets` 2791 / 4181 / 8068;
+  # the remediation that published `topoOrderKahn`, `forgetLabels` and `cyclicEdgesWhere` and
+  # moved `coneRank` into `lib/order.nix` shifted `sets` by +10 on ALL THREE cells with
+  # `list` and `nrLookups` bit-identical on every one — SHIFTED-BENIGN by the rule above, and
+  # the export set is on every cell's evaluation path, which is why even `peerClosure`
+  # (reaching no ordering code) moved. Decomposed as the block above prescribes: the bench
+  # edit that added the `coneRank` arms contributed ZERO — the three cells read the same on
+  # the edited file as on the unedited one — so the whole +10 is the library's.
   sentinelPins = {
     sentinel = {
       list = 2740;
-      sets = 2791;
+      sets = 2801;
       nrLookups = 4332;
     };
     peerOrder = {
       list = 2461;
-      sets = 4181;
+      sets = 4191;
       nrLookups = 7705;
     };
     peerClosure = {
       list = 490790;
-      sets = 8068;
+      sets = 8078;
       nrLookups = 29000;
     };
   };
@@ -416,6 +482,21 @@ let
         r = g.topoOrder acc;
       in
       if r.ok then r.order else r.cycles
+    # The CONE RANK, both arms. `.order` is forced FIRST and cold, which is the read both
+    # real consumers make and also the only one that reaches the pre-remediation ceiling:
+    # deep-forcing the whole result instead would force `depth` first (sorted attribute
+    # order), and on `chain` that forcing order is topological, so the baseline arm would
+    # return at 32,000 and the pair would price two constructions that never diverged.
+    else if arm == "coneRank" then
+      let
+        r = g.coneRank acc nodes;
+      in
+      builtins.deepSeq r.order r.depth
+    else if arm == "coneRankShipped" then
+      let
+        r = coneRankShipped acc nodes;
+      in
+      builtins.deepSeq r.order r.depth
     else if arm == "floor" then
       builtins.deepSeq (map edges nodes) nodes
     # The sentinel's own measurable body: `topoOrder` over a FIXED tiny graph, so the cell
