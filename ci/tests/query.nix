@@ -104,17 +104,26 @@ in
       # per-label plain accessors (the gen-scope followEdge shape) → labeledEdges
       expr = sorted (query {
         graph = labeledFrom {
-          contains =
-            id:
-            {
-              root = [
-                "h1"
-                "h2"
-              ];
-              h1 = [ "u1" ];
-            }
-            .${id} or [ ];
-          member = id: { g1 = [ "u1" ]; }.${id} or [ ];
+          nodes = [
+            "g1"
+            "h1"
+            "h2"
+            "root"
+            "u1"
+          ];
+          perLabel = {
+            contains =
+              id:
+              {
+                root = [
+                  "h1"
+                  "h2"
+                ];
+                h1 = [ "u1" ];
+              }
+              .${id} or [ ];
+            member = id: { g1 = [ "u1" ]; }.${id} or [ ];
+          };
         };
         from = "root";
         follow = r.parse "contains+";
@@ -134,7 +143,12 @@ in
           check =
             fx: from:
             let
-              lifted = labeledFrom { edge = id: fx.edges id; };
+              # the lift is total in both halves: the plain fixture's own node set is
+              # what the labeled contract requires, so nothing is invented here.
+              lifted = labeledFrom {
+                inherit (fx) nodes;
+                perLabel.edge = id: fx.edges id;
+              };
               viaQuery = builtins.filter (x: x != from) (query {
                 graph = lifted;
                 inherit from;
@@ -161,8 +175,14 @@ in
       # answers are a SET — one entry. Also covers parallel same-target edges.
       expr = query {
         graph = labeledFrom {
-          x = id: { s = [ "n" ]; }.${id} or [ ];
-          y = id: { s = [ "n" ]; }.${id} or [ ];
+          nodes = [
+            "n"
+            "s"
+          ];
+          perLabel = {
+            x = id: { s = [ "n" ]; }.${id} or [ ];
+            y = id: { s = [ "n" ]; }.${id} or [ ];
+          };
         };
         from = "s";
         follow = r.parse "x | y z?";
@@ -199,7 +219,13 @@ in
       expr =
         let
           g = labeledFrom {
-            e =
+            nodes = [
+              "a"
+              "b"
+              "c"
+              "d"
+            ];
+            perLabel.e =
               id:
               {
                 a = [
@@ -249,7 +275,10 @@ in
       # asymmetry, pinned so a visited-keying change can't silently move it.
       expr =
         let
-          g = labeledFrom { hop = id: { s = [ "s" ]; }.${id} or [ ]; };
+          g = labeledFrom {
+            nodes = [ "s" ];
+            perLabel.hop = id: { s = [ "s" ]; }.${id} or [ ];
+          };
           common = {
             graph = g;
             from = "s";
@@ -270,9 +299,17 @@ in
       expr =
         let
           g = labeledFrom {
-            own = id: { s = [ "x@s" ]; }.${id} or [ ];
-            include = id: { s = [ "t" ]; }.${id} or [ ];
-            owni = id: { t = [ "x@t" ]; }.${id} or [ ];
+            nodes = [
+              "s"
+              "t"
+              "x@s"
+              "x@t"
+            ];
+            perLabel = {
+              own = id: { s = [ "x@s" ]; }.${id} or [ ];
+              include = id: { s = [ "t" ]; }.${id} or [ ];
+              owni = id: { t = [ "x@t" ]; }.${id} or [ ];
+            };
           };
           # follow: own | include owni  (a declaration here, or one hop through an include)
           res = query {
@@ -302,8 +339,15 @@ in
       expr =
         let
           g = labeledFrom {
-            own = id: { s = [ "a" ]; }.${id} or [ ];
-            include = id: { s = [ "b" ]; }.${id} or [ ];
+            nodes = [
+              "a"
+              "b"
+              "s"
+            ];
+            perLabel = {
+              own = id: { s = [ "a" ]; }.${id} or [ ];
+              include = id: { s = [ "b" ]; }.${id} or [ ];
+            };
           };
           res = query {
             graph = g;
@@ -328,7 +372,12 @@ in
       expr =
         let
           g = labeledFrom {
-            hop =
+            nodes = [
+              "n1"
+              "n2"
+              "s"
+            ];
+            perLabel.hop =
               id:
               {
                 s = [ "n1" ];
@@ -353,9 +402,17 @@ in
       expr =
         let
           g = labeledFrom {
-            own = id: { s = [ "l-own" ]; }.${id} or [ ];
-            include = id: { s = [ "l-inc" ]; }.${id} or [ ];
-            parent = id: { s = [ "l-par" ]; }.${id} or [ ];
+            nodes = [
+              "l-inc"
+              "l-own"
+              "l-par"
+              "s"
+            ];
+            perLabel = {
+              own = id: { s = [ "l-own" ]; }.${id} or [ ];
+              include = id: { s = [ "l-inc" ]; }.${id} or [ ];
+              parent = id: { s = [ "l-par" ]; }.${id} or [ ];
+            };
           };
           res = query {
             graph = g;
@@ -381,7 +438,12 @@ in
       expr =
         let
           g = labeledFrom {
-            hop =
+            nodes = [
+              "n1"
+              "n2"
+              "s"
+            ];
+            perLabel.hop =
               id:
               {
                 s = [ "n1" ];
@@ -408,8 +470,15 @@ in
       expr =
         let
           g = labeledFrom {
-            own = id: { s = [ "near" ]; }.${id} or [ ];
-            exotic = id: { s = [ "far" ]; }.${id} or [ ];
+            nodes = [
+              "far"
+              "near"
+              "s"
+            ];
+            perLabel = {
+              own = id: { s = [ "near" ]; }.${id} or [ ];
+              exotic = id: { s = [ "far" ]; }.${id} or [ ];
+            };
           };
           res = query {
             graph = g;
@@ -443,7 +512,12 @@ in
       expr =
         let
           g = labeledFrom {
-            hop =
+            nodes = [
+              "n1"
+              "n2"
+              "s"
+            ];
+            perLabel.hop =
               id:
               {
                 s = [ "n1" ];
@@ -476,14 +550,22 @@ in
       expr =
         let
           g = labeledFrom {
-            includes = id: { admins = [ "wheel" ]; }.${id} or [ ];
-            member =
-              id:
-              {
-                admins = [ "sini" ];
-                wheel = [ "root-u" ];
-              }
-              .${id} or [ ];
+            nodes = [
+              "admins"
+              "root-u"
+              "sini"
+              "wheel"
+            ];
+            perLabel = {
+              includes = id: { admins = [ "wheel" ]; }.${id} or [ ];
+              member =
+                id:
+                {
+                  admins = [ "sini" ];
+                  wheel = [ "root-u" ];
+                }
+                .${id} or [ ];
+            };
           };
         in
         genGraph.queryFold {
@@ -504,14 +586,22 @@ in
       expr =
         let
           g = labeledFrom {
-            includes = id: { admins = [ "wheel" ]; }.${id} or [ ];
-            member =
-              id:
-              {
-                admins = [ "sini" ];
-                wheel = [ "root-u" ];
-              }
-              .${id} or [ ];
+            nodes = [
+              "admins"
+              "root-u"
+              "sini"
+              "wheel"
+            ];
+            perLabel = {
+              includes = id: { admins = [ "wheel" ]; }.${id} or [ ];
+              member =
+                id:
+                {
+                  admins = [ "sini" ];
+                  wheel = [ "root-u" ];
+                }
+                .${id} or [ ];
+            };
           };
         in
         genGraph.queryFold {

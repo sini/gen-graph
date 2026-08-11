@@ -278,8 +278,22 @@ let
     #   contains: root→{h1,h2}, h1→{u1,vm1}, vm1→{u2}   (nested depth 3)
     #   member:   g1→{u1,u2}
     #   include:  u1→shared
+    #
+    # Each carries its NODE SET: the labeled contract is total (`lib/query.nix`), so a
+    # fixture without one is not a labeled graph and could not reach a global surface
+    # through `forgetLabels`.
     labeledFixtures = {
       world = {
+        nodes = [
+          "g1"
+          "h1"
+          "h2"
+          "root"
+          "shared"
+          "u1"
+          "u2"
+          "vm1"
+        ];
         labeledEdges =
           id:
           {
@@ -330,6 +344,11 @@ let
       };
       # labeled cycle: a -contains-> b -contains-> a, plus a -member-> m
       cyclic = {
+        nodes = [
+          "a"
+          "b"
+          "m"
+        ];
         labeledEdges =
           id:
           {
@@ -356,6 +375,11 @@ let
       # an incoming edge (label "other"), so only the derivative-empty prune (a
       # follow that derives empty on "other") keeps boom's accessor unforced.
       poisoned = {
+        nodes = [
+          "a"
+          "b"
+          "boom"
+        ];
         labeledEdges =
           id:
           {

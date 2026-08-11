@@ -10,15 +10,119 @@
 { prelude }:
 let
   regex = import ./regex.nix { inherit prelude; };
+  global = import ./global.nix { inherit prelude; };
 
-  # adapter: one plain accessor per label → the labeled contract
-  labeledFrom = perLabel: {
-    labeledEdges =
-      id:
-      builtins.concatMap (label: map (target: { inherit label target; }) (perLabel.${label} id)) (
-        builtins.attrNames perLabel
-      );
-  };
+  # ── THE LABELED CONTRACT IS TOTAL ──
+  # A labeled graph is `{ labeledEdges; nodes; }`, and `nodes` is a REQUIRED FORMAL of the
+  # only constructor. The two halves of this library were built to two different contracts:
+  # a labeled query is SEEDED — it starts `from` a node and walks — so it never needed to
+  # know its own domain, while every global surface (`cycles`, `condensation`, `dependents`,
+  # `transpose`, the ordering front door…) is NODE-SET-TOTAL and takes `{ edges, nodes }`.
+  # An accessor's domain is not enumerable, so a node set cannot be recovered from
+  # `labeledEdges` afterwards: without it the whole global half is simply unreachable from a
+  # labeled graph, and the way that was reported was an arity abort deep inside a callee
+  # that `tryEval` cannot catch.
+  #
+  # ABSENCE IS A DECISION. A default node set — `[ ]`, or the keys of `perLabel`, or the
+  # targets appearing in the edges — makes the same failure SILENT: every global surface
+  # would answer, and answer about a domain the caller never stated. A required formal makes
+  # the omission report itself at the constructor, naming the missing argument, which is the
+  # loudest thing the substrate offers.
+  labeledFrom =
+    {
+      perLabel,
+      nodes,
+    }:
+    {
+      inherit nodes;
+      labeledEdges =
+        id:
+        builtins.concatMap (label: map (target: { inherit label target; }) (perLabel.${label} id)) (
+          builtins.attrNames perLabel
+        );
+    };
+
+  # ── THE ONE PUBLISHED PROJECTION ──
+  # `forgetLabels : labeledGraph → { edges; nodes; }` is the single sanctioned bridge from
+  # the labeled half to the global half. Every global surface composes with a labeled graph
+  # through it and only through it, which is what makes the composition one reviewable
+  # definition instead of one ad-hoc `map (e: e.target)` per call site.
+  #
+  # Parallel edges that differ only in their label collapse: the plain accessor is the
+  # library's set-of-targets contract, which `mkGraph` states the same way
+  # (`lib/registry.nix`, `edges = id: prelude.unique …`). Multiplicity is a labeled-layer
+  # fact, and a projection that leaked it would hand the global surfaces a number none of
+  # them has a meaning for — `cycles` and `condensation` read reachability, not counts.
+  forgetLabels =
+    {
+      labeledEdges,
+      nodes,
+      ...
+    }:
+    {
+      inherit nodes;
+      edges = id: prelude.unique (map (e: e.target) (labeledEdges id));
+    };
+
+  # ── WHICH EDGES SATISFYING `p` LIE ON A CYCLE ──
+  # `cyclicEdgesWhere : labeledGraph → (label → bool) → [ { from; label; to; } ]`.
+  # Empty ⇒ no cycle of this graph carries an edge whose label satisfies `p`.
+  #
+  # It completes a family rather than opening one: `cycles` answers WHICH NODES lie on a
+  # cycle, `cyclePaths` answers WHICH WALK, and this answers WHICH EDGES SATISFYING p — the
+  # `Where` suffix `reachableWhere` already establishes.
+  #
+  # THE CONSTRUCTION IS THE COMPOSITION, and it is why the labeled contract had to become
+  # total: forget the labels, partition the projection into strongly connected components,
+  # then JOIN BACK onto the retained labelled edge list. Two endpoints in one component are
+  # mutually reachable, so the edge between them closes a cycle; an edge to itself is one
+  # already. The projection ALONE cannot answer this — it has forgotten the labels — and the
+  # labelled edges alone cannot either, because being on a cycle is a global property. The
+  # pair answers it exactly.
+  #
+  # THEORY. Apt, Blair & Walker 1988, *Towards a Theory of Declarative Knowledge*, Lemma 1:
+  # a program is stratified iff its dependency graph has no cycle containing a negative
+  # edge; the proof of the converse decomposes the dependency graph into strongly connected
+  # components (archived text at `used/markdown/apt-1988-towards-theory-declarative-
+  # knowledge.md`:522-523 and :539, papers `d7c2e73`). So `condensation` is not a
+  # construction that happens to agree with the result — it is the primary's own proof
+  # method, and this query is that method's graph half.
+  #
+  # ★ THE GRAPH HALF IS ALL THIS LIBRARY CAN SEE, WHICH IS WHY THE NAME IS WHAT IT IS.
+  # Lemma 1 is a BICONDITIONAL between a program property and a graph property. gen-graph
+  # has no programs, no relation symbols and no clauses; and which labels count as negative
+  # arrives from the caller, so the library does not even know that much. Naming this result
+  # after the program-level property would have the library assert a theorem about objects
+  # it cannot observe. A caller that does have programs — the den engine, at its
+  # well-definedness gate — names it there, where the reading "this label MEANS negation"
+  # exists.
+  #
+  # WITNESSES, not a boolean: a caller refusing a graph has to say which edges did it, and
+  # the answer is exactly the material for that message. The order is (from, label, to)
+  # ascending so the answer is a function of the graph and not of accessor enumeration.
+  cyclicEdgesWhere =
+    graph: p:
+    let
+      plain = forgetLabels graph;
+      inherit (global.condensation plain) sccOf;
+      hits = builtins.concatMap (
+        from:
+        map (e: {
+          inherit from;
+          inherit (e) label;
+          to = e.target;
+        }) (builtins.filter (e: p e.label && sccOf from == sccOf e.target) (graph.labeledEdges from))
+      ) plain.nodes;
+      less =
+        a: b:
+        if a.from != b.from then
+          a.from < b.from
+        else if a.label != b.label then
+          a.label < b.label
+        else
+          a.to < b.to;
+    in
+    builtins.sort less hits;
 
   # `all` mode: the (node × derivative-state) product automaton, closed via
   # genericClosure. A node answers when its state is nullable.
@@ -291,5 +395,11 @@ let
       throw "gen-graph.query: unknown mode '${mode}'";
 in
 {
-  inherit labeledFrom query queryFold;
+  inherit
+    labeledFrom
+    forgetLabels
+    cyclicEdgesWhere
+    query
+    queryFold
+    ;
 }
