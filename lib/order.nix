@@ -5,7 +5,9 @@
 # networks", CACM 5(11)) — indegree over the dependency relation, a ready set of
 # indegree-zero nodes, and the residual-emptiness check for cycles. This is A. B. Kahn
 # 1962, NOT Gilles Kahn 1974 (KPN, cited in preorder.nix for the lazy accessor pattern):
-# a different author and a different result. `entry*`/`phaseOrder` are the home-manager
+# a different author and a different result. That algorithm is ALSO exported under its own
+# name, `topoOrderKahn`: `topoOrder` is the door, the arm is the algorithm, and a caller
+# whose correctness depends on which algorithm answers binds the arm (see its comment). `entry*`/`phaseOrder` are the home-manager
 # dag idiom (generalized strings-with-deps) expressed over it, absorbing what
 # gen-dispatch's dag.nix used to own so gen-dispatch can be the pure dispatch STEP.
 #
@@ -85,7 +87,21 @@ let
   # node outside `nodes` are all REFUSALS BY NAME. Each would otherwise reach `genAttrs`
   # or the indegree map and either abort with a type error that `tryEval` cannot catch,
   # or — worse — silently merge two nodes / report a phantom cycle.
-  topoOrder =
+  #
+  # ── THE ARM, PUBLISHED BY NAME ──
+  # This binding is the ordering ARM — A. B. Kahn 1962, the algorithm the header names —
+  # and it is exported under its own name beside the front door, which today delegates to
+  # it and to nothing else. The name is not decoration. A caller that must have THIS
+  # algorithm cannot express that requirement through a front door whose default is a
+  # separate decision, and `coneRank` is such a caller: it warms its memo map in a
+  # topological order, so if it took that order from the front door, a default answering
+  # with the rank recurrence would make the rank recurrence call itself. Binding the arm by
+  # name is non-circular whatever the door defaults to.
+  #
+  # The door keeps the door's obligations — a default lives there, and a selection between
+  # arms would be expressed there. The arm keeps the algorithm's: whoever calls
+  # `topoOrderKahn` gets indegrees, a ready set and the residual cycle check, by name.
+  topoOrderKahn =
     {
       nodes,
       edges,
@@ -416,6 +432,12 @@ let
         order = map (k: nodeOf.${k}) (flushRuns final.emitted);
       };
 
+  # The FRONT DOOR. Today the ecosystem's one ordering has one arm, so the door IS that
+  # arm: the delegation is an identity rather than a wrapper, which is the only spelling
+  # that cannot drift from what it delegates to. A second arm changes this line and nothing
+  # a caller of `topoOrderKahn` depends on.
+  topoOrder = topoOrderKahn;
+
   # after=[d] on n => n depends on d (edge n->d); before=[t] on n => t depends on n
   # (edge t->n). Both readings are the library direction stated in the header, so the
   # order comes straight off the front door with nothing to compensate for.
@@ -453,6 +475,7 @@ in
     entryBefore
     entryBetween
     topoOrder
+    topoOrderKahn
     phaseOrder
     ;
 }

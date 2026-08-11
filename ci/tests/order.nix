@@ -303,6 +303,27 @@ in
       expr = (topoOrder (acc [ ] { })).order;
       expected = [ ];
     };
+    # The DOOR against the ARM on this file's own fixtures, each emitted sequence compared
+    # element-wise. `topoOrderKahn` is the same algorithm published under its own name (see
+    # `lib/order.nix`); while the door delegates to it, no fixture here may read differently
+    # through the two. The generated shapes and the armed reversal control are in `arms.nix`.
+    test-topo-door-agrees-with-arm =
+      let
+        fxs = [
+          chain
+          (totalOrder [
+            "c"
+            "a"
+            "b"
+          ])
+          (acc [ "7" ] { })
+          (acc [ ] { })
+        ];
+      in
+      {
+        expr = map (fx: (topoOrder fx).order) fxs;
+        expected = map (fx: (genGraph.topoOrderKahn fx).order) fxs;
+      };
     # ← test-toposort-cycle-detected: the discriminant. A cycle is `ok = false`, not a
     # missing `result` attr.
     test-topo-cycle-discriminated = {

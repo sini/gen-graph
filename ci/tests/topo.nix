@@ -205,6 +205,25 @@ in
       };
     };
 
+    # --- the ordering door against the ordering arm, on these fixtures ----------
+    # `coneRank` below now takes its warming order from `topoOrderKahn`, the arm published
+    # by name, so the arm's verdict on these three graphs is part of this file's subject.
+    # Element-wise on the whole emitted sequence; the armed reversal control is in
+    # `arms.nix`. The accessors are projected to `{ nodes; edges; }` because `mkGraph` also
+    # carries `parent`/`nodeData`, which the ordering formal does not accept.
+    test-topo-door-agrees-with-arm =
+      let
+        fxs = map (g: { inherit (g) nodes edges; }) [
+          chain
+          diamond
+          wideFan
+        ];
+      in
+      {
+        expr = map (fx: (genGraph.topoOrder fx).order) fxs;
+        expected = map (fx: (genGraph.topoOrderKahn fx).order) fxs;
+      };
+
     # --- directDependents / directDependentsOf: DIRECT, not transitive ----------
 
     # On A->B->X: A's DIRECT dependent is just B; the TRANSITIVE dependents are B,X.
