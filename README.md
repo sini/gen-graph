@@ -254,10 +254,11 @@ impactOf           : { edges, nodes, ... } → id → [id]   # alias for depende
 transpose          : { edges, nodes, ... } → { edges, nodes }
 coScc              : { edges, ... } → id → id → bool
 condensation       : { edges, nodes, ... } → { reps, bottomUp, members, sccs, sccOf, condEdges }
-coneRank           : { edges, ... } → [id] → { order, depth }
 directDependents   : { edges, nodes, ... } → { id → [id] }
 directDependentsOf : { edges, nodes, ... } → id → [id]
 ```
+
+`coneRank` is an ordering surface and is documented under **Ordering** below.
 
 **`cycles g`** — nodes that appear in any cycle (self-reachable). Uses C-level BFS per node via `selfReachable` — no full transitive closure materialization needed. Returns a sorted list.
 
@@ -331,13 +332,6 @@ c.sccOf "a"         # → "a"
 c.condEdges (c.sccOf "a")   # → SCCs that a's component depends on
 ```
 
-**`coneRank g cone`** — producers-first topological rank of a node set, computed **cone-locally**. Returns `{ order; depth; }` where `depth id = 0` if `id` has no producer inside `cone`, else `1 + max(depth of its in-cone producers)`, and `order` is `cone` sorted ascending by depth with an id tie-break (so every producer precedes its consumers). Memoized via `lib.fix` over the cone, so it runs in O(|cone| + edges-in-cone) — it does **not** materialize the whole-graph `condensation`. The cone must be acyclic (every producer is strictly shallower than its consumer). This is RTD 1983 topological rank restricted to a dependent cone.
-
-```nix
-graph.coneRank g [ "A" "B" "X" ]    # for B→A, X→B
-# → { order = [ "A" "B" "X" ]; depth = { A = 0; B = 1; X = 2; }; }
-```
-
 **`directDependents g`** — the full **direct** reverse-adjacency map `{ id → [direct dependents of id] }`: the immediate reverse neighbours of every node, in one O(E) `groupBy`. This is the public face of the internal `_reverseIndex`. **Direct**, in contrast to `dependentsOf`'s **transitive** closure — a producer with no consumer simply has no key.
 
 **`directDependentsOf g id`** — the immediate dependents of a single node: `(directDependents g).${id} or [ ]`.
@@ -358,6 +352,8 @@ accessor.
 ```
 topoOrder { nodes; edges; keyOf ? id; lessThan ? builtins.lessThan }
     : { ok = true; order = [ node ]; } | { ok = false; cycles = [ [ node ] ]; }
+topoOrderKahn <same>      : <same>                     ( the ARM, by name )
+coneRank : { edges, ... } → [id] → { order, depth }
 
 entryAnywhere            : entry                       ( {} — no constraints )
 entryAfter  [ "a" ]      : entry                       ( comes after "a" )
@@ -365,6 +361,13 @@ entryBefore [ "b" ]      : entry                       ( comes before "b" )
 entryBetween befs afts   : entry
 phaseOrder  { name = entry; ... } : [ name ]           ( forward topological order )
 ```
+
+**`topoOrderKahn accessor`** is that algorithm published under its own name, and
+**`topoOrder`** is the door, which today delegates to it by identity. The two are separate
+because a default is a separate decision from an algorithm: a caller whose correctness
+depends on *which* arm answers binds the arm, and `coneRank` below is exactly such a
+caller. Everything documented for `topoOrder` holds verbatim for the arm — same formals,
+same refusals, same cycle report.
 
 **`topoOrder accessor`** does **not** throw on a cycle. It returns a producers-first
 ordering, or the cycles that prevented one — as strongly-connected-component member sets,
@@ -461,6 +464,41 @@ arm-against-arm measurement the residue's fold trigger is derived from. **Post-c
 `sets.elements` figure from that bench, read `ci/bench/sentinel.sh`: `sets` figures are
 comparable only within one revision of the bench file, and the sentinel is what says which
 revision you are on.
+
+**`coneRank g cone`** — producers-first topological rank of a node set, computed
+**cone-locally**. Returns `{ order; depth; }` where `depth id = 0` if `id` has no producer
+inside `cone`, else `1 + max(depth of its in-cone producers)`, and `order` is `cone` sorted
+ascending by depth with an id tie-break (so every producer precedes its consumers).
+Memoized via `lib.fix` over the cone, so it runs in O(|cone| + edges-in-cone) — it does
+**not** materialize the whole-graph `condensation`. This is RTD 1983 topological rank
+restricted to a dependent cone.
+
+```nix
+graph.coneRank g [ "A" "B" "X" ]    # for B→A, X→B
+# → { order = [ "A" "B" "X" ]; depth = { A = 0; B = 1; X = 2; }; }
+```
+
+**No ceiling, and a cyclic cone is a named refusal.** Both used to be otherwise, and both
+came from the same place. The memo map is forced along a topological order of the cone,
+taken from `topoOrderKahn` — the arm by name, so that a future default cannot make the rank
+recurrence call itself. Forcing in that order flattens what was a descent: reading the
+deepest node first used to walk the cone one evaluator frame per link and abort with
+`stack overflow; max-call-depth exceeded`, uncatchably, at a 3,998-node chain and at every
+size of a graph with a 4,000-deep leg. **No ceiling found to 32,000** on either shape, so
+this surface states that and refuses nothing at a size — re-run
+`./ci/bench/cone-ceiling.sh`, which runs the pre-remediation construction beside the
+current one at every cell and reports INVALID if that control does not abort.
+
+The cone no longer has to be acyclic. The ordering call that supplies the warming order is
+the same call that reports a cycle, and its **verdict is read before the memo map is
+entered**, so a cyclic cone is a `throw` naming the cycle instead of an uncatchable
+`infinite recursion encountered`. The order of those two steps is the requirement, not
+merely that the driver exists: `./ci/bench/cone-consultation.sh` is one construction with a
+single switch on consultation order, and the late arm dies on a cyclic cone while returning
+the same order as the early one on an acyclic cone.
+
+The price is one ordering pass, filed rather than accepted silently:
+`ci/bench/cost-classes.nix`, arms `coneRank` and `coneRankShipped`.
 
 **`phaseOrder entries`** is the throwing convenience layer over `topoOrder`: it returns
 **a** valid topological order, and throws on a cycle or a self-loop, preserving the
@@ -586,7 +624,7 @@ fromScan     : { items, scan, project, nodeData? } → accessorRecord + { derive
 field        : name → id → entry → [id]
 fields       : [name] → id → entry → [id]
 fixtures     : { diamond, chain, cyclic, tree, serviceGraph, disconnected }
-labeledFixtures : { world, cyclic, poisoned }   # { labeledEdges; } records for labeled queries
+labeledFixtures : { world, cyclic, poisoned }   # { labeledEdges; nodes; } for labeled queries
 ```
 
 **`mkGraph`** — takes declarative `{ from; to; }` edge lists and returns a valid accessor record with all four fields populated.
@@ -650,24 +688,65 @@ g = graph.fromRegistry {
 ### Labeled Queries
 
 The label-blind surface above (`edges : id → [id]`) is untouched; labeled queries are a
-strictly additive layer for graphs whose edges carry a **kind**. A labeled graph exposes one
-extra accessor:
+layer for graphs whose edges carry a **kind**. A labeled graph is `{ labeledEdges; nodes; }`:
 
 ```
 labeledEdges : id → [ { label; target; } ]
+nodes        : [ id ]
 ```
 
 Reachability is then constrained by a **regex over labels** — a query answers a node iff the
 word spelled by the labels along some path from `from` matches the `follow` expression.
 
-**`labeledFrom`** adapts one plain accessor per edge kind into the labeled contract:
+**`labeledFrom { perLabel; nodes; }`** adapts one plain accessor per edge kind into the
+labeled contract:
 
 ```nix
 g = graph.labeledFrom {
-  contains = id: containsEdges id;   # each returns a plain [ id ] list
-  member   = id: memberEdges id;
+  nodes = [ "root" "h1" "u1" "g1" ];
+  perLabel = {
+    contains = id: containsEdges id;   # each returns a plain [ id ] list
+    member   = id: memberEdges id;
+  };
 };
 ```
+
+**`nodes` is a required formal, and that is breaking** — the constructor used to take the
+per-label map alone. A labeled query is *seeded*: it starts `from` a node and walks, so it
+never needed a domain. Every global surface is *node-set-total* and cannot work without
+one, and an accessor's domain is not enumerable, so a node set omitted at construction
+cannot be recovered afterwards — the global half was simply unreachable from a labeled
+graph, and the way that got reported was an arity abort deep inside a callee, which
+`tryEval` cannot catch. A **default** would have made the same failure silent: every global
+surface would answer, about a domain the caller never stated.
+
+**`forgetLabels g`** is the one published bridge, `labeledGraph → { edges; nodes; }`. Every
+global surface composes with a labeled graph through it and only through it. Parallel edges
+differing only in label collapse, because the plain accessor is a set of targets — the same
+contract `mkGraph` states.
+
+```nix
+graph.condensation (graph.forgetLabels g)   # SCC partition of a labeled graph
+```
+
+**`cyclicEdgesWhere g p`** — the edges whose label satisfies `p` **and** which lie on a
+cycle, as `[ { from; label; to; } ]` sorted by `(from, label, to)`. Empty means no cycle of
+this graph carries such an edge. It completes the family `cycles` (which *nodes*) and
+`cyclePaths` (which *walk*) with *which edges satisfying p*.
+
+```nix
+graph.cyclicEdgesWhere g (l: l == "neg")
+# → [ ] , or e.g. [ { from = "c"; label = "neg"; to = "a"; } ]
+```
+
+The construction is the composition the total contract exists for: forget the labels,
+partition the projection into strongly connected components, then join back onto the
+retained labelled edges — two endpoints in one component are mutually reachable, so the
+edge between them closes a cycle, and a self-loop is one already. That decomposition is
+**ABW 1988's own proof method** for Lemma 1's converse, not a construction that agrees with
+it. The predicate is the caller's: this library is label-agnostic and does not know which
+labels are special, so it answers about the graph and leaves the meaning of an empty answer
+to whoever supplied the predicate.
 
 **`regex`** builds `follow` expressions, as constructors or a compact string:
 
@@ -745,8 +824,11 @@ neighbours') remain [`fixpoint`](#fixpoint) territory.
 ```nix
 # consumer code: wrap gen-scope's per-label followEdge into the labeled contract
 g = graph.labeledFrom {
-  imports = id: scope.followEdge "imports" self id;
-  parent  = id: scope.followEdge "parent" self id;
+  nodes = scope.allIds self;           # the domain, stated: absence is not a default
+  perLabel = {
+    imports = id: scope.followEdge "imports" self id;
+    parent  = id: scope.followEdge "parent" self id;
+  };
 };
 ```
 
@@ -810,7 +892,7 @@ in {
 | `dependentsFrontier` | O(nodes + reachable) | reverse index + level-by-level BFS, pruned early |
 | `coScc` | O(reachable from u, v) | two `canReach` probes, no full closure |
 | `condensation` | **closure class** (see below) | two transitive closures (graph + quotient) |
-| `coneRank` | O(|cone| + edges-in-cone) | `lib.fix` memoized depth, cone-local (no condensation) |
+| `coneRank` | O(|cone| + edges-in-cone) for the recurrence, **plus one ordering pass** — `list` exponent 1.07 on `chain` and `fleet`, `sets` 1.00–1.02, `nrLookups` 1.00–1.06 (n = 1000 → 8000) | `lib.fix` memoized depth, cone-local (no condensation), warmed along `topoOrderKahn`'s order. **No ceiling found to 32,000** on `chain` or `deepwide`; a cyclic cone is a named refusal. The construction it replaced is linear on all three axes and aborts past ~4,000 on `chain` — `ci/bench/cost-classes.nix`, arms `coneRank` / `coneRankShipped` |
 | `topoOrder` / `phaseOrder` | O(n + E) decrements, and **near-linear in allocation** — exponent 1.07–1.08 on `list.elements` and 0.99–1.12 on `sets.elements`, all four acyclic shapes | nothing the loop carries is quadratic: the emitted sequence is a binary-counter run list (Θ(n log n)), the indegree map is a residue over a rebuilt base, and the ready set is a leftist heap (Θ(n log n)), where a re-sorted array was a third quadratic worth 60% of the `wide` list allocation. The heap's `sets.elements` price, 63 → 89 attrsets per node over n = 1000 → 8000, is now the leading set-axis term. No frame ceiling — the loop is a bounded iteration, so no node count aborts or is refused |
 | `directDependents` / `directDependentsOf` | O(edges) | one `groupBy` reverse-adjacency map |
 | `seededFixpoint` | O(work per delta) | semi-naive: each iteration touches only the frontier |
@@ -903,7 +985,7 @@ The algorithms and design principles draw from:
 
 - **Mokhov (2017)** — *Algebraic Graphs with Class*. *Informed by.* Algebraic graph construction primitives (overlay, connect, vertex, empty) and the compositional approach to graph representation inform gen-graph's edge map operations and structural combinators. Edge map set operations (`unionEdges`, `intersectEdges`, `differenceEdges`) are gen-graph's own contribution built on this algebraic foundation. Mokhov 2017 §4.5 supplies only the equivalence-class *notion* of reduction; `transitiveReduction` is a standard DAG transitive-reduction algorithm (gen-graph's own implementation) and assumes a DAG, since reduction is not unique under cycles. Transpose follows Mokhov 2017 §5.2 *Graph Transpose* directly: the law is that transpose flips the arguments of `connect` and leaves `overlay` unchanged, so direction is reversed rather than erased. `condensation`'s quotient-graph idiom is §4.6 *Preorders and Equivalence Relations* — a condensation is the quotient by the co-SCC equivalence.
 - **Arntzenius & Krishnaswami (2016)** — *Datafun: A Functional Datalog*. *Implements.* Monotone fixpoint iteration with convergence guarantees. The `fixpoint` operator enforces monotonicity (edge count must not shrink between iterations), matching Datafun's requirement that fixpoint computations operate over monotone functions on semilattices. Reverse reachability in `dependents`/`dependentsOf` follows the Datafun reverse-query pattern. `directDependents`/`directDependentsOf` expose the underlying reverse-adjacency index directly: the **immediate** reverse neighbours (one edge), in contrast to `dependentsOf`'s **transitive** reverse closure — the distinction matters when a consumer must enumerate only its direct producers' dependents without re-materializing the whole reverse cone.
-- **Tarjan (1983)** — *Data Structures and Network Algorithms (RTD)*. *Implements.* Topological rank by longest incoming path. `coneRank` assigns each node `depth = 1 + max(depth of producers)` — the standard topological-rank recurrence — but **restricted to a cone**: only producers inside the supplied node set count, so the rank is computed in O(|cone| + edges-in-cone) via `lib.fix` memoization rather than over the whole graph. Ordering by ascending depth yields a producers-first (reverse-topological) enumeration without building `condensation`.
+- **Tarjan (1983)** — *Data Structures and Network Algorithms (RTD)*. *Implements.* Topological rank by longest incoming path. `coneRank` assigns each node `depth = 1 + max(depth of producers)` — the standard topological-rank recurrence — but **restricted to a cone**: only producers inside the supplied node set count, so the rank is computed in O(|cone| + edges-in-cone) via `lib.fix` memoization rather than over the whole graph. Ordering by ascending depth yields a producers-first (reverse-topological) enumeration without building `condensation`. The recurrence is memoized, which makes it linear and also made it a *descent*: forcing the memo map in an unfavourable order walked the cone one evaluator frame per link. The map is therefore forced along a topological order of the cone taken from `topoOrderKahn`, which flattens that descent — the rank recurrence is unchanged, only the order in which its cells are demanded.
 - **Neron et al. (2015)** — *A Theory of Name Resolution*. *Implements.* Parent-chain traversal (`ancestorsOf`) follows scope graph P-edge resolution: walking the `parent` partial function upward through scopes corresponds to following P-edges in the resolution calculus (Neron 2015 §2.3). Silent cycle termination chosen over throwing for composability, matching the well-foundedness requirement on the parent relation.
 - **Kahn, A. B. (1962)** — *Topological sorting of large networks*, CACM 5(11). *Implemented.* `topoOrder` is Kahn's algorithm: an indegree count over the dependency relation, a ready set of indegree-zero nodes, decrement-on-emit restricted to the pick's successors, and the residual-emptiness check that detects a cycle. Incomparable nodes are emitted in ascending key order, which is what makes the result a function of the node set rather than of the input permutation. This is A. B. Kahn 1962 and **not** Gilles Kahn 1974 below — a different author and a different result, a conflation this codebase has made before. Min-extraction over the ready set is the one place the algorithm is not linear, and the ready set is a **leftist heap** (see Crane 1972 / Okasaki 1998 below) — O(log m) insert and delete-min, so the loop attains the Ω(m log m) comparison bound that emitting in min-key order under a caller-supplied comparator inherits. ★ This entry previously recorded that a priority queue was out of reach because pure Nix has no mutable heap. That is false: persistent priority queues need no mutation. The same claim is still what `condensation` gives for not being Tarjan's algorithm, and **that** justification is now unsupported rather than re-derived. The cycle report is deliberately **not** read off the Kahn residual, which knows only that nodes went unemitted and not which cycles they form; it comes from `cycles`/`condensation`, so the failure path pays both — and neither may be quoted as the cost alone, since which of the two is larger flips with the graph's shape and with the allocation axis measured — while the success path pays neither.
 - **Crane (1972)** — *Linear Lists and Priority Queues as Balanced Binary Trees*; **Knuth, *TAOCP* vol. 3 §5.2.3**. *Implements.* `topoOrder`'s ready set is a leftist heap: `null | { k; l; r; rank; }`, `rank` the right-spine length, with the leftist invariant `rank l >= rank r` at every node. Merge walks and rebuilds the two right spines, which the invariant keeps at O(log m), and insert and delete-min are both defined as a merge. Immutability is paid in **path copying** rather than in asymptotics — no node is overwritten, so a merge allocates one attrset per node on the spine it rebuilds, giving Θ(n log n) attrsets over the loop. That is an achieved upper bound, not a proven optimum: the comparison-sorting bound rules out a Θ(n) *comparison-based ordering*, but it does not prove Θ(n log n) *allocations* necessary.
@@ -914,4 +996,5 @@ The algorithms and design principles draw from:
 - **Brzozowski (1964)** — *Derivatives of Regular Expressions*. *Implements.* The labeled-query `follow` kernel steps a Brzozowski derivative of the label regex alongside the graph walk; `deriv l r` and `nullable r` are the classical derivative and nullability functions, so a path's label word is accepted iff folding `deriv` over it lands in a nullable state.
 - **Owens, Reppy & Turon (2009)** — *Regular-expression Derivatives Re-examined*. *Implements.* Derivative states are kept in an ACI-normal form (alternation flattened/sorted/deduplicated, sequence flattened with unit/zero absorption, star collapsed), so the derivative set of any expression is finite and the canonical `stateKey` is a sound seen-set key — this is what makes the `all` mode's (node × derivative-state) product automaton terminate on cyclic graphs.
 - **Néron, Tolmach, Visser & Wachsmuth (2015)** — *A Theory of Name Resolution*. *Implements.* Beyond parent-chain resolution (above), the labeled query surface generalizes scope-graph reachability to arbitrary edge labels: `query`'s `follow` is a reachability regex over labels, and the `visible`/`layers` specificity order generalizes Néron's D < I < P label order.
+- **Apt, Blair & Walker (1988)** — *Towards a Theory of Declarative Knowledge*, Lemma 1. *Implements — the graph half only.* The lemma is a biconditional between a program property and a graph property: no cycle of the dependency graph contains a negative edge. `cyclicEdgesWhere` computes that graph property for a caller-supplied notion of "negative", and the construction is the paper's **own** proof method for the converse — decompose the dependency graph into strongly connected components (which is `condensation`), then read the retained labelled edges against that partition. gen-graph has no programs, no relation symbols and no clauses, and does not know which labels are negative, so it computes the graph side and names it accordingly; the program-level word belongs to a caller that has programs. The archived text carries an OCR hazard inside the converse half of that proof (a flattened inequality), so its *prose* is cited and no inequality from it is lifted into code, comment or oracle — the stratum-index arithmetic plays no part here, only the decomposition.
 - **van Antwerpen, Poulsen, Rouvoet & Visser (2018)** — *Scopes as Types*. *Implements.* The per-query label order carries an end-of-path token: `order.endOfPath` competes against a word's next label rank at exhaustion, so stopping can out- or under-rank continuation (default `-1` = prefix-wins), matching van Antwerpen's per-query ≤ with an end-of-path marker.

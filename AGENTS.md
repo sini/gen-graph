@@ -2,7 +2,7 @@
 
 ## Scope
 
-Accessor-based graph query combinators: the caller supplies `edges` / `nodes` / `parent` / `nodeData` (or `labeledEdges`) as plain functions, and gen-graph returns reachability, SCC condensation, phase order, edge-map algebra, pre-order folds, and label-regex queries over them — it never stores the graph.
+Accessor-based graph query combinators: the caller supplies `edges` / `nodes` / `parent` / `nodeData` (or `labeledEdges` + `nodes`) as plain functions, and gen-graph returns reachability, SCC condensation, phase order, edge-map algebra, pre-order folds, and label-regex queries over them — it never stores the graph. The labeled contract is TOTAL and `forgetLabels` is the one bridge to the node-set-total surfaces.
 
 ## Not this library's job
 
@@ -55,12 +55,14 @@ Entry: `inputs.gen-graph.lib` (flake). Root `default.nix` is a FUNCTION `{ prelu
 | `transpose` | `{ edges, nodes } -> { edges; nodes; }` |
 | `coScc` | `{ edges } -> u -> v -> bool` |
 | `condensation` | `{ edges, nodes } -> { reps; bottomUp; members; sccs; sccOf; condEdges; }` — `members : tag -> [id]`, `condEdges : tag -> [tag]`, `sccOf : id -> tag`, `reps == bottomUp` |
-| `coneRank` | `accessor -> [id] -> { order; depth; }` (cone-local, `edges` read as producers) |
 
 **Ordering (phase DAG)** — `lib/order.nix`
 
 | Export | Signature |
 |---|---|
+| `topoOrder` | `{ nodes, edges, keyOf ? id, lessThan ? builtins.lessThan } -> { ok = true; order; } \| { ok = false; cycles; }` — the DOOR |
+| `topoOrderKahn` | same formals, same result — the ARM (A. B. Kahn 1962) under its own name; the door delegates to it today. Bind the arm when correctness depends on WHICH algorithm answers |
+| `coneRank` | `accessor -> [id] -> { order; depth; }` (cone-local, `edges` read as producers; warms its memo along `topoOrderKahn`'s order; THROWS naming the cycle on a cyclic cone) |
 | `entryAnywhere` | `entry` (a value, not a function) |
 | `entryAfter` | `[name] -> entry` |
 | `entryBefore` | `[name] -> entry` |
@@ -112,17 +114,19 @@ Entry: `inputs.gen-graph.lib` (flake). Root `default.nix` is a FUNCTION `{ prelu
 | `mkGraph` | `{ edges ? [], parents ? [], nodeData ? {} } -> { edges; parent; nodes; nodeData; }` — edge lists are `[{ from; to; }]` |
 | `fromScan` | `{ items, scan, project, nodeData ? {} } -> { edges; parent; nodes; nodeData; derivedEdges; }` — `items` are `[{ id; value; }]`, `scan : value -> [ref]`, `project : ref -> id`, `derivedEdges` are `[{ from; to; item; ref; }]` |
 | `fixtures` | `{ chain, cyclic, diamond, disconnected, serviceGraph, tree }` (public, see traps) |
-| `labeledFixtures` | `{ cyclic, poisoned, world }` (public, see traps) |
+| `labeledFixtures` | `{ cyclic, poisoned, world }` (public, see traps) — each is `{ labeledEdges; nodes; }` |
 
 **Labeled queries** — `lib/query.nix`
 
 | Export | Signature |
 |---|---|
-| `labeledFrom` | `{ <label> = id -> [id]; } -> { labeledEdges; }` |
+| `labeledFrom` | `{ perLabel = { <label> = id -> [id]; }; nodes = [id]; } -> { labeledEdges; nodes; }` — `nodes` is a REQUIRED formal; omitting it is an arity abort, not a default |
+| `forgetLabels` | `{ labeledEdges, nodes, ... } -> { edges; nodes; }` — the ONE published bridge to every global surface; parallel same-target edges collapse |
+| `cyclicEdgesWhere` | `labeledGraph -> (label -> bool) -> [{ from; label; to; }]` sorted by `(from, label, to)` — the edges satisfying the predicate that lie on a cycle; `[]` means none does |
 | `query` | `{ graph, from, follow, where ? (_: true), mode ? "all", … } -> answers` |
 | `queryFold` | `{ graph, from, follow, where ?, empty, combine, valueOf ? (id: id) } -> value` |
 
-`query` modes and their return shapes: `all` ⇒ `[id]` (sorted set); `paths` ⇒ `[{ node; path; }]` with `path = [{ label; from; to; }]`; `visible` ⇒ `{ visible; shadowed; }` (extra args `order`, `groupBy ? (ans: ans.node)`); `layers` ⇒ `[[answer]]` (extra arg `order`); `fixpoint` ⇒ dispatches to `queryFold`. `order = { labels ? []; endOfPath ? -1; }`. Any other mode throws. `queryAll` / `queryPaths` / `queryVisible` / `queryLayers` are internal — only `query`, `queryFold` and `labeledFrom` are exported.
+`query` modes and their return shapes: `all` ⇒ `[id]` (sorted set); `paths` ⇒ `[{ node; path; }]` with `path = [{ label; from; to; }]`; `visible` ⇒ `{ visible; shadowed; }` (extra args `order`, `groupBy ? (ans: ans.node)`); `layers` ⇒ `[[answer]]` (extra arg `order`); `fixpoint` ⇒ dispatches to `queryFold`. `order = { labels ? []; endOfPath ? -1; }`. Any other mode throws. `queryAll` / `queryPaths` / `queryVisible` / `queryLayers` are internal — only `query`, `queryFold`, `labeledFrom`, `forgetLabels` and `cyclicEdgesWhere` are exported.
 
 **Label regex** — `lib/regex.nix`, reached as `regex.*` (the only nested namespace)
 
@@ -167,7 +171,10 @@ Entry: `inputs.gen-graph.lib` (flake). Root `default.nix` is a FUNCTION `{ prelu
 | Reachability constrained by a path-label regex | `query { graph; from; follow = regex.parse "contains*"; }` |
 | Resolution traces / shadowing explanations | `query { … mode = "paths"\|"visible"\|"layers"; }` |
 | ACI-lawful aggregation over an answer set | `queryFold` (or `mode = "fixpoint"`) |
-| Adapt per-label plain accessors to the labeled contract | `labeledFrom { contains = …; member = …; }` |
+| Adapt per-label plain accessors to the labeled contract | `labeledFrom { perLabel = { contains = …; member = …; }; nodes = […]; }` |
+| Run a GLOBAL surface on a LABELED graph | `condensation (forgetLabels g)` — the one bridge; every global surface composes through it |
+| Which edges satisfying a predicate lie on a cycle | `cyclicEdgesWhere g (l: l == "…")` — witness edges, `[]` if none |
+| Require Kahn specifically rather than whatever the door defaults to | `topoOrderKahn acc` |
 
 ## Measured traps
 
@@ -195,7 +202,7 @@ Each row verified in this run against `g = import ./. { }` (root `default.nix`, 
 | `reachableFrom` excludes `startId` **even when the start is in a cycle**, so it disagrees with `cycles`/`selfReachable` about that node | `lib/traverse.nix:19`; `reachableFrom cyc "a"` ⇒ `["b","c"]` while `selfReachable cyc "a"` ⇒ `true` and `cycles cyc` ⇒ `["a","b","c"]`. `dependents cyc "a"` and `dependentsOf cyc "a"` both ⇒ `["b","c"]`, excluding the target the same way |
 | `transpose` returns **only** `{ edges; nodes; }` — `parent` and `nodeData` are dropped, so a transposed accessor cannot feed `select`/`ancestorsOf`, and the failure is an uncatchable eval error, not `false` | `lib/global.nix:transpose`; `attrNames (transpose svc)` ⇒ `["edges","nodes"]`; `select (transpose svc) (_: true)` ⇒ `error: function 'select' called without required argument 'nodeData'` at `lib/enumerate.nix:22:12` (escapes `tryEval`). Positive control: `select svc (d: d.type or "" == "datastore")` ⇒ `["cache","db","queue"]`. Test: `test-transpose-preserves-nodes` (`ci/tests/global.nix`) |
 | A `phaseOrder` name that is **not a key of `entries`** behaves **oppositely by direction**: a ghost in `before` is silently dropped, a ghost in `after` is refused by name | `lib/order.nix:entryBetween` + `lib/order.nix:phaseOrder`; `phaseOrder { a = entryBefore ["ghost"]; }` ⇒ `["a"]` **and** `phaseOrder { a = entryBefore ["ghost"]; b = entryAnywhere; }` ⇒ `["a","b"]` — both **exit 0, no throw**, so the second phase does not make it throw; but `phaseOrder { a = entryAfter ["ghost"]; b = entryAnywhere; }` ⇒ `error: gen-graph.topoOrder: edge target "ghost" is not in nodes`. Control in the same run: `phaseOrder { a = entryBefore ["b"]; b = entryBefore ["a"]; }` ⇒ `error: gen-graph.phaseOrder: cyclic ordering constraints`, so the throw path is reachable and the two exit-0 readings are real absences |
-| `coneRank` and `phaseOrder` read edge direction **oppositely** | On `chain` (`a→b→c→d`): `coneRank chain ["a" "b" "c" "d"]` ⇒ `{ order = ["d","c","b","a"]; depth = { a=3; b=2; c=1; d=0; }; }` (edge TARGET first — targets are producers, `lib/global.nix:coneRank`), while the same shape as `entryBefore` chains ⇒ `phaseOrder` `["a","b","c","d"]` (edge SOURCE first, `lib/order.nix:21`) |
+| `coneRank` and `phaseOrder` read edge direction **oppositely** | On `chain` (`a→b→c→d`): `coneRank chain ["a" "b" "c" "d"]` ⇒ `{ order = ["d","c","b","a"]; depth = { a=3; b=2; c=1; d=0; }; }` (edge TARGET first — targets are producers, `lib/order.nix:coneRank`), while the same shape as `entryBefore` chains ⇒ `phaseOrder` `["a","b","c","d"]` (edge SOURCE first, `lib/order.nix:21`). Re-derived after `coneRank` moved out of `lib/global.nix`: both figures unchanged |
 | `phaseOrder` throws on a cycle **and** on a self-loop (`n after n`), which is a singleton SCC and needs its own check | `lib/order.nix:48-54`; both `tryEval` runs ⇒ `success = false`. Tests: `test-order-cycle-throws`, `test-order-self-loop-throws` (`ci/tests/order.nix`) |
 | `mkGraph`'s `parents` create **no** `edges` — the two indices are disjoint | `lib/registry.nix:60-71`; `tree.edges "child1"` ⇒ `[ ]` while `tree.parent "child1"` ⇒ `"root"` and `ancestorsOf tree "grandchild"` ⇒ `["child1","root"]`. Test: `test-tree-parent` (`ci/tests/registry.nix`) |
 | `fromScan`'s **items are not node seeds** — only edges and `nodeData` are, exactly as for `mkGraph`. An item the scan finds nothing in, which nothing references, is absent from the graph | `lib/registry.nix:fromScan` (it forwards to `mkGraph`, which unions edge endpoints with `nodeData`'s keys); one item, empty scan ⇒ `nodes` `[ ]`; the same item with `nodeData = { "a1b2c3d4:font" = { }; }` ⇒ `["a1b2c3d4:font"]`, which is the positive control on the same call in the same run. Tests: `test-items-do-not-seed-nodes`, `test-nodedata-seeds-an-isolated-node` (`ci/tests/scan.nix`) |
@@ -218,7 +225,10 @@ Each row verified in this run against `g = import ./. { }` (root `default.nix`, 
 | `condensation.sccOf` on an unknown id returns the id itself rather than throwing | `lib/global.nix:condensation`; `(condensation cyc).sccOf "nope"` ⇒ `"nope"`, while `(condensation cyc).sccs` ⇒ `[["a","b","c"]]` |
 | `fixtures` and `labeledFixtures` are **public top-level exports**, not test-only helpers | drift output below lists both; `attrNames g.fixtures` ⇒ `["chain","cyclic","diamond","disconnected","serviceGraph","tree"]`, `attrNames g.labeledFixtures` ⇒ `["cyclic","poisoned","world"]` |
 | `impactOf == dependentsOf` evaluates to `false` (Nix function comparison), so the alias cannot be confirmed by `==` | `lib/global.nix:impactOf`; `g.impactOf == g.dependentsOf` ⇒ `false`, while `(impactOf dia "d") == (dependentsOf dia "d")` ⇒ `true`. Test: `test-impactOf-uses-dependentsOf` (`ci/tests/global.nix`) |
-| `coneRank` on a **cyclic** cone is an uncatchable infinite recursion (the `prelude.fix` recurrence becomes self-referential) | Read from `lib/global.nix:coneRank`'s precondition comment, **not exercised in this run** — exercising it would not terminate |
+| `coneRank` on a **cyclic** cone is a CATCHABLE refusal naming the cycle — it was an uncatchable infinite recursion, and that row is retired | `builtins.tryEval (builtins.deepSeq (coneRank cyc cyc.nodes) true)` ⇒ `success = false` with `gen-graph.coneRank: cyclic cone has no producers-first rank; cycles [["a","b","c"]]`; live control same run, the acyclic `chain` through the same accessor ⇒ `success = true`. Tests: `test-conerank-cyclic-refuses-naming-the-cycle`, `test-conerank-cycshort-refuses-naming-the-component`, `test-conerank-acyclic-control` (`ci/tests/cone-refusal.nix` — **nix-unit only**, see the harness-gap row) |
+| The refusal works because the driver's VERDICT is read BEFORE the memo map is entered, and that ordering is a requirement rather than a style | `./ci/bench/cone-consultation.sh` — one construction, one switch: `earlyCyclic`/`earlyCycshort` ⇒ exit 0 `"caught":true`; `lateCyclic`/`lateCycshort` ⇒ **exit 1**, `error: infinite recursion encountered`, escaping `tryEval`; POSITIVE CONTROLS `earlyAcyclic`/`lateAcyclic` ⇒ exit 0 and the SAME `["p","q"]`, so the late arm's red is the order and not a broken arm |
+| `coneRank` has NO ceiling found to 32,000, where the pre-remediation construction aborts uncatchably | `./ci/bench/cone-ceiling.sh` ⇒ `REMOVED`, `controls fired: 6/6`. Remediated arm exit 0 at `chain` 4,000/16,000/32,000 and `deepwide` 4,002/16,000/32,000; the shipped arm exit 1 at every one of those cells with `error: stack overflow; max-call-depth exceeded`. ★ The `.order` read must be COLD and FIRST or the control does not fire: `deepSeq` over the whole result forces `depth` first (sorted attribute order), which on `chain` is topological, and then even the shipped arm returns at 32,000 |
+| A nix-unit `expectedError` cell CRASHES `checks.default` rather than failing it — so `nix flake check ./ci` is RED while `nix-unit` is green | `gen.lib.mkCi`'s asserter evaluates `t.expr == t.expected` unconditionally (`gen/ci/flakeModule.nix:assertTests`). Measured at this revision: `nix-unit --flake ./ci#tests` ⇒ exit 0, 342/342; `nix flake check ./ci` ⇒ exit **1**, dying inside `gen-graph-tests` with `error: gen-graph.coneRank: cyclic cone …` — the refusal's own message, thrown while the asserter forced `expr`. The gap is confined to `ci/tests/cone-refusal.nix` |
 
 ## Theory
 
@@ -227,7 +237,8 @@ Claimed in `README.md:743-757`, which tags each source *Implements* or *Informed
 **Implements**
 
 - **Arntzenius & Krishnaswami (2016), *Datafun: A Functional Datalog*** — monotone fixpoint iteration with convergence guarantees; `fixpoint` enforces the edge-count monotonicity guard, `seededFixpoint` is Datafun §9 semi-naive evaluation (`lib/fixpoint.nix:38`), and `dependents`/`dependentsOf` follow the reverse-query pattern (`lib/global.nix:dependents`/`dependentsOf`).
-- **Tarjan (1983), *Data Structures and Network Algorithms*** — topological rank by longest incoming path; `coneRank` is `depth = 1 + max(depth of producers)` restricted to a supplied cone (`lib/global.nix:coneRank`).
+- **Tarjan (1983), *Data Structures and Network Algorithms*** — topological rank by longest incoming path; `coneRank` is `depth = 1 + max(depth of producers)` restricted to a supplied cone (`lib/order.nix:coneRank`), with the memo map forced along `topoOrderKahn`'s order — the recurrence is Tarjan's, the forcing order is what removes the descent.
+- **Apt, Blair & Walker (1988), *Towards a Theory of Declarative Knowledge*, Lemma 1** — the GRAPH HALF only: `cyclicEdgesWhere` computes "which edges satisfying `p` lie on a cycle" via the SCC decomposition the paper's own converse proof uses (`lib/query.nix:cyclicEdgesWhere`). The library has no programs and does not know which labels are negative, so it does not assert the biconditional; the caller supplies the predicate and owns the program-level word. Prose cited, no inequality lifted — the archived text has an OCR hazard inside that proof.
 - **Tarjan (1972), *Depth-First Search and Linear Graph Algorithms*** — pre-order discovery numbering as first-occurrence; `foldPreorder`/`expandPreorder`/`foldReach` fold a frame before its children, siblings in list order (`lib/preorder.nix:13-16`). `condensation` explicitly declines Tarjan's linear single-DFS: "Not Tarjan's linear O(V+E) single-DFS — its mutable stack/lowlink is out-of-substrate for pure Nix" (`lib/global.nix:condensation`, whose comment cites "Tarjan 1972 / Kosaraju for SCCs; Mokhov 2017 §4.6 Preorders and Equivalence Relations for the quotient-graph idiom").
 - **Néron, Tolmach, Visser & Wachsmuth (2015), *A Theory of Name Resolution*** — `ancestorsOf` as P-edge resolution (§2.3), and the labeled query surface generalizing scope-graph reachability to arbitrary edge labels, with `visible`/`layers` generalizing Néron's D < I < P label order (`lib/query.nix:2-3`).
 - **van Antwerpen, Poulsen, Rouvoet & Visser (2018), *Scopes as Types*** — the per-query label order with an end-of-path token; `order.endOfPath` (default `-1`) competes against the next label rank at word exhaustion (`lib/query.nix:135-141`).
@@ -251,7 +262,7 @@ nix eval --json .#lib --apply 'l: { top = builtins.attrNames l; regex = builtins
 Current output (verbatim):
 
 ```json
-{"fixtures":["chain","cyclic","diamond","disconnected","serviceGraph","tree"],"labeledFixtures":["cyclic","poisoned","world"],"regex":["alt","any","deriv","empty","eps","lit","nullable","opt","parse","plus","seq","star","stateKey"],"top":["ancestorsOf","canReach","coScc","compose","condensation","coneRank","cyclePaths","cycles","dependents","dependentsFrontier","dependentsOf","differenceEdges","directDependents","directDependentsOf","entryAfter","entryAnywhere","entryBefore","entryBetween","expandPreorder","field","fields","fixpoint","fixtures","foldPreorder","foldReach","fromRegistry","fromScan","impactOf","intersectEdges","labeledFixtures","labeledFrom","leaves","materialize","materializeParents","mkGraph","pathsBetween","phaseOrder","query","queryFold","reachableFrom","reachableWhere","regex","roots","seededFixpoint","select","selectEdges","selfReachable","topoOrder","transitiveClosure","transitiveReduction","transpose","unionEdges"]}
+{"fixtures":["chain","cyclic","diamond","disconnected","serviceGraph","tree"],"labeledFixtures":["cyclic","poisoned","world"],"regex":["alt","any","deriv","empty","eps","lit","nullable","opt","parse","plus","seq","star","stateKey"],"top":["ancestorsOf","canReach","coScc","compose","condensation","coneRank","cyclePaths","cycles","cyclicEdgesWhere","dependents","dependentsFrontier","dependentsOf","differenceEdges","directDependents","directDependentsOf","entryAfter","entryAnywhere","entryBefore","entryBetween","expandPreorder","field","fields","fixpoint","fixtures","foldPreorder","foldReach","forgetLabels","fromRegistry","fromScan","impactOf","intersectEdges","labeledFixtures","labeledFrom","leaves","materialize","materializeParents","mkGraph","pathsBetween","phaseOrder","query","queryFold","reachableFrom","reachableWhere","regex","roots","seededFixpoint","select","selectEdges","selfReachable","topoOrder","topoOrderKahn","transitiveClosure","transitiveReduction","transpose","unionEdges"]}
 ```
 
 **Checks.** Test-runner invocation (from the repo root; CI runs the same command with `working-directory: ci`, `.github/workflows/ci.yml:13,18`):
