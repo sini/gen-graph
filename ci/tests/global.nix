@@ -474,9 +474,9 @@ in
           c = condensation fixtures.cyclic;
         in
         [
-          (c.sccOf "a")
-          (c.sccOf "b")
-          (c.sccOf "c")
+          c.sccOf."a"
+          c.sccOf."b"
+          c.sccOf."c"
         ];
       expected = [
         "a"
@@ -490,12 +490,12 @@ in
       expected = true;
     };
     test-condensation-index-alignment = {
-      # index alignment: reps == bottomUp AND sccs == map members reps.
+      # index alignment: reps == bottomUp AND sccs == the member lists read in reps order.
       expr =
         let
           c = condensation fixtures.chain;
         in
-        (c.reps == c.bottomUp) && (map c.members c.reps == c.sccs);
+        (c.reps == c.bottomUp) && (map (r: c.members.${r}) c.reps == c.sccs);
       expected = true;
     };
     test-condensation-condEdges-direction = {
@@ -533,8 +533,8 @@ in
           c = condensation g;
         in
         [
-          (c.condEdges (c.sccOf "a"))
-          (c.condEdges (c.sccOf "x"))
+          c.condEdges.${c.sccOf."a"}
+          c.condEdges.${c.sccOf."x"}
         ];
       expected = [
         [ "d" ]
@@ -576,7 +576,7 @@ in
           c = condensation g;
           idx = t: lib.lists.findFirstIndex (r: r == t) (-1) c.bottomUp;
         in
-        builtins.all (r: builtins.all (target: idx target < idx r) (c.condEdges r)) c.bottomUp;
+        builtins.all (r: builtins.all (target: idx target < idx r) c.condEdges.${r}) c.bottomUp;
       expected = true;
     };
   };

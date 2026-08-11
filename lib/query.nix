@@ -11,6 +11,7 @@
 let
   regex = import ./regex.nix { inherit prelude; };
   global = import ./global.nix { inherit prelude; };
+  partition = import ./partition.nix { inherit prelude; };
 
   # ── THE LABELED CONTRACT IS TOTAL ──
   # A labeled graph is `{ labeledEdges; nodes; }`, and `nodes` is a REQUIRED FORMAL of the
@@ -104,14 +105,16 @@ let
     graph: p:
     let
       plain = forgetLabels graph;
-      inherit (global.condensation plain) sccOf;
+      # The partition ARM by name, never the door: this consumer reads the tag map and
+      # nothing else, so it has no stake in which algorithm the door defaults to.
+      inherit (partition.fbNode plain) sccOf;
       hits = builtins.concatMap (
         from:
         map (e: {
           inherit from;
           inherit (e) label;
           to = e.target;
-        }) (builtins.filter (e: p e.label && sccOf from == sccOf e.target) (graph.labeledEdges from))
+        }) (builtins.filter (e: p e.label && sccOf.${from} == sccOf.${e.target}) (graph.labeledEdges from))
       ) plain.nodes;
       less =
         a: b:

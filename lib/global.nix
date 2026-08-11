@@ -16,6 +16,7 @@ let
   edgeMaps = import ./edge-maps.nix { inherit prelude; };
   fp = import ./fixpoint.nix { inherit prelude; };
   traverse = import ./traverse.nix;
+  partition = import ./partition.nix { inherit prelude; };
 
   # Shared reverse-edge index: id -> [ids with an edge to id].
   # Extracted from dependentsOf so dependentsFrontier reuses it.
@@ -143,22 +144,38 @@ let
     u: v:
     (u == v) || (traverse.canReach { inherit edges; } u v && traverse.canReach { inherit edges; } v u);
 
-  # SCC partition + condensation (quotient) graph, closure-based: u and v are
-  # co-SCC iff each reaches the other via transitiveClosure. Not Tarjan's linear
-  # O(V+E) single-DFS — its mutable stack/lowlink is out-of-substrate for pure Nix.
+  # ── PARTITION ARM: THE CLOSURE CONSTRUCTION, PUBLISHED BY NAME ──
+  # An arm of the partition front door (`condensation`, `lib/partition.nix`), not the door:
+  # u and v are co-SCC iff each reaches the other, decided here by materializing the whole
+  # transitive closure and asking it. The door defaults to a forward–backward arm instead;
+  # a caller whose correctness depends on THIS construction answering binds this name.
+  # Not Tarjan's linear O(V+E) single-DFS — its mutable stack/lowlink is out-of-substrate
+  # for pure Nix.
+  #
   # COST is the CLOSURE-CLASS cost shared with `dependents`/`transitiveReduction` —
-  # SUPER-QUADRATIC and shape-dependent, not the O(n²) this comment used to claim.
-  # The four closure callers measure as ONE curve on `list.elements`, so do not quote a
-  # figure here that the siblings do not carry: `ci/bench/cost-classes.nix`, arm
-  # `condensation`. `transitiveReduction` leaves that curve on graphs whose every node
-  # has out-degree <= 1, where its shared closure is never forced (README's note); this
-  # comment's own closure below is always forced, so no such carve-out applies here.
-  # `bottomUp` lists each SCC after every SCC it points to (a reverse-topological
-  # order over the condensation DAG); `reps == bottomUp`, `sccs == map members reps`.
-  # (Tarjan 1972 / Kosaraju for SCCs; Mokhov 2017 §4.6 Preorders and Equivalence
-  # Relations for the quotient-graph idiom — a condensation is the quotient by the
-  # co-SCC equivalence.)
-  condensation =
+  # SUPER-QUADRATIC and shape-dependent, not O(n²). The closure callers measure as ONE
+  # curve on `list.elements`, so do not quote a figure here that the siblings do not carry:
+  # `ci/bench/cost-classes.nix`. `transitiveReduction` leaves that curve on graphs whose
+  # every node has out-degree <= 1, where its shared closure is never forced (README's
+  # note); the closure below is always forced, so no such carve-out applies here.
+  #
+  # ★ AND IT HAS A REAL CEILING THE OTHER ARMS DO NOT: the closure is a CAPPED fixpoint, so
+  # it returns iff the fixpoint's iteration cap is at least the graph's diameter and throws
+  # otherwise — and the throw names the fixpoint's iteration count rather than the caller's
+  # graph, which is a refusal that misdirects. That is the standing difference between this
+  # arm and the forward–backward pair, and it is why the door does not default here.
+  #
+  # ★ THIS ARM COMPUTES A TAG MAP AND NOTHING ELSE. Everything past it — the member lists,
+  # the quotient's edges, `bottomUp` and `depth` — is the SHARED FINISHER's, called here by
+  # name (`partition.condensationOf`). That is what makes "every arm returns the same record"
+  # a property of the CONSTRUCTION rather than of the cells that check it: an arm that
+  # finished its own record would agree with its siblings only for as long as someone kept
+  # three copies in step. The closure this arm is named for is spent on the PARTITION; a
+  # second closure over the quotient is not needed to order it, and it would put the capped
+  # fixpoint's ceiling on the result of every arm rather than on this one.
+  # (Tarjan 1972 / Kosaraju for SCCs; Mokhov 2017 §4.6 Preorders and Equivalence Relations
+  # for the quotient-graph idiom — a condensation is the quotient by the co-SCC equivalence.)
+  condensationClosure =
     { edges, nodes, ... }:
     let
       closure = fp.transitiveClosure { inherit edges nodes; };
@@ -171,50 +188,8 @@ let
       repOf = prelude.genAttrs nodes (
         n: builtins.head (builtins.sort builtins.lessThan (builtins.filter (m: coSccPair n m) nodes))
       );
-      # reps0: the unordered set of SCC tags — input to the bottom-up sort below,
-      # not the output order. The output order is `bottomUp`, and `reps = bottomUp`.
-      reps0 = prelude.unique (map (n: repOf.${n}) nodes);
-      membersOf = prelude.mapAttrs (_: ns: builtins.sort builtins.lessThan (map (e: e.n) ns)) (
-        builtins.groupBy (e: e.r) (
-          map (n: {
-            r = repOf.${n};
-            n = n;
-          }) nodes
-        )
-      );
-      condEdgesOf =
-        r:
-        prelude.unique (
-          builtins.filter (rb: rb != r) (
-            map (t: repOf.${t}) (prelude.concatMap (m: edges m) (membersOf.${r} or [ ]))
-          )
-        );
-      # Bottom-up: a second closure, over the condensation, sorted by closure
-      # cardinality ascending (a node that points to fewer SCCs has a smaller
-      # closure, so it sorts earlier), with a name tie-break. No hand-rolled DFS.
-      condMat = prelude.genAttrs reps0 (r: condEdgesOf r);
-      condClosure = fp.transitiveClosure {
-        edges = id: condMat.${id} or [ ];
-        nodes = reps0;
-      };
-      depthOf = r: builtins.length (condClosure.${r} or [ ]);
-      bottomUp = builtins.sort (
-        ra: rb:
-        let
-          da = depthOf ra;
-          db = depthOf rb;
-        in
-        if da == db then ra < rb else da < db
-      ) reps0;
-      reps = bottomUp;
-      members = tag: membersOf.${tag} or [ ];
     in
-    {
-      inherit reps bottomUp members;
-      sccs = map (r: members r) reps;
-      sccOf = id: repOf.${id} or id;
-      condEdges = condEdgesOf;
-    };
+    partition.condensationOf { inherit edges nodes; } repOf;
 
   # One representative simple cycle per cyclic component, as an ORDERED node list rotated to
   # begin at the component's smallest key. Acyclic input => [ ].
@@ -232,8 +207,8 @@ let
   # COST: `cycles` short-circuits an acyclic graph before any path work, so the ordinary case pays
   # the self-reachability pass and nothing more — but that pass IS `cycles`, so it carries `cycles`'
   # shape dependence: O(n × reachable) where out-degree is bounded, Θ(n³) on a complete DAG.
-  # Reconstruction — `condensation` (super-quadratic, see its own comment) plus `pathsBetween`,
-  # which enumerates simple paths and is worst-case exponential — runs only once the graph is
+  # Reconstruction — the per-node forward–backward partition arm plus `pathsBetween`, which
+  # enumerates simple paths and is worst-case exponential — runs only once the graph is
   # KNOWN cyclic, i.e. only on the branch a caller refuses on. Same discipline `order.nix` states
   # for its own cycle report: the expensive analysis is on the way out.
   cyclePaths =
@@ -245,7 +220,10 @@ let
       [ ]
     else
       let
-        inherit ((condensation { inherit edges nodes; })) sccOf;
+        # The partition ARM by name, never the door: this consumer needs the tag map and
+        # nothing else, and binding a door would make its answer depend on a default it has
+        # no stake in.
+        inherit ((partition.fbNode { inherit edges nodes; })) sccOf;
         # The component's smallest key is the ENTRY POINT, so the head of the returned walk is
         # order-independent. The REST of the walk is not: it follows the order of `edges u` and
         # of `pathsBetween`'s enumeration, so a component holding several simple cycles can yield
@@ -264,14 +242,14 @@ let
                   ps = traverse.pathsBetween { inherit edges; } v u;
                 in
                 if ps == [ ] then [ ] else builtins.head ps
-              ) (builtins.filter (v: sccOf v == sccOf u) (edges u))
+              ) (builtins.filter (v: sccOf.${v} == sccOf.${u}) (edges u))
             );
           in
           # `back`'s paths end AT u; dropping that last element closes the walk without
           # repeating the head. A self-loop leaves [ u ].
           [ u ] ++ (if back == [ ] then [ ] else prelude.init (builtins.head back));
       in
-      map repCycle (prelude.mapAttrsToList (_: g: g) (builtins.groupBy sccOf cyclic));
+      map repCycle (prelude.mapAttrsToList (_: g: g) (builtins.groupBy (k: sccOf.${k}) cyclic));
 
   # Impact analysis alias (uses efficient single-target path).
   impactOf = dependentsOf;
@@ -294,7 +272,7 @@ in
     dependentsFrontier
     transpose
     impactOf
-    condensation
+    condensationClosure
     coScc
     directDependents
     directDependentsOf

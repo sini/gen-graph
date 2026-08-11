@@ -51,6 +51,7 @@
 { prelude }:
 let
   global = import ./global.nix { inherit prelude; };
+  partition = import ./partition.nix { inherit prelude; };
 
   entryBetween = before: after: { inherit before after; };
   entryAnywhere = entryBetween [ ] [ ];
@@ -406,18 +407,26 @@ let
         count = 0;
       } keys;
 
-      # The cycle report is SCC MEMBERSHIP, named by `cycles`/`condensation` rather than
-      # read off the residual: every node in a cycle, grouped by its component, sorted
+      # The cycle report is SCC MEMBERSHIP, named by `cycles` and by a partition arm rather
+      # than read off the residual: every node in a cycle, grouped by its component, sorted
       # within each group. `cycles` is self-reachability, so a self-loop is reported as
-      # the singleton it is — a component `condensation` alone cannot distinguish from an
+      # the singleton it is — a component the partition alone cannot distinguish from an
       # acyclic node.
+      #
+      # ★ THE PARTITION ARM IS BOUND BY NAME, never the partition front door — the same rule
+      # `coneRank` follows for this door. The door's own default finishes its result with an
+      # ordering pass, so an ordering arm reading the door would be ordering through a
+      # surface that orders through it. Binding the arm is non-circular whatever either
+      # door defaults to, and this consumer needs only the tag map.
       keyAccessor = {
         nodes = keys;
         edges = k: depsOf.${k} or [ ];
       };
       cyclicKeys = global.cycles keyAccessor;
-      sccOf = (global.condensation keyAccessor).sccOf;
-      cycles = prelude.mapAttrsToList (_: g: map (k: nodeOf.${k}) g) (builtins.groupBy sccOf cyclicKeys);
+      sccOf = (partition.fbNode keyAccessor).sccOf;
+      cycles = prelude.mapAttrsToList (_: g: map (k: nodeOf.${k}) g) (
+        builtins.groupBy (k: sccOf.${k}) cyclicKeys
+      );
     in
     if refusal != null then
       throw "gen-graph.topoOrder: ${refusal}"
