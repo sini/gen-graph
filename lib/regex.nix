@@ -1,13 +1,34 @@
-# Label-regex kernel for graph queries: Brzozowski (1964) derivatives with the
-# ACI normalization of Owens, Reppy & Turon (2009) — alternation is flattened,
-# sorted and deduplicated, sequence is flattened with unit/zero absorption, and
-# star is collapsed, so the set of derivatives of any expression is finite and
-# `stateKey` is a canonical seen-set key. Labels are the edge-kind names of a
-# labeled graph (Néron et al. 2015); a query's path constraint is a word in
-# this alphabet. Labels are expected to match [A-Za-z0-9_-]+ (the parse
-# alphabet): a label containing rendering metacharacters (* | . parens) can
-# collide with a composite's canonical rendering in stateKey — constructor
-# callers own this constraint (see README).
+# Label-regex kernel for graph queries: Brzozowski (1964) derivatives kept in a
+# normal form, so that `stateKey` is a canonical seen-set key.
+#
+# THE FINITENESS THEOREM IS BRZOZOWSKI'S. Thm 5.2 — "every regular expression
+# has only a finite number of dissimilar derivatives" — is what bounds the
+# state set, where the similarity of Def 5.2 is the ACI identities of
+# ALTERNATION ONLY: R+R=R, P+Q=Q+P, (P+Q)+R=P+(Q+R). That bound is not free for
+# an arbitrary expression, it is a bound MODULO those identities, and
+# Brzozowski's own proof (Appendix II) names the load-bearing one: "it is the
+# identity R + R = R which allows us to terminate the process." So the
+# normalization has to be performed, and `alt` performs exactly those three —
+# flatten, sort, dedup.
+#
+# OWENS, REPPY & TURON (2009) SUPPLY THE ENLARGED RULE SET, NOT THE THEOREM.
+# Their Def 4.1 is a strict superset of Brzozowski's similarity — sequence
+# flattened with unit/zero absorption, star collapsed — together with the
+# smart-constructor strategy this file follows, normalizing on the way in
+# rather than canonicalizing after the fact. ORT credit the finiteness result
+# to Brzozowski themselves (§3.3, §4.1) and state no termination theorem for
+# the enlarged set. That composite is folklore, and safely so: every added
+# identity is semantics-preserving and size-decreasing, so it can only merge
+# states that ACI alone would have kept apart, while Brzozowski's bound already
+# holds "even if only similarity ... is recognized". ORT §4.2's character-set
+# merge (`alt` of `any` with a literal) is NOT implemented — that is a
+# minimality rule, never a termination one.
+#
+# Labels are the edge-kind names of a labeled graph (Néron et al. 2015); a
+# query's path constraint is a word in this alphabet. Labels are expected to
+# match [A-Za-z0-9_-]+ (the parse alphabet): a label containing rendering
+# metacharacters (* | . parens) can collide with a composite's canonical
+# rendering in stateKey — constructor callers own this constraint (see README).
 { prelude }:
 let
   # ── constructors normalize on the way in ─────────────────────────────────

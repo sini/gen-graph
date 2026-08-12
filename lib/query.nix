@@ -2,11 +2,15 @@
 # label regex (Néron et al. 2015 scope-graph resolution, generalized to
 # arbitrary edge labels). The engine steps a Brzozowski derivative alongside
 # the graph walk; the seen-set keys on (node, canonical-derivative) pairs, so
-# cyclic graphs terminate because ACI-normalized derivative sets are finite
-# (Owens, Reppy & Turon 2009) — that is the `all` engine; witness modes
-# terminate by acyclic path enumeration instead. `all` mode is
-# genericClosure-backed (C-level, no path materialization); witness-carrying
-# modes live beside it.
+# cyclic graphs terminate: a regular expression has only finitely many
+# derivatives modulo the ACI identities of alternation — Brzozowski 1964
+# Thm 5.2, over the similarity of his Def 5.2 — and `lib/regex.nix` PERFORMS
+# that normalization, which the theorem requires done rather than merely true.
+# (Owens, Reppy & Turon 2009 supply the enlarged rule set that file also runs;
+# the finiteness result is Brzozowski's and ORT cite it as his.) That is the
+# `all` engine; witness modes terminate by acyclic path enumeration instead.
+# `all` mode is genericClosure-backed (C-level, no path materialization);
+# witness-carrying modes live beside it.
 { prelude }:
 let
   regex = import ./regex.nix { inherit prelude; };

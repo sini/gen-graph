@@ -119,7 +119,8 @@ in
       expected = true;
     };
 
-    # ACI canonicalization (Owens–Reppy–Turon: finitely many derivatives modulo ACI)
+    # ACI canonicalization (Brzozowski Thm 5.2: finitely many derivatives modulo
+    # the ACI identities of alternation, which are his Def 5.2 similarity)
     test-alt-commutes = {
       expr =
         r.stateKey (
