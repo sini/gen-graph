@@ -7,7 +7,9 @@
 #   full simple-cycle enumeration (Johnson 1975) is deliberately not provided.
 # dependents/dependentsOf: Arntzenius 2016 (Datafun reverse reachability).
 #   dependents uses full transitive closure (amortized for multi-target).
-#   dependentsOf uses reverse traversal (O(reachable) for single-target).
+#   dependentsOf uses reverse traversal — Θ( Σ_{u ∈ reach⁻ t} (1 + indeg u) ) for single-target,
+#   i.e. O(reachable) only where IN-degree is bounded, since the reversed operator re-reads the
+#   index at every visit.
 # transpose: Mokhov 2017 §5.2 Graph Transpose — the law is that transpose flips
 #   the arguments of `connect` and leaves `overlay` unchanged, so direction is
 #   REVERSED, not erased.
@@ -20,7 +22,8 @@ let
 
   # Shared reverse-edge index: id -> [ids with an edge to id].
   # Extracted from dependentsOf so dependentsFrontier reuses it.
-  # O(E) via groupBy instead of O(E²) via foldl'+//.
+  # Θ(n + E) via groupBy instead of O(E²) via foldl'+// — the concatMap below visits every
+  # node to read its out-edges, so a node with no out-edges still costs its visit.
   _reverseIndex =
     { edges, nodes, ... }:
     let
@@ -36,7 +39,8 @@ let
     builtins.mapAttrs (_: es: map (e: e.value) es) grouped;
 
   # Transpose a materialized edge map: reverse all edges.
-  # O(E) via groupBy instead of O(E²) via foldl'+//.
+  # Θ(|mat| + E) via groupBy instead of O(E²) via foldl'+// — the concatMap below visits every
+  # key of `mat`, so a key with no targets still costs its visit.
   _transposeMat =
     mat:
     let
@@ -83,7 +87,12 @@ let
     );
 
   # Single-target reverse reachability via reverse traversal (Arntzenius 2016).
-  # O(n) to build reverse index + O(reachable in reverse) C-level BFS.
+  # Θ(n + E) to build the reverse index — it reads every node's out-edges — then a C-level BFS
+  # over that index costing
+  #   Θ( Σ_{u ∈ reach⁻ targetId} (1 + indeg u) )
+  # because `traverse.reachableFrom`'s operator re-reads the index at every visit, and in the
+  # reversed graph a node's out-degree IS its forward in-degree. So this is O(reachable) only
+  # where in-degree is bounded, and Θ(n²) on a complete DAG.
   # Much faster than `dependents` for single-target queries on large graphs.
   dependentsOf =
     { edges, nodes, ... }:
@@ -100,6 +109,13 @@ let
   # cannot include-but-not-expand, so this is a hand-rolled BFS with a visited
   # attrset (cycle guard: each id enters the frontier at most once).
   # Reduces to `dependentsOf` when `prune = _: true`.
+  # It does NOT inherit the operator's cost law, even in that limit:
+  # Θ(n + E) for the index, then a per-visit Θ( Σ_{u ∈ expanded} (1 + indeg u) ) over what
+  # `prune` admits — a pruned node is reached without paying its in-degree — PLUS an
+  # accumulator term `genericClosure` does not have. The `visited // genAttrs fresh` below
+  # copies the whole visited set once per level, so the walk is Θ(levels × |visited|):
+  # quadratic on a deep cone (a chain, in-degree 1, is the witness) however bounded the
+  # in-degree, where `genericClosure` accumulates natively and stays flat.
   dependentsFrontier =
     { edges, nodes, ... }:
     targetId: prune:

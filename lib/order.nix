@@ -157,7 +157,8 @@ let
       # names, and an indegree that counts an arc the decrement only pays once would
       # never reach zero.
       depsOf = prelude.mapAttrs (_: ds: builtins.attrNames (prelude.genAttrs ds (_: true))) rawDepsOf;
-      # Reverse index — the pick's successors, the only indegrees a pick may touch. O(E).
+      # Reverse index — the pick's successors, the only indegrees a pick may touch.
+      # Θ(|keys| + E): the concatMap visits every key, so a key with no deps still costs its visit.
       dependentsOf = prelude.mapAttrs (_: es: map (e: e.value) es) (
         builtins.groupBy (e: e.name) (
           prelude.concatMap (

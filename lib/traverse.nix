@@ -3,10 +3,21 @@
 # Uses builtins.genericClosure (C-level BFS with native dedup) for
 # reachability queries. ~4-5x faster than Nix-level BFS on large graphs.
 #
+# PER-VISIT COST — the factor this file creates. Every operator below re-reads `edges` at
+# each visit and allocates one attrset per out-edge, so a visit is O(1 + outdeg), not O(1),
+# and a traversal from `s` costs
+#   Θ( Σ_{u ∈ reach s} (1 + outdeg u) )
+# → O(reachable) only where out-degree is BOUNDED (a chain is the witness), but Θ(n²) on a
+# complete DAG. The factor shows up in the allocation counters, not just asymptotically: the
+# attrsets a traversal allocates are exactly |startSet| + Σ_{u ∈ visited} outdeg u, one per
+# out-edge read. Consumers state their cost in this form, never as O(reachable); `cycles` runs
+# the sum once per node, which is where its Θ(n³) dense figure comes from.
+#
 # Pure builtins only — no dependencies, so this is a bare value (not a function).
 let
   # Follow edges transitively from a start node (excludes startId).
-  # C-level BFS via genericClosure. O(reachable nodes).
+  # C-level BFS via genericClosure. Θ( Σ_{u ∈ reach startId} (1 + outdeg u) ) — the operator
+  # below re-reads `edges` at every visit, so this is O(reachable) only at bounded out-degree.
   reachableFrom =
     { edges, ... }:
     startId:
@@ -22,7 +33,9 @@ let
   reachableWhere =
     { edges, ... }: startId: pred: builtins.filter pred (reachableFrom { inherit edges; } startId);
 
-  # Point query: can fromId reach toId? O(reachable from fromId).
+  # Point query: can fromId reach toId? Θ( Σ_{u ∈ reach fromId} (1 + outdeg u) ) — the same
+  # per-visit cost as reachableFrom, since it is the same operator, so O(reachable) only at
+  # bounded out-degree.
   # genericClosure is strict, so fromId's closure is materialized in full on every call;
   # builtins.any short-circuits its scan of that finished list, not the traversal that built
   # it. What is avoided is the whole-graph transitive closure, not the per-call one.

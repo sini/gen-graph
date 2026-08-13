@@ -136,7 +136,7 @@ graph.reachableWhere g "web" (id: lib.hasPrefix "cache" id)
 # → [ "cache" ]
 ```
 
-**`canReach g fromId toId`** — point query: can `fromId` transitively reach `toId`? O(reachable from `fromId`): the source's closure is materialized in full on every call, whatever the target — `builtins.any` short-circuits its scan of the finished list, not the traversal that built it.
+**`canReach g fromId toId`** — point query: can `fromId` transitively reach `toId`? `Θ(Σ_{u ∈ reach fromId} (1 + outdeg u))` — O(reachable) only where out-degree is **bounded**, Θ(n²) on a complete DAG: the source's closure is materialized in full on every call, whatever the target — `builtins.any` short-circuits its scan of the finished list, not the traversal that built it.
 
 ```nix
 graph.canReach g "web" "database"   # → true
@@ -288,7 +288,7 @@ graph.cyclePaths g   # → [ [ "b" "d" "c" ] ]   the traversal — b→d, d→c,
 graph.dependents g "database"   # → [ "api" "web" "worker" ]
 ```
 
-**`dependentsOf g targetId`** — same result as `dependents`, but uses reverse traversal: builds reverse edge index O(n), then C-level BFS from target. O(n + reachable). **Preferred for single-target queries on large graphs.**
+**`dependentsOf g targetId`** — same result as `dependents`, but uses reverse traversal: builds the reverse edge index over every edge (`Θ(n + E)`), then runs the same C-level BFS from the target over that index, costing `Θ(Σ_{u ∈ reach⁻ target} (1 + indeg u))` — the operator re-reads the index at every visit, and in the reversed graph a node's out-degree is its forward **in**-degree. O(reachable) only where in-degree is bounded; Θ(n²) on a complete DAG. **Preferred for single-target queries on large graphs.**
 
 ```nix
 graph.dependentsOf g "database"   # → [ "api" "cache" "web" "worker" ]
@@ -389,7 +389,7 @@ Two axes are excluded from every "none found" row above and are named once rathe
 
 **The calibrated successor, named and NOT armed.** Routing on a cheap pre-partition upper bound — edge count, out-degree distribution — is the calibrated successor to selecting an arm by name. It is decidable when a synthetic configuration of the intended scale exists, and not before: there is no present artefact whose stratum depth stands in for the intended fleet, so a threshold fitted against what exists today would have a domain that does not match the property it quantifies over, and would be uncalibrated by construction. **No bound is proposed here, not even a placeholder** — a number in this contract would be read as the thing to tune rather than the thing to derive.
 
-**`directDependents g`** — the full **direct** reverse-adjacency map `{ id → [direct dependents of id] }`: the immediate reverse neighbours of every node, in one O(E) `groupBy`. This is the public face of the internal `_reverseIndex`. **Direct**, in contrast to `dependentsOf`'s **transitive** closure — a producer with no consumer simply has no key.
+**`directDependents g`** — the full **direct** reverse-adjacency map `{ id → [direct dependents of id] }`: the immediate reverse neighbours of every node, in one `Θ(n + E)` `groupBy` — it visits every node to read its out-edges, so a node with none still costs its visit. This is the public face of the internal `_reverseIndex`. **Direct**, in contrast to `dependentsOf`'s **transitive** closure — a producer with no consumer simply has no key.
 
 **`directDependentsOf g id`** — the immediate dependents of a single node: `(directDependents g).${id} or [ ]`.
 
@@ -933,10 +933,10 @@ in {
 
 | Operation | Complexity | Notes |
 |-----------|-----------|-------|
-| `reachableFrom` | O(reachable) | C-level BFS via `builtins.genericClosure` |
-| `reachableWhere` | O(reachable) | same C-level BFS, filter applied after |
-| `canReach` | O(reachable from source) | C-level BFS; the source's closure is materialized in full on every call, whatever the target — `builtins.any` short-circuits its scan of the finished list, not the traversal that built it |
-| `selfReachable` | O(reachable from node) | C-level BFS checking self-reappearance |
+| `reachableFrom` | `Θ(Σ_{u ∈ reach s} (1 + outdeg u))` — i.e. O(reachable) only where out-degree is **bounded**; Θ(n²) on a complete DAG | C-level BFS via `builtins.genericClosure`. The per-visit cost is O(1 + outdeg), not O(1), because the `genericClosure` operator re-reads `edges` at every visit |
+| `reachableWhere` | exactly the `reachableFrom` cost above — O(reachable) only at bounded out-degree, Θ(n²) on a complete DAG | same C-level BFS, filter applied after |
+| `canReach` | `Θ(Σ_{u ∈ reach s} (1 + outdeg u))` from the source `s` — same operator, same per-visit cost, so O(reachable) only at bounded out-degree and Θ(n²) on a complete DAG | C-level BFS; the source's closure is materialized in full on every call, whatever the target — `builtins.any` short-circuits its scan of the finished list, not the traversal that built it |
+| `selfReachable` | `Θ(Σ_{u ∈ reach v} (1 + outdeg u))` from the node `v` — same operator, same per-visit cost, so O(reachable) only at bounded out-degree and Θ(n²) on a complete DAG | C-level BFS checking self-reappearance |
 | `ancestorsOf` | O(depth) | single-path walk |
 | `pathsBetween` | O(paths × depth) | exponential in path count; use on small subgraphs |
 | `materialize` | O(nodes × avg degree) | one-time scan |
@@ -945,19 +945,19 @@ in {
 | `cycles` | `Θ(Σ_v Σ_{u ∈ reach v} (1 + outdeg u))` — i.e. O(nodes × reachable) only where out-degree is **bounded**; Θ(n³) on a complete DAG | per-node C-level BFS — one closure per node, so no whole-graph transitive closure. The per-visit cost is O(1 + outdeg), not O(1), because `selfReachable`'s `genericClosure` operator re-reads `edges` at every visit |
 | `cyclePaths` | on a DAG, exactly the `cycles` cost above — so Θ(n³) on a complete DAG, **not** O(nodes × reachable); + the `fbNode` partition arm (see its own row) and simple-path search once cyclic | short-circuits before any path work when acyclic |
 | `dependents` | **closure class** (see below) | full transitive closure + transpose |
-| `dependentsOf` | O(nodes + reachable) | reverse index + C-level BFS |
-| `dependentsFrontier` | O(nodes + reachable) | reverse index + level-by-level BFS, pruned early |
-| `coScc` | O(reachable from u, v) | two `canReach` probes, each materializing its own start's entire closure — two closures, so what is avoided is the whole-graph transitive closure, not the per-probe one |
+| `dependentsOf` | `Θ(n + E)` for the reverse index, then `Θ(Σ_{u ∈ reach⁻ t} (1 + indeg u))` for the walk — i.e. O(reachable) only where **in**-degree is bounded; Θ(n²) on a complete DAG | reverse index + C-level BFS. The walk is the `reachableFrom` operator run over the reversed index, so its per-visit factor is the forward in-degree |
+| `dependentsFrontier` | `Θ(n + E)` for the reverse index, then **two** terms: `Θ(Σ_{u ∈ expanded} (1 + indeg u))` per-visit over the nodes `prune` admits, **plus an accumulator that is a whole-`visited` copy per level** — `Θ(levels × reached)`, so the walk is quadratic on a deep cone however **bounded** the in-degree, and a chain is the witness | reverse index + level-by-level BFS, pruned early. Hand-rolled rather than `genericClosure` (which cannot include-but-not-expand), and **not** the operator's cost law: `visited // genAttrs fresh` re-copies every id already reached at each level, where `dependentsOf`'s `genericClosure` accumulates natively |
+| `coScc` | the `canReach` cost paid from each of `u` and `v`: `Θ(Σ_{w ∈ reach u} (1 + outdeg w) + Σ_{w ∈ reach v} (1 + outdeg w))` — O(reachable) only at bounded out-degree, Θ(n²) on a complete DAG | two `canReach` probes, each materializing its own start's entire closure — two closures, so what is avoided is the whole-graph transitive closure, not the per-probe one |
 | `condensation` / `fbNode` | quadratic in the members of ONE component and linear in components: `list`/`sets`/`nrLookups` exponents 2.00 on `cycle`, 1.00–1.04 on `fleet`, ~1.98 on `chain` (n = 500 → 2000) | two `genericClosure` calls per node, no accumulator, no recursion. **No closure call and no fixpoint**, so no iteration cap to inherit. Ceilings and the arm comparison: *The partition routing contract* above |
 | `fbWork` | the mirror image: 1.00 on `cycle`, but its accumulator is a whole-value copy per component, so `sets` runs 1.35 → 1.53 on `fleet` while `list`/`nrLookups` stay at 1.04–1.05 | one forward–backward pass per COMPONENT over a `foldl'` accumulator. Complementary to `fbNode`, not ranked |
 | `condensationClosure` | **closure class** (see below) | one transitive closure. The second closure over the quotient is gone — every arm now takes its `bottomUp` and `depth` from one `coneRank` pass over the condensation instead, which is `topoOrderKahn`-warmed and reaches no fixpoint |
 | `coneRank` | O(|cone| + edges-in-cone) for the recurrence, **plus one ordering pass** — `list` exponent 1.07 on `chain` and `fleet`, `sets` 1.00–1.02, `nrLookups` 1.00–1.06 (n = 1000 → 8000) | `lib.fix` memoized depth, cone-local (no condensation), warmed along `topoOrderKahn`'s order. **No ceiling found to 32,000** on `chain` or `deepwide`; a cyclic cone is a named refusal. The construction it replaced is linear on all three axes and aborts past ~4,000 on `chain` — `ci/bench/cost-classes.nix`, arms `coneRank` / `coneRankShipped` |
 | `topoOrder` / `phaseOrder` | O(n + E) decrements, and **near-linear in allocation** — exponent 1.07–1.08 on `list.elements` and 0.99–1.12 on `sets.elements`, all four acyclic shapes | nothing the loop carries is quadratic: the emitted sequence is a binary-counter run list (Θ(n log n)), the indegree map is a residue over a rebuilt base, and the ready set is a leftist heap (Θ(n log n)), where a re-sorted array was a third quadratic worth 60% of the `wide` list allocation. The heap's `sets.elements` price, 63 → 89 attrsets per node over n = 1000 → 8000, is now the leading set-axis term. No frame ceiling — the loop is a bounded iteration, so no node count aborts or is refused |
-| `directDependents` / `directDependentsOf` | O(edges) | one `groupBy` reverse-adjacency map |
+| `directDependents` / `directDependentsOf` | `Θ(n + E)` | one `groupBy` reverse-adjacency map — this is `_reverseIndex`, whose `concatMap` visits every node, so a node with no out-edges still costs its visit |
 | `seededFixpoint` | O(work per delta) | semi-naive: each iteration touches only the frontier |
 | `roots` / `leaves` | O(nodes × avg degree) | single scan of all edges |
 | `select` | O(nodes) | one pass over node list |
-| `unionEdges` / `intersectEdges` / `differenceEdges` | O(edges) | attrset membership O(1) per edge |
+| `unionEdges` / `intersectEdges` / `differenceEdges` | `Θ(keys + entries)` over both maps for `intersectEdges` and `differenceEdges`; `unionEdges` adds a per-key `Θ(m²)` in that key's combined target count `m` | both maps are walked by `attrNames`, so a key with an empty target list still costs its visit. `intersect`/`difference` test membership in an attrset, O(1) per edge; `unionEdges` instead calls `prelude.unique` per key — `foldl'` with `elem`, quadratic on the list axis, the same trap `partition.nix` and `coneRank` each record |
 
 **The closure class.** `transitiveClosure`, `dependents`, `condensationClosure` and `transitiveReduction` each cost one `fp.transitiveClosure` call, and on **`list.elements`** they measure as **one curve**, not four costs. The class is stated on that axis because it dominates the bill: at n = 200 it exceeds the other two counters combined by 418× on the complete digraph and 124× on the cycle. On a complete digraph the growth **exponent** is ~3.0 for all four and the exponents agree to 0.21% (2.980–2.986); the **raw** figures agree that closely only for the first three (0.332% apart at n = 200), while `transitiveReduction` sits 11.6% above `transitiveClosure` — the 0.21% is a statement about exponents, not about allocation counts. `transitiveClosure` alone is 99.7% of `dependents`. On a simple cycle the first three are ~3.9, and their spread **narrows** with n — 0.294% at n = 50, 0.081% at n = 100, 0.021% at n = 200 — so the class claim strengthens as the graph grows rather than holding at one fixed bound. It is **super-quadratic on both shapes — not the O(nodes²) once documented here.** This is practical scaling guidance on the dominant axis, not an identity on every axis: on `sets.elements` the complete-digraph exponents separate, `transitiveClosure` at 0.76 against 1.93–1.99 for its siblings. What makes it a class is structural rather than measured — all four literally call `fp.transitiveClosure`. The rows above therefore name the class instead of repeating a figure, so the four cannot drift apart into an apparent distinction that does not exist. Re-run: `ci/bench/cost-classes.nix`, arms `transitiveClosure` / `dependents` / `condensationClosure` / `transitiveReduction`.
 
@@ -1002,8 +1002,8 @@ genGraph.reachableFrom { edges = id: result.get id "imports"; } "host:igloo"
 
 | Need | Use | Don't use |
 |------|-----|-----------|
-| "Can A reach B?" | `canReach` (O(reachable)) | `dependents` (closure class) |
-| "What depends on X?" (one target) | `dependentsOf` (O(n + reachable)) | `dependents` (closure class) |
+| "Can A reach B?" | `canReach` (O(reachable) at bounded out-degree, Θ(n²) on a dense graph — see Performance) | `dependents` (closure class) |
+| "What depends on X?" (one target) | `dependentsOf` (reverse index, then O(reachable) at bounded in-degree, Θ(n²) on a dense graph — see Performance) | `dependents` (closure class) |
 | "What depends on X, Y, Z?" (multi-target) | `dependents` (closure class, amortized over targets) | `dependentsOf` × 3 (rebuilds index 3×) |
 | "Is there a cycle?" | `cycles` (C-level; O(n × reachable) at bounded out-degree, Θ(n³) on a dense graph — see Performance) | `transitiveClosure` (closure class) |
 | "Which loop, in order, for a message?" | `cyclePaths` (free on a DAG) | hand-rolled DFS per node (enumerates every simple path even when acyclic) |

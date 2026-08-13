@@ -128,14 +128,14 @@ Both are lazy in the same way as `reachableFrom` — they never enumerate `nodes
 gen-graph offers two variants:
 
 ```nix
-# Single target (efficient — O(n + reachable)):
+# Single target (efficient — reverse index Θ(n + E), then O(reachable) at bounded in-degree):
 graph.dependentsOf g "db"     # [ "api" "web" "worker" ]
 
 # Multi-target (amortized — full closure computed once):
 graph.dependents g "db"       # same result, different algorithm
 ```
 
-**`dependentsOf`** builds a reverse edge index once (O(n)), then does C-level BFS from the target in the reversed graph. Fast for one-off queries.
+**`dependentsOf`** builds a reverse edge index once (`Θ(n + E)` — it reads every node's out-edges), then does C-level BFS from the target in the reversed graph. That walk re-reads the index at every visit, so it costs `Θ(Σ_{u ∈ reach⁻ target} (1 + indeg u))`: O(reachable) only where in-degree is bounded. Fast for one-off queries.
 
 **`dependents`** computes the full transitive closure, transposes it, then looks up the target. Expensive upfront (closure class — super-quadratic, see README's Performance section), but if you're querying multiple targets, the closure is computed once and each lookup is O(1).
 
@@ -363,7 +363,7 @@ Cross-partition edges are rare in practice. The speed-up is shape-dependent: spl
 # DON'T: computes the full closure (super-quadratic) for one question
 graph.dependents g "db"
 
-# DO: builds reverse index O(n) + C-level BFS O(reachable)
+# DO: builds reverse index Θ(n + E) + C-level BFS O(reachable) at bounded in-degree
 graph.dependentsOf g "db"
 ```
 
@@ -388,10 +388,10 @@ g = {
 
 | If you need... | Use | Cost |
 |----------------|-----|------|
-| "Can A reach B?" | `canReach` | O(reachable from A) |
-| "What depends on X?" (one X) | `dependentsOf` | O(n + reachable) |
+| "Can A reach B?" | `canReach` | C-level; O(reachable from A) only at bounded out-degree, Θ(n²) on a dense graph |
+| "What depends on X?" (one X) | `dependentsOf` | reverse index Θ(n + E), then O(reachable) only at bounded in-degree, Θ(n²) on a dense graph |
 | "What depends on X, Y, Z?" | `dependents` × 1 | closure class, amortized over targets |
-| "Is this node in a cycle?" | `selfReachable` | O(reachable from node) |
+| "Is this node in a cycle?" | `selfReachable` | C-level; O(reachable from node) only at bounded out-degree, Θ(n²) on a dense graph |
 | "List all cycles" | `cycles` | C-level; O(n × reachable) only at bounded out-degree, Θ(n³) on a dense graph |
 | "Entry points" | `roots` | O(n × degree) |
 | "Minimal diagram" | `transitiveReduction` | closure class unless every node has out-degree ≤ 1 — needs closure |
