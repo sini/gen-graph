@@ -12,7 +12,7 @@
 #
 #   1. the two terms `topoOrder`'s CYCLE PATH pays — a `global.cycles` call and a partition
 #      call (`lib/order.nix`, the `ok = false` branch);
-#   2. the `fp.transitiveClosure`-INHERITING class — every surface whose cost is a
+#   2. the `fp.closureOf`-INHERITING class — every surface whose cost is a
 #      closure call: `dependents` (`global.nix`), `condensationClosure` (`global.nix`), and
 #      `transitiveReduction` (`fixpoint.nix`). These share one cost and must be documented
 #      from one measurement, or a reader comparing two rows infers a distinction that does
@@ -428,22 +428,51 @@ let
   #     the record around it is built.
   # Summed, two axes move non-uniformly and the verdict reads SHIFTED-STRUCTURAL, which is
   # correct and says nothing about either part. Both are obvious apart.
+  # ★ AND RE-PINNED FOR THE CLOSURE CLASS'S NAMED REFUSAL, which moves two axes and neither of
+  # them for a reason that touches a closure. The four closure surfaces became one construction
+  # named by the surface calling it, so the refusal at the iteration cap can say WHICH surface
+  # and WHAT diameter instead of quoting an iteration count. Measured apart on the unedited
+  # bench, exactly as the ★★★ block above prescribes:
+  #   · `sets` +6 UNIFORMLY on all three cells (+8 on `peerClosure`, which reads more of the
+  #     merged set), `list` and `nrLookups` bit-identical on the two ordering cells — TWO more
+  #     names in the library's merged export set, `closureClass` and `closureOf`. Isolated by
+  #     replaying two dummy exports against the OLD library in a detached worktree: `sets`
+  #     +6 / +6 / +8 with `list` and `nrLookups` bit-identical on all three, i.e. the WHOLE
+  #     uniform part is the export set and none of it is the refusal. Same signature as the +10
+  #     for three names and the +3 for one recorded above, and benign for the same reason;
+  #   · `peerClosure` alone taking a further `sets` +1, `list` +4 and `nrLookups` +2 — the
+  #     refusal itself: one more attribute on the closure's single `fixpoint` call, plus the
+  #     `intersectAttrs` that forwards a caller-set cap. ★ It is CONSTANT IN n and therefore
+  #     moves no exponent and no ratio: `condensationClosure` on `cycle` at n = 32 / 64 / 128
+  #     reads the same +4 / +9 / +2 at every size while the arm's own `list` grows 490,929 →
+  #     98,027,153, a factor of 200. `topoOrder` on the same three sizes takes the uniform
+  #     `sets` +6 and nothing else, which is the control that the residue is the closure call's.
+  # Summed they are two-axis and non-uniform and read SHIFTED-STRUCTURAL, which is correct and
+  # says nothing about either part. Both are obvious apart.
+  #
+  # ★ WHAT THIS OFFSET DOES TO THE PUBLISHED FIGURES, stated rather than absorbed: every
+  # `sets.elements` figure in README/AGENTS taken before this revision is low by 6, and every
+  # closure-class figure additionally by 1 on `sets`, 4 on `list` and 2 on `nrLookups` — a
+  # constant at every n, so no exponent, ratio or class claim quoted from them moves. They are
+  # NOT re-derived here; the cost rows are re-derived by the items that own them, and this note
+  # is what tells that re-derivation which constant it is looking at.
+  #
   # The pins below are read from the FROZEN bench at this revision, with the offsets LEFT IN.
   sentinelPins = {
     sentinel = {
       list = 2740;
-      sets = 2811;
+      sets = 2817;
       nrLookups = 4332;
     };
     peerOrder = {
       list = 2461;
-      sets = 4201;
+      sets = 4207;
       nrLookups = 7705;
     };
     peerClosure = {
-      list = 490897;
-      sets = 8240;
-      nrLookups = 29182;
+      list = 490901;
+      sets = 8249;
+      nrLookups = 29184;
     };
   };
   sentinelCells = {

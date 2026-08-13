@@ -86,6 +86,74 @@ let
       }
     ];
   };
+
+  # ── THE CLOSURE CLASS'S FIXTURE ──
+  # A 25-node chain PLUS the fork n000000 → n000002. The chain supplies the DEPTH (the
+  # closure needs 23 rounds), and the fork supplies the out-degree: `transitiveReduction`
+  # shares one closure binding behind a `mid != to` guard, so on a graph whose every node has
+  # out-degree ≤ 1 that binding is never forced and the surface would not reach the ceiling
+  # at all. One node with two successors puts all four members on the same path.
+  pad =
+    i:
+    let
+      s = toString i;
+    in
+    builtins.substring 0 (6 - builtins.stringLength s) "000000" + s;
+  key = i: "n" + pad i;
+  chainLen = 25;
+  fork = mkGraph {
+    edges =
+      map (i: {
+        from = key i;
+        to = key (i + 1);
+      }) (builtins.genList (i: i) (chainLen - 1))
+      ++ [
+        {
+          from = key 0;
+          to = key 2;
+        }
+      ];
+  };
+  # A closure-class surface forwards a `maxIter` set on its own argument record. Lowering it
+  # is what makes the ceiling reachable in a cell at all: the shipped cap of 1,000 needs a
+  # diameter over 1,000, and a graph that deep costs a closure no suite can afford.
+  capped = fork // {
+    maxIter = 5;
+  };
+
+  # ONE DRIVER PER CLASS MEMBER, keyed by the name its refusal must carry. The cells below
+  # are GENERATED from `genGraph.closureClass`, so a fifth closure caller cannot join that
+  # enumeration without a driver and a cell arriving with it — which is the failure a count
+  # of four cannot see. Each driver forces the shared closure and returns something small.
+  drive = {
+    transitiveClosure =
+      g: builtins.sort builtins.lessThan ((genGraph.transitiveClosure g)."n000022" or [ ]);
+    dependents = g: genGraph.dependents g "n000001";
+    condensationClosure = g: builtins.length (genGraph.condensationClosure g).sccs;
+    transitiveReduction = g: (genGraph.transitiveReduction g)."n000000" or [ ];
+  };
+  # What each driver answers at the SHIPPED cap on the SAME fixture — the live control that
+  # the refusals above pin the CAP and not the fixture.
+  shipped = {
+    transitiveClosure = [
+      "n000023"
+      "n000024"
+    ];
+    dependents = [ "n000000" ];
+    condensationClosure = 25;
+    transitiveReduction = [ "n000001" ];
+  };
+
+  # The refusal text, raised once at the closure binding and inherited by the four. Anchored
+  # at both ends: an unanchored pattern would go green on a message that had grown a cause it
+  # cannot support, and the whole point of the split is which causes may be named where.
+  closureRefusal =
+    surface:
+    "^gen-graph: ${surface}: the graph's reachability diameter exceeds 5, the closure fixpoint's iteration cap\\. The closure step is monotone on the subset order by construction, so an unconverged closure at the cap is depth and nothing else\\.$";
+
+  # `den-hoag-73uq`'s mode: removes one edge and adds another, so `countEdges` is constant and the
+  # cardinality guard never fires. Non-convergence surfaces `maxIter` rounds later.
+  antitoneStep = cur: if (cur.a or [ ]) == [ "x" ] then { a = [ "y" ]; } else { a = [ "x" ]; };
 in
 {
   # Same type as `flake.tests` (`gen/ci/flakeModule.nix`), because it is the same kind of
@@ -128,6 +196,113 @@ in
         ];
       };
     };
+
+    # ── THE CLOSURE CLASS REFUSES BY NAME, AND ONLY IT MAY ──
+    #
+    # The closure's step is fixed and monotone on the subset order, so a cap it did not reach
+    # convergence within IS the graph's diameter and the refusal says so. The exported generic
+    # `fixpoint` takes the caller's step, where two unrelated causes — a monotone chain longer
+    # than the cap, and an oscillation the cardinality guard cannot see — produce the same
+    # state; there the message names no cause. The discriminator cells below are what keep the
+    # two apart: without them the suite is green for a construction that tells every caller
+    # with an oscillating step that their graph is deep.
+    flake.testsError.closure-refusal =
+      builtins.listToAttrs (
+        map (surface: {
+          # (a) + (b) + (d): the refusal names the diameter it could not reach and the surface
+          # the caller called, at every member of the enumeration.
+          name = "test-closure-${surface}-refuses-naming-diameter-and-surface";
+          value = {
+            expr = drive.${surface} capped;
+            expectedError = {
+              type = "ThrownError";
+              msg = closureRefusal surface;
+            };
+          };
+        }) genGraph.closureClass
+        ++ map (surface: {
+          # (c) LIVE CONTROL, same run, same fixture, shipped cap: it returns. Without this
+          # the four cells above are consistent with a fixture that cannot be closed at all.
+          name = "test-closure-${surface}-shipped-cap-control";
+          value = {
+            expr = drive.${surface} fork;
+            expected = shipped.${surface};
+          };
+        }) genGraph.closureClass
+      )
+      // {
+        # The enumeration is the checked artefact. A member with no driver takes this cell red
+        # before it can reach a refusal cell that would report the wrong message.
+        test-closure-class-drivers-cover-the-enumeration = {
+          expr = builtins.attrNames drive;
+          expected = builtins.sort builtins.lessThan genGraph.closureClass;
+        };
+
+        # ★ THE DISCRIMINATOR. An antitone caller-supplied step through the exported
+        # `fixpoint` gets the CAUSE-FREE message; the anchors are what make this an assertion
+        # that the diameter text is ABSENT rather than an assertion that some text is present.
+        test-generic-fixpoint-antitone-step-names-no-cause = {
+          expr = genGraph.fixpoint {
+            seed = {
+              a = [ "x" ];
+            };
+            step = antitoneStep;
+            maxIter = 7;
+          };
+          expectedError = {
+            type = "ThrownError";
+            msg = "^gen-graph: fixpoint exceeded 7 iterations: the step neither converged nor shrank\\. `step` is the caller's, so this binding reports what it observed and names no cause\\.$";
+          };
+        };
+        # The other cause, same binding, same message form: a MONOTONE step under its cap —
+        # the closure's own construction, driven through the generic surface where the binding
+        # cannot know that is what it is holding. The pair is the reason (ii) may not name a
+        # cause, and it is asserted rather than argued.
+        test-generic-fixpoint-monotone-under-cap-names-no-cause = {
+          expr = genGraph.fixpoint {
+            seed = genGraph.materialize fork;
+            step = cur: genGraph.unionEdges cur (genGraph.compose cur (genGraph.materialize fork));
+            maxIter = 5;
+          };
+          expectedError = {
+            type = "ThrownError";
+            msg = "^gen-graph: fixpoint exceeded 5 iterations: the step neither converged nor shrank\\. `step` is the caller's, so this binding reports what it observed and names no cause\\.$";
+          };
+        };
+        # LIVE CONTROL on the claim the cause-free message makes: the step "never shrank" is an
+        # observation, not a tautology — a step that DOES shrink is refused by the size guard,
+        # by its own name, before the cap is reached.
+        test-generic-fixpoint-shrinking-step-still-hits-the-size-guard = {
+          expr = genGraph.fixpoint {
+            seed = {
+              a = [
+                "x"
+                "y"
+              ];
+            };
+            step = _: { a = [ "x" ]; };
+            maxIter = 7;
+          };
+          expectedError = {
+            type = "ThrownError";
+            msg = "^gen-graph: fixpoint step is not monotonic \\(2 → 1\\)$";
+          };
+        };
+        # LIVE CONTROL, same run: the generic binding converges and returns. Without it the
+        # three cells above are consistent with a `fixpoint` that refuses everything.
+        test-generic-fixpoint-converging-control = {
+          expr = genGraph.fixpoint {
+            seed = {
+              a = [ "x" ];
+            };
+            step = cur: cur;
+            maxIter = 7;
+          };
+          expected = {
+            a = [ "x" ];
+          };
+        };
+      };
 
     # THE SECOND HOOK. A second output that nothing runs is a second output that rots, and
     # the wrapper `gen/ci/flakeModule.nix` builds bakes `./ci#tests` into its own text, so it

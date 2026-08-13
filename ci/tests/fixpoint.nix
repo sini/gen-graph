@@ -4,6 +4,8 @@ let
     fixpoint
     seededFixpoint
     compose
+    closureClass
+    closureOf
     transitiveClosure
     transitiveReduction
     materialize
@@ -111,6 +113,34 @@ in
         in
         builtins.length (result.a or [ ]);
       expected = 3;
+    };
+    # The closure class, pinned as a VALUE and not as a count. The four surfaces share one
+    # ceiling and one refusal, and the refusal names the surface it was called through, so
+    # the list is what a fifth closure caller has to join before it can refuse by name at
+    # all. What each member's refusal SAYS is asserted on `./ci#testsError`, which is the
+    # only runner that can read a message.
+    test-closure-class-enumeration = {
+      expr = closureClass;
+      expected = [
+        "transitiveClosure"
+        "dependents"
+        "condensationClosure"
+        "transitiveReduction"
+      ];
+    };
+    # A surface off the list cannot be constructed, so no refusal can name a surface the
+    # library does not have. Positive control: a member constructs and answers.
+    test-closureOf-refuses-a-non-member-surface = {
+      expr = (builtins.tryEval (closureOf "notAClosureSurface" fixtures.chain)).success;
+      expected = false;
+    };
+    test-closureOf-member-control = {
+      expr = builtins.sort builtins.lessThan ((closureOf "dependents" fixtures.chain)."a" or [ ]);
+      expected = [
+        "b"
+        "c"
+        "d"
+      ];
     };
     test-fixpoint-monotonicity-violation = {
       expr =

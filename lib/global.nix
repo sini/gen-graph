@@ -76,10 +76,12 @@ let
   # Amortized: if querying multiple targets, compute once and reuse.
   # For single-target queries, prefer `dependentsOf`.
   dependents =
-    { edges, nodes, ... }:
+    args@{ edges, nodes, ... }:
     targetId:
     let
-      closure = fp.transitiveClosure { inherit edges nodes; };
+      # The closure class by name, so the ceiling refuses under THIS surface's name rather
+      # than under the one it borrows the construction from (`fixpoint.nix`, `closureOf`).
+      closure = fp.closureOf "dependents" args;
       reversed = _transposeMat closure;
     in
     builtins.sort builtins.lessThan (
@@ -177,9 +179,11 @@ let
   #
   # ★ AND IT HAS A REAL CEILING THE OTHER ARMS DO NOT: the closure is a CAPPED fixpoint, so
   # it returns iff the fixpoint's iteration cap is at least the graph's diameter and throws
-  # otherwise — and the throw names the fixpoint's iteration count rather than the caller's
-  # graph, which is a refusal that misdirects. That is the standing difference between this
-  # arm and the forward–backward pair, and it is why the door does not default here.
+  # otherwise. The throw names THIS surface and the diameter it could not reach, which it may
+  # because the closure's step is monotone on the subset order by construction and so has no
+  # other way to reach the cap (`fixpoint.nix`, `closureOf`). The ceiling itself is unchanged
+  # and is the standing difference between this arm and the forward–backward pair, which is
+  # why the door does not default here.
   #
   # ★ THIS ARM COMPUTES A TAG MAP AND NOTHING ELSE. Everything past it — the member lists,
   # the quotient's edges, `bottomUp` and `depth` — is the SHARED FINISHER's, called here by
@@ -192,9 +196,11 @@ let
   # (Tarjan 1972 / Kosaraju for SCCs; Mokhov 2017 §4.6 Preorders and Equivalence Relations
   # for the quotient-graph idiom — a condensation is the quotient by the co-SCC equivalence.)
   condensationClosure =
-    { edges, nodes, ... }:
+    args@{ edges, nodes, ... }:
     let
-      closure = fp.transitiveClosure { inherit edges nodes; };
+      # The closure class by name (`fixpoint.nix`, `closureOf`): the ceiling below is this
+      # arm's, and its refusal says so.
+      closure = fp.closureOf "condensationClosure" args;
       # O(1) membership (mirrors transitiveReduction's closureSets) → O(n²), not O(n³).
       closSets = prelude.mapAttrs (_: ts: prelude.genAttrs ts (_: true)) closure;
       reaches = u: v: (closSets.${u} or { }) ? ${v};
