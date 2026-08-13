@@ -311,7 +311,7 @@ rev = graph.transpose g;
 graph.reachableFrom rev "database"   # → nodes that depend on database
 ```
 
-**`coScc g u v`** — are `u` and `v` in the same strongly connected component? `canReach`-backed point query (no full closure): true iff `u == v`, or each reaches the other.
+**`coScc g u v`** — are `u` and `v` in the same strongly connected component? `canReach`-backed point query — one closure per endpoint, so no whole-graph transitive closure: true iff `u == v`, or each reaches the other.
 
 ```nix
 graph.coScc cyclicGraph "a" "c"   # → true  (a → b → c → a)
@@ -935,19 +935,19 @@ in {
 |-----------|-----------|-------|
 | `reachableFrom` | O(reachable) | C-level BFS via `builtins.genericClosure` |
 | `reachableWhere` | O(reachable) | same C-level BFS, filter applied after |
-| `canReach` | O(reachable from source) | C-level BFS, stops exploring from target |
+| `canReach` | O(reachable from source) | C-level BFS; the source's closure is materialized in full on every call, whatever the target — `builtins.any` short-circuits its scan of the finished list, not the traversal that built it |
 | `selfReachable` | O(reachable from node) | C-level BFS checking self-reappearance |
 | `ancestorsOf` | O(depth) | single-path walk |
 | `pathsBetween` | O(paths × depth) | exponential in path count; use on small subgraphs |
 | `materialize` | O(nodes × avg degree) | one-time scan |
 | `transitiveClosure` | **closure class** (see below) | fixpoint over materialized map |
 | `transitiveReduction` | **closure class** unless *every* node has out-degree ≤ 1 (see below) | needs full closure; O(1) membership via attrsets |
-| `cycles` | `Θ(Σ_v Σ_{u ∈ reach v} (1 + outdeg u))` — i.e. O(nodes × reachable) only where out-degree is **bounded**; Θ(n³) on a complete DAG | per-node C-level BFS (no full closure needed). The per-visit cost is O(1 + outdeg), not O(1), because `selfReachable`'s `genericClosure` operator re-reads `edges` at every visit |
+| `cycles` | `Θ(Σ_v Σ_{u ∈ reach v} (1 + outdeg u))` — i.e. O(nodes × reachable) only where out-degree is **bounded**; Θ(n³) on a complete DAG | per-node C-level BFS — one closure per node, so no whole-graph transitive closure. The per-visit cost is O(1 + outdeg), not O(1), because `selfReachable`'s `genericClosure` operator re-reads `edges` at every visit |
 | `cyclePaths` | on a DAG, exactly the `cycles` cost above — so Θ(n³) on a complete DAG, **not** O(nodes × reachable); + the `fbNode` partition arm (see its own row) and simple-path search once cyclic | short-circuits before any path work when acyclic |
 | `dependents` | **closure class** (see below) | full transitive closure + transpose |
 | `dependentsOf` | O(nodes + reachable) | reverse index + C-level BFS |
 | `dependentsFrontier` | O(nodes + reachable) | reverse index + level-by-level BFS, pruned early |
-| `coScc` | O(reachable from u, v) | two `canReach` probes, no full closure |
+| `coScc` | O(reachable from u, v) | two `canReach` probes, each materializing its own start's entire closure — two closures, so what is avoided is the whole-graph transitive closure, not the per-probe one |
 | `condensation` / `fbNode` | quadratic in the members of ONE component and linear in components: `list`/`sets`/`nrLookups` exponents 2.00 on `cycle`, 1.00–1.04 on `fleet`, ~1.98 on `chain` (n = 500 → 2000) | two `genericClosure` calls per node, no accumulator, no recursion. **No closure call and no fixpoint**, so no iteration cap to inherit. Ceilings and the arm comparison: *The partition routing contract* above |
 | `fbWork` | the mirror image: 1.00 on `cycle`, but its accumulator is a whole-value copy per component, so `sets` runs 1.35 → 1.53 on `fleet` while `list`/`nrLookups` stay at 1.04–1.05 | one forward–backward pass per COMPONENT over a `foldl'` accumulator. Complementary to `fbNode`, not ranked |
 | `condensationClosure` | **closure class** (see below) | one transitive closure. The second closure over the quotient is gone — every arm now takes its `bottomUp` and `depth` from one `coneRank` pass over the condensation instead, which is `topoOrderKahn`-warmed and reaches no fixpoint |

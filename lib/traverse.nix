@@ -23,7 +23,9 @@ let
     { edges, ... }: startId: pred: builtins.filter pred (reachableFrom { inherit edges; } startId);
 
   # Point query: can fromId reach toId? O(reachable from fromId).
-  # Does NOT require materializing the full graph.
+  # genericClosure is strict, so fromId's closure is materialized in full on every call;
+  # builtins.any short-circuits its scan of that finished list, not the traversal that built
+  # it. What is avoided is the whole-graph transitive closure, not the per-call one.
   canReach =
     { edges, ... }:
     fromId: toId:
