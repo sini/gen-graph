@@ -115,7 +115,7 @@ graph.canReach g "db" "web"      # false — db has no outgoing edges
 graph.selfReachable g "a"        # true (if a→b→c→a cycle exists)
 ```
 
-**`canReach`** answers "is there any path from A to B?" It uses C-level BFS internally — the same `builtins.genericClosure` that powers `reachableFrom`. It visits nodes starting from the source until it finds the target (or exhausts reachable nodes).
+**`canReach`** answers "is there any path from A to B?" It uses C-level BFS internally — the same `builtins.genericClosure` that powers `reachableFrom`. It always visits every node reachable from the source: `genericClosure` is strict, so the closure is built in full before `builtins.any` scans it for the target. Exhausting the reachable set is the only branch, and reaching the target early ends that scan, not the traversal.
 
 **`selfReachable`** answers "is this node in a cycle?" It checks whether the node appears in its own reachable set — i.e., whether following edges from it eventually leads back to it. This is the building block for `cycles`.
 

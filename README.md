@@ -136,7 +136,7 @@ graph.reachableWhere g "web" (id: lib.hasPrefix "cache" id)
 # → [ "cache" ]
 ```
 
-**`canReach g fromId toId`** — point query: can `fromId` transitively reach `toId`? O(reachable from `fromId`). Does not require materializing the full graph.
+**`canReach g fromId toId`** — point query: can `fromId` transitively reach `toId`? O(reachable from `fromId`): the source's closure is materialized in full on every call, whatever the target — `builtins.any` short-circuits its scan of the finished list, not the traversal that built it.
 
 ```nix
 graph.canReach g "web" "database"   # → true
