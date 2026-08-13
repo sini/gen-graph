@@ -147,6 +147,111 @@ in
       expected = false;
     };
 
+    # The operator stops EXPANDING at the target but never suppresses its ENTRY, so these
+    # pin the entry at the boundaries where the two are easiest to confuse.
+
+    # from == to with no cycle: the source is not its own successor, and suppressing
+    # expansion at a node never visited cannot manufacture a membership.
+    test-canReach-self-acyclic = {
+      expr = canReach fixtures.chain "a" "a";
+      expected = false;
+    };
+    # from == to over a self-loop: the target IS in the start set, so it is admitted before
+    # the operator is consulted on it at all.
+    test-canReach-self-loop = {
+      expr = canReach (mkGraph {
+        edges = [
+          {
+            from = "x";
+            to = "x";
+          }
+        ];
+      }) "x" "x";
+      expected = true;
+    };
+    # Two paths converge on the target. Whichever branch reaches it first prunes it; the
+    # other branch is unaffected, because only the target's own expansion is suppressed.
+    test-canReach-diamond-merge = {
+      expr = canReach fixtures.diamond "a" "d";
+      expected = true;
+    };
+    # ── THE DOMAIN BOUNDARY, GUARDED IN-SUITE ──
+    # Suppressing the target's expansion means its out-edges are never read once it is
+    # reached, so canReach ANSWERS on an accessor that refuses them where a full walk
+    # propagates the refusal. That is a property of the operator, not a happy accident, and
+    # without a cell here a refactor that forced `edges item.key` before consulting the guard
+    # would falsify it with every other cell still green.
+    #
+    # These are assertable in `flake.tests` — and belong here rather than in `tests-error.nix`
+    # — precisely because neither `expr` throws: `tryEval` returns a record either way, so the
+    # batch asserter behind `checks.default` can force them.
+    test-canReach-answers-past-a-refusing-target = {
+      # a→b→c with the accessor refusing anything past b. `c` IS reachable, so `true` is the
+      # correct answer, and stopping at the target is what makes it available.
+      expr = builtins.tryEval (
+        canReach {
+          edges =
+            id:
+            if id == "a" then
+              [ "b" ]
+            else if id == "b" then
+              [ "c" ]
+            else
+              throw "accessor refuses ${id}";
+        } "a" "c"
+      );
+      expected = {
+        success = true;
+        value = true;
+      };
+    };
+    # The two-sided half, and it is what keeps the claim from reading as "canReach got more
+    # forgiving". Move the refusal ONTO the path, before the target: the walk cannot reach the
+    # target without reading it, so the refusal propagates exactly as it always did.
+    test-canReach-still-refuses-a-refusal-on-the-path = {
+      expr = builtins.tryEval (
+        canReach {
+          edges = id: if id == "a" then [ "b" ] else throw "accessor refuses ${id}";
+        } "a" "c"
+      );
+      expected = {
+        success = false;
+        value = false;
+      };
+    };
+
+    # The target sits inside a cycle reached from outside it. Pruning the target removes the
+    # cycle's continuation, which is exactly the sub-closure nothing reads.
+    test-canReach-target-in-cycle = {
+      expr =
+        let
+          g = mkGraph {
+            edges = [
+              {
+                from = "x";
+                to = "a";
+              }
+              {
+                from = "a";
+                to = "b";
+              }
+              {
+                from = "b";
+                to = "a";
+              }
+            ];
+          };
+        in
+        [
+          (canReach g "x" "a")
+          (canReach g "x" "b")
+        ];
+      expected = [
+        true
+        true
+      ];
+    };
+
     # --- selfReachable ---
 
     test-selfReachable-cyclic = {

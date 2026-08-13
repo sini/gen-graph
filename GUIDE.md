@@ -115,7 +115,9 @@ graph.canReach g "db" "web"      # false — db has no outgoing edges
 graph.selfReachable g "a"        # true (if a→b→c→a cycle exists)
 ```
 
-**`canReach`** answers "is there any path from A to B?" It uses C-level BFS internally — the same `builtins.genericClosure` that powers `reachableFrom`. It always visits every node reachable from the source: `genericClosure` is strict, so the closure is built in full before `builtins.any` scans it for the target. Exhausting the reachable set is the only branch, and reaching the target early ends that scan, not the traversal.
+**`canReach`** answers "is there any path from A to B?" It uses C-level BFS internally — the same `builtins.genericClosure` that powers `reachableFrom` — with one difference: the operator **stops expanding at the target**, so the nodes reachable only *through* the target are never visited. The target still enters the closure whenever it is reachable, so the answer is the same as a full walk's.
+
+That saving is **scoped to targets that dominate a sub-closure**. Asking a chain's tail about its immediate predecessor is Θ(1) where the full walk was Θ(n); asking a node in a dense graph about any other is unchanged, because every node is one hop away and the target dominates nothing. `genericClosure` is still strict, so what remains of the closure is built before `builtins.any` scans it — reaching the target early ends that scan, not the traversal.
 
 **`selfReachable`** answers "is this node in a cycle?" It checks whether the node appears in its own reachable set — i.e., whether following edges from it eventually leads back to it. This is the building block for `cycles`.
 
@@ -391,7 +393,7 @@ g = {
 
 | If you need... | Use | Cost |
 |----------------|-----|------|
-| "Can A reach B?" | `canReach` | C-level; O(reachable from A) only at bounded out-degree, Θ(n²) on a dense graph |
+| "Can A reach B?" | `canReach` | C-level; stops expanding at B, so O(reachable from A) **less what B dominates** — only at bounded out-degree, Θ(n²) on a dense graph |
 | "What depends on X?" (one X) | `dependentsOf` | reverse index Θ(n + E), then O(reachable) only at bounded in-degree, Θ(n²) on a dense graph |
 | "What depends on X, Y, Z?" | `dependents` × 1 | closure class, amortized over targets |
 | "Is this node in a cycle?" | `selfReachable` | C-level; O(reachable from node) only at bounded out-degree, Θ(n²) on a dense graph |

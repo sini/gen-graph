@@ -179,8 +179,14 @@ let
     };
 
   # Co-SCC predicate: are u and v in the same strongly connected component? canReach-backed
-  # and single-pair, but each probe materializes its start's closure in full; only the
-  # whole-graph closure is avoided. u == v handles an acyclic node, which cannot reach itself.
+  # and single-pair. Each probe stops expanding at ITS OWN target, so what it materializes is
+  # its start's closure less the sub-closure that target dominates — DOMINATES IN THE DIRECTED
+  # SENSE, with respect to that probe's own source: the nodes every directed path from the
+  # source runs through the target to reach. What decides how much a probe saves is therefore
+  # that dominator relation, not membership of the same component, and it is asymmetric — the
+  # two probes of one pair generally save different amounts. Where the target dominates
+  # nothing the probe still covers the start's whole reachable set. The whole-graph closure is
+  # avoided either way. u == v handles an acyclic node, which cannot reach itself.
   #
   # ★ SCOPE — AN EXPORT-ONLY SURFACE, AND SO IS THE PROBE IT RIDES ON. Nothing in `lib/` calls
   # `coScc`. The partition arm below decides co-SCC from its own materialized closure through

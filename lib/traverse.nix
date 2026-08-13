@@ -46,19 +46,39 @@ let
   reachableWhere =
     { edges, ... }: startId: pred: builtins.filter pred (reachableFrom { inherit edges; } startId);
 
-  # Point query: can fromId reach toId? Θ( Σ_{u ∈ reach fromId} (1 + outdeg u) ) — the same
-  # per-visit cost as reachableFrom, since it is the same operator, so O(reachable) only at
-  # bounded out-degree.
-  # genericClosure is strict, so fromId's closure is materialized in full on every call;
-  # builtins.any short-circuits its scan of that finished list, not the traversal that built
-  # it. What is avoided is the whole-graph transitive closure, not the per-call one.
+  # Point query: can fromId reach toId? The operator STOPS EXPANDING AT THE TARGET, so the
+  # walk is Θ( Σ_{u ∈ visited} (1 + outdeg u) ) over a visited set that is `reach fromId`
+  # LESS the nodes toId strictly dominates — the same per-visit cost as reachableFrom, since
+  # it is the same operator, over a smaller set of visits.
+  #
+  # WHY THAT PRESERVES THE ANSWER. toId still ENTERS the closure whenever it is reachable;
+  # only its expansion is suppressed, and genericClosure admits an item before consulting the
+  # operator on it. So the result contains toId exactly when it did before, and
+  # `builtins.any (r: r.key == toId)` reads membership and nothing else. What drops out is
+  # precisely the set of nodes every path to which runs through toId, and nothing reads it.
+  #
+  # WHAT IT BUYS AND WHERE IT BUYS NOTHING — the win is SCOPED to targets that dominate a
+  # sub-closure. On a chain walked from the tail a one-hop query collapses from Θ(n) to Θ(1).
+  # Where the target dominates nothing the exit removes one node's out-edges and no class: on
+  # a complete digraph every node sits one hop from the source, so the query stays Θ(n²).
+  # `ci/bench/canreach-exit.nix` is the pair that says which regime a graph is in, and its
+  # `dense` cells are there to be read as parity rather than as a win.
+  #
+  # genericClosure is still strict, so what remains of the closure is materialized before
+  # builtins.any scans it — the scan's own short-circuit is still not the traversal's. What
+  # is avoided is the whole-graph transitive closure and the target's dominated sub-closure,
+  # not the rest of the per-call one.
+  #
+  # ★ STRICTLY MORE DEFINED THAN A FULL WALK, AND NEVER DIFFERENTLY VALUED. An accessor that
+  # throws for toId's out-edges is never asked for them once toId is reached, so this answers
+  # where a full walk propagates the throw. It never returns the other boolean.
   canReach =
     { edges, ... }:
     fromId: toId:
     builtins.any (r: r.key == toId) (
       builtins.genericClosure {
         startSet = map (id: { key = id; }) (edges fromId);
-        operator = item: map (id: { key = id; }) (edges item.key);
+        operator = item: if item.key == toId then [ ] else map (id: { key = id; }) (edges item.key);
       }
     );
 
