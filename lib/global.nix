@@ -77,8 +77,11 @@ let
 
   # Reverse reachability: who can reach targetId?
   # Uses full transitive closure + transpose, so it carries the CLOSURE-CLASS cost
-  # shared with `condensation` (super-quadratic on every shape measured;
-  # `ci/bench/cost-classes.nix`), then O(1) lookup. `transitiveReduction` makes the same
+  # shared with `condensationClosure` (super-quadratic on every shape measured;
+  # `ci/bench/cost-classes.nix`) — NOT with `condensation`, which is the partition front
+  # door and is an UNCONDITIONAL ALIAS for `fbNode` (`partition.nix`), an arm that reaches
+  # no closure at all — then O(1) lookup.
+  # `transitiveReduction` makes the same
   # closure call but does not always FORCE it, so it is not super-quadratic on every
   # shape: see README's closure-class note for the graph-global carve-out.
   # Amortized: if querying multiple targets, compute once and reuse.
@@ -186,7 +189,8 @@ let
   # ── PARTITION ARM: THE CLOSURE CONSTRUCTION, PUBLISHED BY NAME ──
   # An arm of the partition front door (`condensation`, `lib/partition.nix`), not the door:
   # u and v are co-SCC iff each reaches the other, decided here by materializing the whole
-  # transitive closure and asking it. The door defaults to a forward–backward arm instead;
+  # transitive closure and asking it. The door is an unconditional alias for the
+  # forward–backward arm (`condensation = fbNode`, `lib/partition.nix`) instead;
   # a caller whose correctness depends on THIS construction answering binds this name.
   # Not Tarjan's linear O(V+E) single-DFS — its mutable stack/lowlink is out-of-substrate
   # for pure Nix.

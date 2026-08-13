@@ -16,8 +16,8 @@
 #      closure call: `dependents` (`global.nix`), `condensationClosure` (`global.nix`), and
 #      `transitiveReduction` (`fixpoint.nix`). These share one cost and must be documented
 #      from one measurement, or a reader comparing two rows infers a distinction that does
-#      not exist. ★ `condensation` LEFT THIS CLASS: it is the partition front door and now
-#      defaults to a forward–backward arm, which reaches no closure at all. It also used to
+#      not exist. ★ `condensation` LEFT THIS CLASS: it is the partition front door and is now
+#      an unconditional alias for the forward–backward arm, which reaches no closure at all. It also used to
 #      contribute TWO closure calls (the graph closure and a second one over the quotient);
 #      the quotient closure is gone from every arm, so `condensationClosure` carries one.
 #   2a. the PARTITION arms — `fbNode` (the door's default, two `genericClosure` calls per
@@ -31,10 +31,10 @@
 #      so the loop's allocation now tracks what each step CHANGES rather than the width of
 #      what it carries; the shapes below are what say whether that holds on a given graph.
 #
-# ★ THE FIRST TWO CLASSES CANNOT SEE THE THIRD, AND THE REASON IS STRUCTURAL. `complete`
-# and `cycle` are cyclic BY CONSTRUCTION — they exist to price the cycle path, which needs
-# a cycle — so on both of them every node has indegree ≥ 1, the initial ready set is EMPTY,
-# and the emission loop runs ZERO STEPS. A file whose only two shapes are cyclic prices the
+# ★ THE FIRST TWO CLASSES CANNOT SEE THE THIRD, AND THE REASON IS STRUCTURAL. `complete`,
+# `cycle` and `cyclechord` are cyclic BY CONSTRUCTION — they exist to price the cycle path,
+# which needs a cycle — so on all three every node has indegree ≥ 1, the initial ready set is
+# EMPTY, and the emission loop runs ZERO STEPS. A file whose only shapes are cyclic prices the
 # library's failure path and nothing about its success path. Hence the acyclic shapes below:
 # the requirement was new SHAPES, not only new arms. `initialReady` is read on every run and
 # is the control that says which of the two regimes a cell is in.
@@ -81,7 +81,7 @@
 #         | cyclesUnhoisted | fbNodeUnhoisted | cyclePathsUnhoisted
 #         | fbWorkHoisted | dependentsOfHoisted
 #         | sentinel | sentinelPeerOrder | sentinelPeerClosure | sentinelVerdict
-#   shape = complete | cycle | chain | wide | fleet | discrim | total | deepwide
+#   shape = complete | cycle | cyclechord | chain | wide | fleet | discrim | total | deepwide
 #   n     = node count (use doublings, e.g. 50/100/200, so a ratio reads as 2^exp)
 #
 # The four `sentinel*` arms ignore `shape` and `n` — their cells are fixed in the file (see
@@ -94,7 +94,15 @@
 #   `cycle` — the simple cycle: out-degree 1 (BOUNDED), one SCC, diameter n.
 #     The bounded-out-degree counterpart, and the shape that shows the ordering
 #     between the two terms is not fixed.
-#   Both are CYCLIC by construction: a complete DAG is acyclic and orders
+#   `cyclechord` — `cycle` plus ONE chord, from the first node to the antipodal one, so
+#     EXACTLY ONE node has out-degree 2 and every other still has out-degree 1. It is the
+#     `cycle` fixture differing in one edge and in nothing else, and it exists because
+#     `transitiveReduction`'s carve-out is a property of the WHOLE GRAPH: the closure binding
+#     every node shares is forced by the FIRST node with out-degree >= 2 anywhere, so a claim
+#     about what one extra edge costs cannot be read off `cycle`, which only ever exhibits the
+#     side of the carve-out that holds. The chord's ENDPOINTS are named here rather than left
+#     to the reader because "adding a single edge" does not identify a graph.
+#   All three are CYCLIC by construction: a complete DAG is acyclic and orders
 #   successfully, so it never reaches the cycle path at all and cannot be used
 #   to price it.
 #
@@ -402,6 +410,29 @@ let
           in
           [ (pad (if i + 1 < n then i + 1 else 0)) ];
       };
+      # The chord runs from node 0 to node n/2, which is distinct from node 0's ring
+      # successor for every n >= 4; below that the shape refuses rather than silently
+      # degrading to `cycle`, which is the graph it exists to be distinguished from.
+      cyclechord =
+        if n < 4 then
+          throw "shape cyclechord requires n >= 4 (the chord must not land on the ring successor); got ${toString n}"
+        else
+          {
+            nodes = ringNodes;
+            edges =
+              id:
+              let
+                i = idxOf.${id};
+                next = pad (if i + 1 < n then i + 1 else 0);
+              in
+              if i == 0 then
+                [
+                  next
+                  (pad (n / 2))
+                ]
+              else
+                [ next ];
+          };
       chain = fromPairs (map (key "n") (ix n)) (
         map (i: {
           name = key "n" i;
@@ -620,21 +651,29 @@ let
   # LEFT IN, so every pre-hoist `sets` figure is low by a further 6 at every n — a constant, so
   # no exponent or ratio quoted from them moves.
   #
+  # ★ RE-PINNED FOR THE `cyclechord` SHAPE, and this one is the reference case: the whole shift
+  # is the BENCH's and the decomposition needed no worktree to establish, because the library
+  # was not touched in the same edit. `sets` +1 UNIFORMLY on all three cells with `list` and
+  # `nrLookups` bit-identical on every one — SHIFTED-BENIGN, and the same one-shape signature
+  # the ★★★ block above records from replaying four revisions of this file. Every `sets` figure
+  # published from a pre-`cyclechord` revision is therefore low by 1 at every n: a constant, so
+  # no exponent, ratio or class claim quoted from one moves. The offset is LEFT IN.
+  #
   # The pins below are read from the FROZEN bench at this revision, with the offsets LEFT IN.
   sentinelPins = {
     sentinel = {
       list = 2740;
-      sets = 2823;
+      sets = 2824;
       nrLookups = 4332;
     };
     peerOrder = {
       list = 2461;
-      sets = 4213;
+      sets = 4214;
       nrLookups = 7705;
     };
     peerClosure = {
       list = 490901;
-      sets = 8255;
+      sets = 8256;
       nrLookups = 29184;
     };
   };

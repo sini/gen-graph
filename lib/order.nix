@@ -44,10 +44,23 @@
 # the ordering surface; there is no size at which it declines.
 # The CYCLE path is deliberately not derived from the Kahn residual — a residual knows
 # only THAT nodes went unemitted, not which cycles they form — so it costs a `global.cycles`
-# call PLUS `global.condensation`, and it runs only on a CYCLIC graph. NEITHER term may be
-# quoted as the cost alone: which of the two is larger flips with the graph shape and with
-# the allocation axis measured. Ordering succeeds or it throws; the expensive analysis is on
-# the way out.
+# call PLUS a PARTITION call, and it runs only on a CYCLIC graph. The partition it spends is
+# `partition.fbNode`, the forward–backward arm, bound by name below: it is NOT the closure
+# construction, and the difference is the whole cost story here. Measured at n = 200
+# (`ci/bench/cost-classes.nix`, arms `cycles` / `fbNode` / `topoOrder`): on `cycle` the guard
+# is 41,403 `list.elements` against the partition's 365,017, and on `complete` 160,003
+# against 4,899,017 — the partition is the larger term on both shapes and on all three axes
+# at that size, and the report as a whole is EXPONENT 2.00 on all three, fitted over
+# k = 25/50/100/200 on `cycle`. Do not quote either term as the cost alone.
+# ★ THE SURFACE THAT IS SUPER-QUADRATIC IS THE CLOSURE, AND IT IS NOT ON THIS PATH: reaching
+# the same partition through `condensationClosure` instead is exponent 4.00 on `list` over the
+# same k (2.00 on `sets`, 3.00 on `nrLookups` — the three axes disagree by two exponents, so a
+# single-axis budget certifies it as quadratic), and at k = 200 that is 565,722,621 against
+# this path's 406,405, a factor of 1,392. A cost claim about ordering-on-a-cycle that cites the
+# closure is citing a surface this door stopped calling.
+# Ordering succeeds or it REPORTS: `topoOrder` returns `ok = false` with the cycles on a cyclic
+# graph and does not throw for one — `phaseOrder` is the layer that throws. The expensive
+# analysis is on the way out either way.
 { prelude }:
 let
   global = import ./global.nix { inherit prelude; };
