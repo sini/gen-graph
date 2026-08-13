@@ -53,7 +53,7 @@ Entry: `inputs.gen-graph.lib` (flake). Root `default.nix` is a FUNCTION `{ prelu
 | `directDependents` | `{ edges, nodes } -> edgeMap` (immediate reverse adjacency) |
 | `directDependentsOf` | `{ edges, nodes } -> id -> [id]` |
 | `transpose` | `{ edges, nodes } -> { edges; nodes; }` |
-| `coScc` | `{ edges } -> u -> v -> bool` |
+| `coScc` | `{ edges } -> u -> v -> bool` — ★ **export-only**: nothing in `lib/` calls it, and it is itself `canReach`'s only caller there, so both sit off every internal cost path. Two `canReach` probes, each materializing its start's closure in full; the per-pair cost is the caller's to price and no bench arm measures it |
 | `condensationClosure` | `{ edges, nodes } -> <the partition record>` — a partition ARM: co-SCC decided by materializing the closure, `fp.closureOf "condensationClosure"`. The only arm with a ceiling, and it refuses at it by name |
 
 **SCC partitioning** — `lib/partition.nix` (the door and the two forward–backward arms). The routing contract is in `README.md`.

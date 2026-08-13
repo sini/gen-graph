@@ -181,6 +181,16 @@ let
   # Co-SCC predicate: are u and v in the same strongly connected component? canReach-backed
   # and single-pair, but each probe materializes its start's closure in full; only the
   # whole-graph closure is avoided. u == v handles an acyclic node, which cannot reach itself.
+  #
+  # ★ SCOPE — AN EXPORT-ONLY SURFACE, AND SO IS THE PROBE IT RIDES ON. Nothing in `lib/` calls
+  # `coScc`. The partition arm below decides co-SCC from its own materialized closure through
+  # `coSccPair`, a separate local binding that only reads like this name. And `coScc` is in turn
+  # `canReach`'s ONLY caller in `lib/`, so the pair is reachable from outside the library and
+  # from nowhere inside it — no internal path pays the two probes.
+  # ⇒ THE PER-PAIR DOUBLE-`canReach` COST IS THE CALLER'S TO PRICE, against its own call pattern.
+  # This surface owes no cost claim of its own: there is no in-library caller to owe one to, and
+  # no bench arm prices it. A caller probing many pairs re-materializes BOTH closures at every
+  # pair, and wants `transitiveClosure` or a `condensation` record held once instead.
   coScc =
     { edges, ... }:
     u: v:
