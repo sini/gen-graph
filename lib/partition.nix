@@ -142,14 +142,21 @@ let
   # `reachableFrom` excludes its own start, so the class is the intersection PLUS the pivot —
   # which is also what makes an acyclic node the singleton class it is, rather than the empty
   # one its own reach set would suggest.
+  #
+  # BOTH ACCESSORS ARE READ ONCE RATHER THAN AT EVERY VISIT (`traverse.hoistEdges`). This arm
+  # spends 2n closures over exactly two accessors, so the per-visit wrapping is loop-invariant
+  # across all of them: paying it once as Θ(n + E) per direction removes a factor of n from the
+  # attrset axis, taking the dense reading from Θ(n³) to Θ(n²). The hoist is admissible here for
+  # the reason it is inadmissible at a single-closure caller — the price is spread over 2n
+  # traversals, not over one.
   nodeTags =
     accessor@{ edges, nodes, ... }:
     let
       rev = global.transpose accessor;
-      forward = prelude.genAttrs nodes (v: traverse.reachableFrom { inherit edges; } v);
-      backward = prelude.genAttrs nodes (
-        v: prelude.genAttrs (traverse.reachableFrom { inherit (rev) edges; } v) (_: true)
-      );
+      succFwd = traverse.hoistEdges accessor;
+      succBwd = traverse.hoistEdges rev;
+      forward = prelude.genAttrs nodes (v: traverse.reachableVia succFwd v);
+      backward = prelude.genAttrs nodes (v: prelude.genAttrs (traverse.reachableVia succBwd v) (_: true));
     in
     prelude.genAttrs nodes (
       v: tagOfMembers ([ v ] ++ builtins.filter (u: backward.${v} ? ${u}) forward.${v})
@@ -176,6 +183,24 @@ let
   # read, is the construction that does chain; it is reproduced as a live negative control in
   # `ci/bench/partition-ceiling.nix` so this claim is measured rather than asserted. Removing
   # the failure beats bounding it: nothing here refuses at a component count.
+  #
+  # ★ AND THIS ARM DOES NOT HOIST ITS ACCESSOR, though `fbNode` beside it does. The reason is the
+  # MEMOIZATION's price against what this arm's rounds actually walk. `traverse.hoistEdges` builds
+  # a whole-graph Θ(n) memo up front; `fbNode` spends it across 2n closures that each re-cover the
+  # graph, but this arm's closures PARTITION it — each round walks a subgraph the previous rounds
+  # have shrunk — so there is no second traversal over the same edges to spread that build cost
+  # over. That is `dependentsOf`'s mechanism (pay for the graph, use part of it), and this is the
+  # same negative cell one arm along. Measured 4.12x BETTER on one deep chain — the one shape whose
+  # backward walk re-covers the whole unassigned tail every round, so the memo is spent many times
+  # over — and 1.003–1.25x WORSE on `complete`, `fleet`, `wide`, `total` and `cycle`.
+  #
+  # ★ THE RESTRICTION ORDER IS NOT THE LEVER, and that is measured rather than assumed: an arm
+  # that memoizes plain adjacency and applies the per-round restriction BEFORE wrapping recovers
+  # none of the loss — worst of the three arms on `fleet` (108,603 sets against the shipped arm's
+  # 103,803), and within 4 sets of the full hoist on `cycle` while BOTH memoizing arms sit ~2,400
+  # above the shipped one. The penalty follows the memo, not the discard. So the arm stays as it
+  # is. Both arms are kept in `ci/bench/cost-classes.nix` (`fbWork` against `fbWorkHoisted`) so
+  # the trade is a reading rather than a recollection.
   workTags =
     accessor@{ edges, nodes, ... }:
     let

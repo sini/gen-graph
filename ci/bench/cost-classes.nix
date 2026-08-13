@@ -61,10 +61,25 @@
 #      ratio against a cell that aborted is not a comparison; `ci/bench/cone-ceiling.sh` is
 #      where that abort is the subject rather than a missing figure.
 #
+#   5. the ACCESSOR HOIST, which is not a class of surfaces but a PAIRING over five of them.
+#      `cycles` and `fbNode` re-cover the same edges once per node, so they read the accessor
+#      ONCE (`traverse.hoistEdges`) instead of at every visit, and `cyclePaths` inherits that
+#      from both. `dependentsOf` makes one closure and `fbWork` restricts its accessor every
+#      round, so NEITHER hoists. Each of the five is paired with the construction it is not:
+#      `cycles`/`fbNode` against their `*Unhoisted` arms, `fbWork`/`dependentsOf` against their
+#      `*Hoisted` ones — two pairs that run each way, so the scope is read rather than asserted.
+#      ★ NEITHER HALF IS READABLE FROM ONE COLUMN, and neither half is readable from one axis:
+#      on `cycles` at `complete` n=400 the hoist removes a whole class on `sets` and on `list`
+#      while `nrLookups` moves by 0.08% — a lookups-only budget scores it a NO-OP — and on
+#      `fbNode` at the same cell `sets` drops a class while `list` keeps a cubic that lives in
+#      the finisher rather than in the operator.
+#
 # INTERFACE — `arm` × `shape` × `n`:
 #   arm   = cycles | condensation | dependents | transitiveClosure
 #         | transitiveReduction | topoOrder | coneRank | coneRankShipped | floor
-#         | fbNode | fbWork | condensationClosure
+#         | fbNode | fbWork | condensationClosure | cyclePaths | dependentsOf
+#         | cyclesUnhoisted | fbNodeUnhoisted | cyclePathsUnhoisted
+#         | fbWorkHoisted | dependentsOfHoisted
 #         | sentinel | sentinelPeerOrder | sentinelPeerClosure | sentinelVerdict
 #   shape = complete | cycle | chain | wide | fleet | discrim | total | deepwide
 #   n     = node count (use doublings, e.g. 50/100/200, so a ratio reads as 2^exp)
@@ -192,6 +207,144 @@ let
     {
       inherit order depth;
     };
+
+  # ── THE HOIST'S COUNTERFACTUAL ARMS, VERBATIM AT `2962e22` ──
+  # The accessor hoist (`traverse.hoistEdges`) is amortization, so it is worth its price only
+  # where the closures RE-COVER the same edges, and it is a pessimization where they do not —
+  # either because there is one of them (`dependentsOf`) or because they partition the graph
+  # and restrict the accessor while doing it (`fbWork`). Neither half of that is readable from a
+  # single column, so every one of the five surfaces is paired with the construction it is NOT,
+  # and the pair is measured in ONE revision of this file: `sets.elements` figures are comparable
+  # only within one revision (see the sentinel), so a "before" read on the previous revision and
+  # an "after" read on this one would differ by a harness constant nobody can see. Same reason
+  # `coneRankShipped` exists.
+  #
+  # They are reproduced rather than cited: a baseline quoted from a figure nobody can re-run is
+  # not a baseline. Each differs from its shipped partner ONLY in which operator it binds.
+  tagOfSmallest = members: builtins.head (builtins.sort builtins.lessThan members);
+
+  cyclesUnhoisted =
+    { edges, nodes, ... }:
+    builtins.sort builtins.lessThan (builtins.filter (g.selfReachable { inherit edges; }) nodes);
+
+  nodeTagsUnhoisted =
+    accessor@{ edges, nodes, ... }:
+    let
+      rev = g.transpose accessor;
+      forward = prelude.genAttrs nodes (v: g.reachableFrom { inherit edges; } v);
+      backward = prelude.genAttrs nodes (
+        v: prelude.genAttrs (g.reachableFrom { inherit (rev) edges; } v) (_: true)
+      );
+    in
+    prelude.genAttrs nodes (
+      v: tagOfSmallest ([ v ] ++ builtins.filter (u: backward.${v} ? ${u}) forward.${v})
+    );
+
+  # ── THE SECOND NEGATIVE ARM, AND IT WAS EXPECTED TO BE A POSITIVE ONE ──
+  # `fbWork` spends two closures per COMPONENT, which reads as a multi-closure caller — but the
+  # rule the hoist obeys is not "many closures", it is "many closures re-covering the same
+  # edges". This arm's closures PARTITION the graph instead: each round walks a subgraph the
+  # earlier rounds have shrunk, so the whole-graph Θ(n) memo `hoistEdges` builds has no second
+  # traversal over the same edges to be spread over. That is `dependentsOf`'s mechanism — pay for
+  # the graph, use part of it — which is why the two negative arms in this file are one class.
+  #
+  # ★ THE RESTRICTION ORDER IS NOT THE LEVER. The obvious reading is that hoisting wraps a node's
+  # successors before the per-round `live` filter discards them, so the discards are paid for; an
+  # arm that memoizes PLAIN adjacency and restricts BEFORE wrapping tests it, and recovers NOTHING
+  # — worst of the three on `fleet` (108,603 sets vs the shipped arm's 103,803 and this arm's
+  # 104,843), and on `cycle` within 4 sets of this arm while both memoizing arms sit ~2,400 above
+  # the shipped one. It also loses the `chain` win outright (420,527 vs this arm's 100,925), so
+  # the win is the memoized WRAP's too. Both directions follow the memo, not the discard.
+  #
+  # So this arm is the hoisted candidate rather than the shipped construction, kept because the
+  # scope statement in `lib/partition.nix` is a measurement.
+  workTagsHoisted =
+    accessor@{ nodes, ... }:
+    let
+      rev = g.transpose accessor;
+      succFwd = g.hoistEdges accessor;
+      succBwd = g.hoistEdges rev;
+      step =
+        acc: v:
+        if acc.tags ? ${v} then
+          acc
+        else
+          let
+            live = id: !(acc.tags ? ${id});
+            forward = prelude.genAttrs (g.reachableVia (id: builtins.filter (w: live w.key) (succFwd id)) v) (
+              _: true
+            );
+            component = [
+              v
+            ]
+            ++ builtins.filter (u: forward ? ${u}) (
+              g.reachableVia (id: builtins.filter (w: live w.key) (succBwd id)) v
+            );
+            tag = tagOfSmallest component;
+          in
+          {
+            tags = acc.tags // prelude.genAttrs component (_: tag);
+          };
+    in
+    (builtins.foldl' step { tags = { }; } nodes).tags;
+
+  fbNodeUnhoisted = accessor: g.condensationOf accessor (nodeTagsUnhoisted accessor);
+  fbWorkHoisted = accessor: g.condensationOf accessor (workTagsHoisted accessor);
+
+  # `cyclePaths` builds no closure of its own — it spends `cycles` and the per-node partition
+  # arm and then reconstructs. So its pair differs in the two CALLEES and in nothing else, and
+  # what it prices is how much of the hoist reaches a consumer that only inherits it.
+  # ★ ITS RECONSTRUCTION BRANCH IS NOT PRICED HERE AND MUST NOT BE READ AS PRICED. That branch
+  # runs `pathsBetween`, which enumerates every simple path and is worst-case exponential, and
+  # which aborts uncatchably at depth — a separate defect on a separate branch. The cells below
+  # therefore run this pair on `cycle` (one ring: one in-SCC successor, one simple path home)
+  # and on the acyclic shapes (where `cycles` is empty and the reconstruction never runs). On
+  # `complete` the reconstruction is the exponential case and the arm is not offered.
+  cyclePathsUnhoisted =
+    { edges, nodes, ... }:
+    let
+      cyclic = cyclesUnhoisted { inherit edges nodes; };
+    in
+    if cyclic == [ ] then
+      [ ]
+    else
+      let
+        inherit ((fbNodeUnhoisted { inherit edges nodes; })) sccOf;
+        repCycle =
+          members:
+          let
+            u = tagOfSmallest members;
+            back = builtins.filter (p: p != [ ]) (
+              map (
+                v:
+                let
+                  ps = g.pathsBetween { inherit edges; } v u;
+                in
+                if ps == [ ] then [ ] else builtins.head ps
+              ) (builtins.filter (v: sccOf.${v} == sccOf.${u}) (edges u))
+            );
+          in
+          [ u ] ++ (if back == [ ] then [ ] else prelude.init (builtins.head back));
+      in
+      map repCycle (prelude.mapAttrsToList (_: c: c) (builtins.groupBy (k: sccOf.${k}) cyclic));
+
+  # ── THE NEGATIVE CELL'S ARM ──
+  # `dependentsOf` makes exactly ONE closure, so the library does NOT hoist it. This is what
+  # hoisting it would cost, and the pair is REQUIRED rather than illustrative: without a cell in
+  # which the hoist is worse, "hoist the multi-closure callers and not this one" is a scope
+  # asserted rather than measured. Both arms build the same reverse index (`directDependents` is
+  # `_reverseIndex`'s published face, and `dependentsOf` calls the same binding), so the only
+  # difference between the columns is the wrap.
+  dependentsOfHoisted =
+    accessor: targetId:
+    let
+      reverseIndex = g.directDependents accessor;
+      succ = g.hoistEdges {
+        edges = id: reverseIndex.${id} or [ ];
+        inherit (accessor) nodes;
+      };
+    in
+    builtins.sort builtins.lessThan (g.reachableVia succ targetId);
 
   # zero-padded so ids sort lexicographically in index order
   pad =
@@ -457,21 +610,31 @@ let
   # NOT re-derived here; the cost rows are re-derived by the items that own them, and this note
   # is what tells that re-derivation which constant it is looking at.
   #
+  # ★★ RE-PINNED AGAIN — the accessor hoist, and the whole shift is the LIBRARY's. `sets` moved
+  # +6 UNIFORMLY on all three cells with `list` and `nrLookups` bit-identical on every one:
+  # SHIFTED-BENIGN by the rule above, and the export set is on every cell's evaluation path,
+  # which is why `peerClosure` moved too though it reaches no traversal code. Decomposed exactly
+  # as the block above prescribes — the arms this revision adds were run against the UNCHANGED
+  # library, and all three cells read STABLE there (deltas 0 on all three axes), so the bench
+  # edit contributed ZERO and the +6 is `lib/traverse.nix`'s three new exports. The offset is
+  # LEFT IN, so every pre-hoist `sets` figure is low by a further 6 at every n — a constant, so
+  # no exponent or ratio quoted from them moves.
+  #
   # The pins below are read from the FROZEN bench at this revision, with the offsets LEFT IN.
   sentinelPins = {
     sentinel = {
       list = 2740;
-      sets = 2817;
+      sets = 2823;
       nrLookups = 4332;
     };
     peerOrder = {
       list = 2461;
-      sets = 4207;
+      sets = 4213;
       nrLookups = 7705;
     };
     peerClosure = {
       list = 490901;
-      sets = 8249;
+      sets = 8255;
       nrLookups = 29184;
     };
   };
@@ -551,6 +714,26 @@ let
       (g.fbWork acc).sccs
     else if arm == "condensationClosure" then
       (g.condensationClosure acc).sccs
+    # ── THE ACCESSOR HOIST, EACH SURFACE AGAINST THE CONSTRUCTION IT REPLACED ──
+    # Read as PAIRS. A hoisted column alone says nothing: the hoist trades a per-visit cost for
+    # a one-off whole-graph cost, so which way a cell goes is a property of how many closures
+    # the surface spends, and `dependentsOf` is here to show the losing side.
+    else if arm == "cyclesUnhoisted" then
+      cyclesUnhoisted acc
+    else if arm == "fbNodeUnhoisted" then
+      (fbNodeUnhoisted acc).sccs
+    else if arm == "fbWorkHoisted" then
+      (fbWorkHoisted acc).sccs
+    else if arm == "cyclePaths" then
+      g.cyclePaths acc
+    else if arm == "cyclePathsUnhoisted" then
+      cyclePathsUnhoisted acc
+    # Curried on a target like `dependents`; the head node is the target on both arms so the
+    # cone they walk is the same one.
+    else if arm == "dependentsOf" then
+      g.dependentsOf acc (builtins.head nodes)
+    else if arm == "dependentsOfHoisted" then
+      dependentsOfHoisted acc (builtins.head nodes)
     # `dependents` is curried (accessor -> targetId) and computes the FULL closure
     # before filtering, so the closure cost is paid whichever target is named.
     else if arm == "dependents" then

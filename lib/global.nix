@@ -58,14 +58,22 @@ let
   # Nodes in any cycle (self-reachable): a node is in a cycle iff it is
   # reachable from itself. Standard cycle detection. genericClosure per-node (C-level BFS)
   # materializes each node's closure in full; only the whole-graph transitive closure is avoided.
-  # Shape-dependent: `traverse.selfReachable`'s genericClosure operator re-reads `edges`
-  # at every visit, so a visit is O(1 + outdeg), not O(1). Total cost is
+  #
+  # ONE CLOSURE PER NODE OVER ONE ACCESSOR, so the accessor is read ONCE and not at every visit
+  # of every closure (`traverse.hoistEdges`). The unhoisted reading costs
   #   Θ( Σ_v Σ_{u ∈ reach v} (1 + outdeg u) )
-  # → O(n × reachable) where out-degree is bounded (a chain is the witness), but Θ(n³)
-  # on a complete DAG — cubic in n, not linear per reached node.
+  # because the operator re-reads `edges` at each visit, which is Θ(n³) on a complete DAG. The
+  # hoist pays the out-degree factor ONCE, as Θ(n + E) for the wrap, leaving
+  #   Θ( n + E + Σ_v |reach v| )
+  # attrsets — still O(n × reachable) at bounded out-degree, where the wrap is Θ(n) and the two
+  # readings agree to a constant, and Θ(n²) rather than Θ(n³) on a complete DAG. The n closures
+  # are what makes the wrap worth its price here; a caller making one does not hoist.
   cycles =
-    { edges, nodes, ... }:
-    builtins.sort builtins.lessThan (builtins.filter (traverse.selfReachable { inherit edges; }) nodes);
+    accessor@{ edges, nodes, ... }:
+    let
+      succ = traverse.hoistEdges accessor;
+    in
+    builtins.sort builtins.lessThan (builtins.filter (traverse.selfReachableVia succ) nodes);
 
   # Reverse reachability: who can reach targetId?
   # Uses full transitive closure + transpose, so it carries the CLOSURE-CLASS cost
@@ -96,6 +104,19 @@ let
   # reversed graph a node's out-degree IS its forward in-degree. So this is O(reachable) only
   # where in-degree is bounded, and Θ(n²) on a complete DAG.
   # Much faster than `dependents` for single-target queries on large graphs.
+  #
+  # ★ AND IT DELIBERATELY DOES NOT HOIST THE ACCESSOR, which is the same decision `cycles` and
+  # the partition arms make in the other direction. Hoisting (`traverse.hoistEdges`) builds a Θ(n)
+  # SPINE over the whole node set up front; this surface makes exactly ONE closure, so there is no
+  # second traversal to spread that spine over. It is not the unreached EDGES that are paid for —
+  # the spine's values are unforced thunks, so a node the walk never reaches never has its edges
+  # read — it is the spine itself, one entry per node whether or not the node is visited.
+  # Measured as a required negative cell in `ci/bench/cost-classes.nix` (`dependentsOf` against
+  # `dependentsOfHoisted`): the margin is 3n + 1 attrsets on `chain` and `fleet`, 3n on `cycle` and
+  # 2n + 2 on `complete`, exact at every n measured — 2 to 3 allocations per node, FLAT IN n on
+  # every shape and independent of E, which is what says it is the spine. `complete` is the
+  # discriminator: nothing there is outside the cone, so an unreached-edges account predicts no
+  # margin at all, and the margin is still 2n + 2.
   dependentsOf =
     { edges, nodes, ... }:
     targetId:
@@ -228,7 +249,10 @@ let
   #
   # COST: `cycles` short-circuits an acyclic graph before any path work, so the ordinary case pays
   # the self-reachability pass and nothing more — but that pass IS `cycles`, so it carries `cycles`'
-  # shape dependence: O(n × reachable) where out-degree is bounded, Θ(n³) on a complete DAG.
+  # shape dependence: Θ(n + E) to read the accessor once, then O(n × reachable) where out-degree is
+  # bounded and Θ(n²) on a complete DAG. This surface builds no closure of its own, so the accessor
+  # hoist reaches it only through `cycles` and the partition arm; it neither makes that decision nor
+  # can it observe one they did not make.
   # Reconstruction — the per-node forward–backward partition arm plus `pathsBetween`, which
   # enumerates simple paths and is worst-case exponential — runs only once the graph is
   # KNOWN cyclic, i.e. only on the branch a caller refuses on. Same discipline `order.nix` states

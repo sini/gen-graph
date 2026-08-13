@@ -305,6 +305,9 @@ gen-scope uses gen-graph's accessor pattern: gen-scope memoizes attribute evalua
 | `selfReachable` | `edges` | Is node in a cycle? |
 | `ancestorsOf` | `parent` | Walk P-edge chain upward |
 | `pathsBetween` | `edges` | All acyclic paths (DFS) |
+| `hoistEdges` | `edges`, `nodes` | Read the accessor once, for a caller spending many traversals |
+| `reachableVia` | a hoisted accessor | `reachableFrom` with the per-visit wrapping lifted out |
+| `selfReachableVia` | a hoisted accessor | `selfReachable` with the per-visit wrapping lifted out |
 | `cycles` | `edges`, `nodes` | Nodes in any cycle (per-node C-level BFS) |
 | `dependents` | `edges`, `nodes` | Reverse reachability (full closure) |
 | `dependentsOf` | `edges`, `nodes` | Reverse reachability (single-target, efficient) |
@@ -392,7 +395,8 @@ g = {
 | "What depends on X?" (one X) | `dependentsOf` | reverse index Θ(n + E), then O(reachable) only at bounded in-degree, Θ(n²) on a dense graph |
 | "What depends on X, Y, Z?" | `dependents` × 1 | closure class, amortized over targets |
 | "Is this node in a cycle?" | `selfReachable` | C-level; O(reachable from node) only at bounded out-degree, Θ(n²) on a dense graph |
-| "List all cycles" | `cycles` | C-level; O(n × reachable) only at bounded out-degree, Θ(n³) on a dense graph |
+| "List all cycles" | `cycles` | C-level; Θ(n + E) to read the accessor once, then O(n × reachable) — Θ(n²) on a dense graph, the out-degree factor being charged once rather than per visit |
+| "Many traversals over one graph" | `hoistEdges` + `reachableVia` | Θ(n + E) once, then Θ(reachable) per traversal — a loss for a single traversal |
 | "Entry points" | `roots` | O(n × degree) |
 | "Minimal diagram" | `transitiveReduction` | closure class unless every node has out-degree ≤ 1 — needs closure |
 | "All paths A→B" | `pathsBetween` | O(paths) — small subgraphs only |

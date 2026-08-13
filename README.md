@@ -122,6 +122,17 @@ ancestorsOf    : { parent, ... } → id → [id]
 pathsBetween   : { edges, ... } → id → id → [[id]]
 ```
 
+And their **amortized dual**, for a caller spending many traversals over one accessor. `hoistEdges`
+is **eager in the node set and lazy in each node's edges**: it builds a `Θ(n)` spine over `nodes` up
+front, and a node's `edges` call happens on first lookup, so a traversal still never reads the edges
+of a node it does not visit:
+
+```
+hoistEdges       : { edges, nodes, ... } → (id → succ)
+reachableVia     : (id → succ) → id → [id]
+selfReachableVia : (id → succ) → id → bool
+```
+
 **`reachableFrom g startId`** — all nodes transitively reachable from `startId` via `edges`, excluding `startId` itself. C-level BFS via `builtins.genericClosure`.
 
 ```nix
@@ -156,6 +167,17 @@ graph.selfReachable dagGraph "a"      # → false
 graph.ancestorsOf g "grandchild"
 # → [ "child1" "root" ]
 ```
+
+**`hoistEdges g`** / **`reachableVia succ startId`** / **`selfReachableVia succ id`** — the same two traversals with the per-visit work lifted out. The operators above re-read `edges` at every visit and wrap each successor into `genericClosure`'s item shape there, so a visit costs `O(1 + outdeg)`; `hoistEdges` does that wrapping **once** over `nodes` and returns the successor function, and the two `*Via` operators read it. Semantics are identical — same reachable set, same order, same exclusion of the start — and a target outside `nodes` still expands through the accessor, so hoisting cannot truncate a walk.
+
+**This is amortization, so it is a trade and not an improvement.** `k` traversals over one accessor go from `Θ(k · Σ (1 + outdeg))` attrsets to `Θ(n + E) + Θ(k · |reach|)`: a whole class removed where `k` is large, and a straight loss where `k` is 1, because the wrap's `Θ(n)` spine is built over every node while one traversal reads only the ones it reaches. Reach for it only when the same accessor is walked many times.
+
+```nix
+let succ = graph.hoistEdges g;                     # read the accessor once
+in map (graph.reachableVia succ) g.nodes           # …spend it n times
+```
+
+Inside this library `cycles` and `fbNode` bind it and `dependentsOf` and `fbWork` deliberately do not — see their cost rows for the measurement each decision rests on.
 
 **`pathsBetween g startId endId`** — all acyclic paths from `startId` to `endId`. Each path is a list of ids including both endpoints.
 
@@ -264,7 +286,7 @@ directDependentsOf : { edges, nodes, ... } → id → [id]
 
 `coneRank` is an ordering surface and is documented under **Ordering** below.
 
-**`cycles g`** — nodes that appear in any cycle (self-reachable). Uses C-level BFS per node via `selfReachable` — no full transitive closure materialization needed. Returns a sorted list.
+**`cycles g`** — nodes that appear in any cycle (self-reachable). Uses C-level BFS per node via `selfReachableVia` — one closure per node, no full transitive closure materialization needed. Because it spends n closures on one accessor it reads that accessor once (`hoistEdges`) rather than at every visit of every closure. Returns a sorted list.
 
 ```nix
 graph.cycles g   # → [] for a DAG, → [ "a" "b" "c" ] for a → b → c → a
@@ -274,7 +296,7 @@ graph.cycles g   # → [] for a DAG, → [ "a" "b" "c" ] for a → b → c → a
 
 One per component, not all: the SCC is the canonical object, the cycle through it is existential. Enumerating every simple cycle is Johnson 1975 and is deliberately not provided.
 
-Cost is asymmetric by design. `cycles` short-circuits a DAG before any path work, so the acyclic case — the ordinary one — pays the self-reachability pass and nothing more. That pass *is* `cycles`, so it inherits `cycles`' shape dependence: O(n × reachable) where out-degree is bounded, but Θ(n³) on a complete DAG (see Performance). The partition arm and `pathsBetween` run only once the graph is known cyclic, i.e. only on the branch a caller refuses on.
+Cost is asymmetric by design. `cycles` short-circuits a DAG before any path work, so the acyclic case — the ordinary one — pays the self-reachability pass and nothing more. That pass *is* `cycles`, so it inherits `cycles`' shape dependence: O(n × reachable) where out-degree is bounded, and Θ(n²) on a complete DAG — the out-degree factor is charged once by the accessor hoist rather than at every visit (see Performance). The partition arm and `pathsBetween` run only once the graph is known cyclic, i.e. only on the branch a caller refuses on.
 
 ```nix
 # b → d → c → b, keys sorting b < c < d
@@ -951,19 +973,21 @@ in {
 | `reachableWhere` | exactly the `reachableFrom` cost above — O(reachable) only at bounded out-degree, Θ(n²) on a complete DAG | same C-level BFS, filter applied after |
 | `canReach` | `Θ(Σ_{u ∈ reach s} (1 + outdeg u))` from the source `s` — same operator, same per-visit cost, so O(reachable) only at bounded out-degree and Θ(n²) on a complete DAG | C-level BFS; the source's closure is materialized in full on every call, whatever the target — `builtins.any` short-circuits its scan of the finished list, not the traversal that built it |
 | `selfReachable` | `Θ(Σ_{u ∈ reach v} (1 + outdeg u))` from the node `v` — same operator, same per-visit cost, so O(reachable) only at bounded out-degree and Θ(n²) on a complete DAG | C-level BFS checking self-reappearance |
+| `hoistEdges` | `Θ(n)` spine, paid once and eagerly; then `Θ(1 + outdeg u)` per node **on first lookup**, so `Θ(n + E)` only if every node is looked up | builds a `builtins.listToAttrs` spine over `nodes` whose values are **unforced thunks** — a node's `edges` call and its wrapping happen when the traversal first reaches it, never for a node it does not. This is the whole out-degree factor of the three rows above, lifted out of the **per-visit** path and charged **per node** instead |
+| `reachableVia` / `selfReachableVia` | `Θ(|reach s|)` attrsets per traversal, **on top of** the one `hoistEdges` charge — so `k` traversals over one accessor cost `Θ(n + E) + Θ(k · |reach|)` where the unhoisted pair cost `Θ(k · Σ (1 + outdeg))` | the same two closures with the wrapping hoisted. ★ **Worth it only for large `k`**: at `k = 1` the caller still pays the whole `Θ(n)` spine while the traversal reads only the nodes it reaches, so a single-traversal caller is strictly worse off — measured on `dependentsOf`'s row below, where the penalty is **2–3 allocations per node, flat in n on every shape**, and is not the unread edges |
 | `ancestorsOf` | O(depth) | single-path walk |
 | `pathsBetween` | O(paths × depth) | exponential in path count; use on small subgraphs |
 | `materialize` | O(nodes × avg degree) | one-time scan |
 | `transitiveClosure` | **closure class** (see below) | fixpoint over materialized map |
 | `transitiveReduction` | **closure class** unless *every* node has out-degree ≤ 1 (see below) | needs full closure; O(1) membership via attrsets |
-| `cycles` | `Θ(Σ_v Σ_{u ∈ reach v} (1 + outdeg u))` — i.e. O(nodes × reachable) only where out-degree is **bounded**; Θ(n³) on a complete DAG | per-node C-level BFS — one closure per node, so no whole-graph transitive closure. The per-visit cost is O(1 + outdeg), not O(1), because `selfReachable`'s `genericClosure` operator re-reads `edges` at every visit |
-| `cyclePaths` | on a DAG, exactly the `cycles` cost above — so Θ(n³) on a complete DAG, **not** O(nodes × reachable); + the `fbNode` partition arm (see its own row) and simple-path search once cyclic | short-circuits before any path work when acyclic |
+| `cycles` | `Θ(n + E)` to read the accessor once, then `Θ(Σ_v |reach v|)` for the n closures — i.e. O(nodes × reachable) with the out-degree factor paid **once** rather than at every visit, so Θ(n²) on a complete DAG and no longer Θ(n³) | per-node C-level BFS — one closure per node, so no whole-graph transitive closure. It spends n closures on one accessor, so it binds `hoistEdges` and the operator no longer re-reads `edges` per visit. Measured at `complete` n = 400: exponent **3.00 → 2.00 on both `list` and `sets`**, 200.5× fewer list elements and 395.2× fewer attrsets, while `nrLookups` moves 0.08% — a lookups-only budget scores this a no-op. `ci/bench/cost-classes.nix`, arms `cycles` / `cyclesUnhoisted` |
+| `cyclePaths` | on a DAG, exactly the `cycles` cost above — so Θ(n²) on a complete DAG; + the `fbNode` partition arm (see its own row) and simple-path search once cyclic | short-circuits before any path work when acyclic. Builds no closure of its own, so it inherits both callees' hoist and nothing else: measured 1.95× fewer attrsets on `cycle` at n = 400, arms `cyclePaths` / `cyclePathsUnhoisted`. **The cyclic branch is not priced by those arms** — it runs `pathsBetween`, which enumerates every simple path, and no arm here quantifies it on a dense component |
 | `dependents` | **closure class** (see below) | full transitive closure + transpose |
-| `dependentsOf` | `Θ(n + E)` for the reverse index, then `Θ(Σ_{u ∈ reach⁻ t} (1 + indeg u))` for the walk — i.e. O(reachable) only where **in**-degree is bounded; Θ(n²) on a complete DAG | reverse index + C-level BFS. The walk is the `reachableFrom` operator run over the reversed index, so its per-visit factor is the forward in-degree |
+| `dependentsOf` | `Θ(n + E)` for the reverse index, then `Θ(Σ_{u ∈ reach⁻ t} (1 + indeg u))` for the walk — i.e. O(reachable) only where **in**-degree is bounded; Θ(n²) on a complete DAG | reverse index + C-level BFS. The walk is the `reachableFrom` operator run over the reversed index, so its per-visit factor is the forward in-degree. ★ **It does not hoist the accessor**: one closure has no second traversal to spread the wrap's `Θ(n)` spine over, and that spine is built whether or not the walk reaches the node. Measured **worse** hoisted on every shape — 1.003× on `complete`, 1.32× on `cycle`, 1.35× on `chain`, 1.41× on `fleet`. The margin is `3n + 1` on `chain`/`fleet`, `3n` on `cycle` and `2n + 2` on `complete` — exact at every n measured: **2–3 allocations per node, flat in n on every shape and independent of E**, which is what says it is the spine and not the unread edges — on `complete` nothing is unreached at all and the margin is still `2n + 2`. Arms `dependentsOf` / `dependentsOfHoisted` |
 | `dependentsFrontier` | `Θ(n + E)` for the reverse index, then **two** terms: `Θ(Σ_{u ∈ expanded} (1 + indeg u))` per-visit over the nodes `prune` admits, **plus an accumulator that is a whole-`visited` copy per level** — `Θ(levels × reached)`, so the walk is quadratic on a deep cone however **bounded** the in-degree, and a chain is the witness | reverse index + level-by-level BFS, pruned early. Hand-rolled rather than `genericClosure` (which cannot include-but-not-expand), and **not** the operator's cost law: `visited // genAttrs fresh` re-copies every id already reached at each level, where `dependentsOf`'s `genericClosure` accumulates natively |
 | `coScc` | the `canReach` cost paid from each of `u` and `v`: `Θ(Σ_{w ∈ reach u} (1 + outdeg w) + Σ_{w ∈ reach v} (1 + outdeg w))` — O(reachable) only at bounded out-degree, Θ(n²) on a complete DAG | two `canReach` probes, each materializing its own start's entire closure — two closures, so what is avoided is the whole-graph transitive closure, not the per-probe one |
-| `condensation` / `fbNode` | quadratic in the members of ONE component and linear in components: `list`/`sets`/`nrLookups` exponents 2.00 on `cycle`, 1.00–1.04 on `fleet`, ~1.98 on `chain` (n = 500 → 2000) | two `genericClosure` calls per node, no accumulator, no recursion. **No closure call and no fixpoint**, so no iteration cap to inherit. Ceilings and the arm comparison: *The partition routing contract* above |
-| `fbWork` | the mirror image: 1.00 on `cycle`, but its accumulator is a whole-value copy per component, so `sets` runs 1.35 → 1.53 on `fleet` while `list`/`nrLookups` stay at 1.04–1.05 | one forward–backward pass per COMPONENT over a `foldl'` accumulator. Complementary to `fbNode`, not ranked |
+| `condensation` / `fbNode` | quadratic in the members of ONE component and linear in components: `list`/`sets`/`nrLookups` exponents 2.00 on `cycle`, 1.00–1.04 on `fleet`, ~1.98 on `chain` (n = 500 → 2000) — **all three re-derived and unmoved by the accessor hoist**, which changes the DENSE reading those shapes cannot see: on `complete` (n = 200 → 400) `sets` runs **3.00 → 2.00**, 80.5× fewer attrsets at n = 400. ★ `list` there stays cubic (2.98 → 2.86) and that residue is **not** the operator's — it is `prelude.concatMap`'s chunk-quadratic `++` inside the shared finisher, present in both arms | two `genericClosure` calls per node, no accumulator, no recursion. 2n closures over two accessors, so it binds `hoistEdges` on each and the operator no longer re-reads `edges` per visit. **No closure call and no fixpoint**, so no iteration cap to inherit. Arms `fbNode` / `fbNodeUnhoisted`. Ceilings and the arm comparison: *The partition routing contract* above |
+| `fbWork` | the mirror image: 1.00 on `cycle`, but its accumulator is a whole-value copy per component, so `sets` runs 1.35 → 1.53 on `fleet` while `list`/`nrLookups` stay at 1.04–1.05 | one forward–backward pass per COMPONENT over a `foldl'` accumulator. Complementary to `fbNode`, not ranked. ★ **It does NOT hoist its accessor, though it makes many closures**: hoisting builds a whole-graph `Θ(n)` memo up front, and this arm's closures **partition** the graph rather than re-covering it — each round walks a subgraph the earlier rounds have shrunk — so there is no second traversal over the same edges to spread that build cost over. Same mechanism as `dependentsOf`'s negative cell below. Measured 4.12× better on one deep `chain` (the one shape whose backward walk re-covers the whole unassigned tail every round) and 1.003–1.25× **worse** on `complete`, `fleet`, `wide`, `total` and `cycle`, the decisive losses being `cycle` (1.243×) and `complete`'s `nrLookups` (1.397×). ★ **Restriction ordering is not the lever**, measured: an arm memoizing plain adjacency and restricting *before* wrapping recovers none of it — worst of three on `fleet`, and within 4 sets of the full hoist on `cycle` while both memoizing arms sit ~2,400 above the shipped one. Arms `fbWork` / `fbWorkHoisted` |
 | `condensationClosure` | **closure class** (see below) | one transitive closure. The second closure over the quotient is gone — every arm now takes its `bottomUp` and `depth` from one `coneRank` pass over the condensation instead, which is `topoOrderKahn`-warmed and reaches no fixpoint |
 | `coneRank` | O(|cone| + edges-in-cone) for the recurrence, **plus one ordering pass** — `list` exponent 1.07 on `chain` and `fleet`, `sets` 1.00–1.02, `nrLookups` 1.00–1.06 (n = 1000 → 8000) | `lib.fix` memoized depth, cone-local (no condensation), warmed along `topoOrderKahn`'s order. **No ceiling found to 32,000** on `chain` or `deepwide`; a cyclic cone is a named refusal. The construction it replaced is linear on all three axes and aborts past ~4,000 on `chain` — `ci/bench/cost-classes.nix`, arms `coneRank` / `coneRankShipped` |
 | `topoOrder` / `phaseOrder` | O(n + E) decrements, and **near-linear in allocation** — exponent 1.07–1.08 on `list.elements` and 0.99–1.12 on `sets.elements`, all four acyclic shapes | nothing the loop carries is quadratic: the emitted sequence is a binary-counter run list (Θ(n log n)), the indegree map is a residue over a rebuilt base, and the ready set is a leftist heap (Θ(n log n)), where a re-sorted array was a third quadratic worth 60% of the `wide` list allocation. The heap's `sets.elements` price, 63 → 89 attrsets per node over n = 1000 → 8000, is now the leading set-axis term. No frame ceiling — the loop is a bounded iteration, so no node count aborts or is refused |
@@ -1019,7 +1043,7 @@ genGraph.reachableFrom { edges = id: result.get id "imports"; } "host:igloo"
 | "Can A reach B?" | `canReach` (O(reachable) at bounded out-degree, Θ(n²) on a dense graph — see Performance) | `dependents` (closure class) |
 | "What depends on X?" (one target) | `dependentsOf` (reverse index, then O(reachable) at bounded in-degree, Θ(n²) on a dense graph — see Performance) | `dependents` (closure class) |
 | "What depends on X, Y, Z?" (multi-target) | `dependents` (closure class, amortized over targets) | `dependentsOf` × 3 (rebuilds index 3×) |
-| "Is there a cycle?" | `cycles` (C-level; O(n × reachable) at bounded out-degree, Θ(n³) on a dense graph — see Performance) | `transitiveClosure` (closure class) |
+| "Is there a cycle?" | `cycles` (C-level; O(n × reachable) at bounded out-degree, Θ(n²) on a dense graph — see Performance) | `transitiveClosure` (closure class) |
 | "Which loop, in order, for a message?" | `cyclePaths` (free on a DAG) | hand-rolled DFS per node (enumerates every simple path even when acyclic) |
 | "All paths between A and B" | `pathsBetween` (DFS) | Only for small subgraphs |
 | "Full closure for analysis" | `transitiveClosure` | — (use when you genuinely need it) |
@@ -1031,7 +1055,7 @@ For 10,000+ node fleets, partition the graph by environment/datacenter before ru
 
 ```nix
 # Instead of:
-graph.cycles { edges; nodes = ALL_10K_NODES; }  # O(10K × reachable) at bounded out-degree; Θ(n³) dense
+graph.cycles { edges; nodes = ALL_10K_NODES; }  # O(10K × reachable) at bounded out-degree; Θ(n²) dense
 
 # Partition first:
 lib.concatMap (partition:
