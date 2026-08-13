@@ -52,8 +52,8 @@ let
     builtins.mapAttrs (_: es: map (e: e.value) es) grouped;
 
   # Nodes in any cycle (self-reachable): a node is in a cycle iff it is
-  # reachable from itself. Standard cycle detection.
-  # Uses genericClosure per-node (C-level BFS) — no full closure materialization.
+  # reachable from itself. Standard cycle detection. genericClosure per-node (C-level BFS)
+  # materializes each node's closure in full; only the whole-graph transitive closure is avoided.
   # Shape-dependent: `traverse.selfReachable`'s genericClosure operator re-reads `edges`
   # at every visit, so a visit is O(1 + outdeg), not O(1). Total cost is
   #   Θ( Σ_v Σ_{u ∈ reach v} (1 + outdeg u) )
@@ -136,9 +136,9 @@ let
       inherit nodes;
     };
 
-  # Co-SCC predicate: are u and v in the same strongly connected component?
-  # canReach-backed, single-pair (no full closure). The u == v case handles an
-  # acyclic node, which cannot reach itself.
+  # Co-SCC predicate: are u and v in the same strongly connected component? canReach-backed
+  # and single-pair, but each probe materializes its start's closure in full; only the
+  # whole-graph closure is avoided. u == v handles an acyclic node, which cannot reach itself.
   coScc =
     { edges, ... }:
     u: v:
