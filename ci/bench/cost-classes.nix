@@ -95,6 +95,8 @@
 #         | dependentsFrontier | dependentsFrontierPruned
 #         | cyclesUnhoisted | fbNodeUnhoisted | cyclePathsUnhoisted
 #         | fbWorkHoisted | dependentsOfHoisted
+#         | closureNaive            (the round-schedule pair with `transitiveClosure`)
+#         | uniqueStrings | uniqueInts   (the dedup at a fixed L; `n` is L, not a node count)
 #         | sentinel | sentinelPeerOrder | sentinelPeerClosure | sentinelVerdict
 #   shape = complete | cycle | cyclechord | chain | wide | fleet | discrim | total | deepwide
 #   n     = node count (use doublings, e.g. 50/100/200, so a ratio reads as 2^exp)
@@ -313,6 +315,39 @@ let
 
   fbNodeUnhoisted = accessor: g.condensationOf accessor (nodeTagsUnhoisted accessor);
   fbWorkHoisted = accessor: g.condensationOf accessor (workTagsHoisted accessor);
+
+  # ── THE CLOSURE'S ROUND SCHEDULE, AS A PAIR ──
+  # The shipped closure squares: `step current = unionEdges current (compose current current)`,
+  # so round r holds every path of length ≤ 2^r. `closureNaive` is the schedule it replaced,
+  # composing with the SEED instead, and it exists for the same reason every other pair in this
+  # file does — a single column says nothing about a trade. Read them together or not at all.
+  # ★ The two differ ONLY in the second argument to `compose`, so anything else that moves
+  # between them is the harness's rather than the schedule's. Built from the library's own
+  # exported primitives, not a private copy of the closure.
+  closureNaive =
+    { edges, nodes, ... }:
+    let
+      mat = g.materialize { inherit edges nodes; };
+    in
+    g.fixpoint {
+      seed = mat;
+      step = current: g.unionEdges current (g.compose current mat);
+    };
+
+  # ── THE DEDUP'S OWN COST, AT A FIXED L ──
+  # The batch's central law as a reading rather than a recollection. `prelude.unique` is
+  # two-path: on an all-string list it dedups by sorting first-occurrence indices, which is
+  # Θ(L) on the list axis; the `foldl'`-with-`elem` quadratic survives only as the non-string
+  # fallback. The integer arm is the control that says WHICH path a figure came from — it must
+  # stay quadratic while the string arm does not.
+  # ★ THIS CELL'S EXPECTED VALUE MOVED WHEN THE PRELUDE PIN MOVED, and that is the point of
+  # having it: before the two-path binding landed the string arm read L(L+1)/2 like the integer
+  # arm still does. A cell whose expectation is re-pinned silently is worse than no cell.
+  # They return the deduped LIST rather than its length, so the run's own `len` control reads
+  # it: the inputs are L DISTINCT values, so `len` must equal L. A dedup that quietly dropped
+  # or duplicated an element would otherwise be invisible behind an unchanged allocation count.
+  uniqueStrings = L: prelude.unique (builtins.genList (i: "k${toString i}") L);
+  uniqueInts = L: prelude.unique (builtins.genList (i: i) L);
 
   # `cyclePaths` builds no closure of its own — it spends `cycles` and the per-node partition
   # arm and then reconstructs. So its pair differs in the two CALLEES and in nothing else, and
@@ -884,6 +919,16 @@ let
       g.dependents acc (builtins.head nodes)
     else if arm == "transitiveClosure" then
       g.transitiveClosure acc
+    # The round-schedule pair. `transitiveClosure` above IS the squared arm; this is the
+    # schedule it replaced. Neither figure means anything without the other's on the same shape.
+    else if arm == "closureNaive" then
+      closureNaive acc
+    # The dedup at a fixed L, with the domain control beside it. `n` is L here — these two read
+    # neither `nodes` nor `edges`, which is stated because every other arm in this file does.
+    else if arm == "uniqueStrings" then
+      uniqueStrings n
+    else if arm == "uniqueInts" then
+      uniqueInts n
     else if arm == "transitiveReduction" then
       g.transitiveReduction acc
     # The ORDERING loop. On an acyclic shape this returns `.order` and the emission loop
