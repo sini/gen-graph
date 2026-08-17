@@ -709,6 +709,34 @@ let
   # SHIFTED-BENIGN — the documented one-shape signature above, reproduced. A STABLE verdict
   # from an instrument nobody has shown able to move is not evidence; this one was shown.
   #
+  # ★★ RE-PINNED FOR THE `gen-prelude` DEDUP BUMP, AND THIS ONE READS SHIFTED-STRUCTURAL. The
+  # verdict is correct and the decomposition is the reference case for a pure subject move.
+  # The commit that moved it touches this file and `lib/` only in COMMENTS and in the pin data
+  # below, neither of which any measured cell reads, and the one thing it changes on an
+  # evaluation path is the `gen-prelude` pin this bench resolves its prelude from. That its
+  # harness component is zero is therefore MEASURED rather than argued: with this commit's own
+  # file edits in place and the prelude held at the OLD pin, all three cells read the previous
+  # pins exactly (2740/2824/4332 · 2461/4214/7705 · 490,901/8,256/29,184). The reverse-cone
+  # arms that landed just above are the one other candidate and contribute zero by their own
+  # armed measurement recorded there — the same run re-confirms it, since those readings are
+  # taken on a tree that already carries them.
+  #   · `sentinel` and `peerOrder` are BIT-IDENTICAL on all three axes. Both are `topoOrder` on
+  #     an ACYCLIC shape, so both take the emission loop, which reaches no `prelude.unique` call
+  #     site at all — that is the live control saying the movement is the closure path's and not
+  #     a global offset. It is also the opposite of a harness edit's signature, which moves
+  #     every cell including the ones that call no changed code.
+  #   · `peerClosure` alone moves, on all three axes and in two directions: `list` −277,696
+  #     (490,901 → 213,205, a 56.6% drop) as the per-node dedup stops being a `foldl'` with
+  #     `elem`; `sets` +151,968 (8,256 → 160,224, 19.4×) as it becomes a `listToAttrs` over
+  #     first-occurrence indices; `nrLookups` +4. The list-for-attrsets trade is the whole
+  #     content of that dedup's two-path construction, and it is the reason a `list`-only
+  #     reading of this bump scores it as a clean win when it is a trade.
+  #   · The `nrLookups` +4 is the same constant measured on every other arm and shape under a
+  #     probe whose two prelude arms are spelled symmetrically — constant in n, no exponent.
+  # A three-axis single-cell move is what a genuine subject move looks like, and it is recorded
+  # as one. The offsets are LEFT IN, so every `list` and `sets` figure published for a
+  # closure-class cell from a pre-bump revision is off by more than a constant.
+  #
   # The pins below are read from the FROZEN bench at this revision, with the offsets LEFT IN.
   sentinelPins = {
     sentinel = {
@@ -722,9 +750,9 @@ let
       nrLookups = 7705;
     };
     peerClosure = {
-      list = 490901;
-      sets = 8256;
-      nrLookups = 29184;
+      list = 213205;
+      sets = 160224;
+      nrLookups = 29188;
     };
   };
   sentinelCells = {

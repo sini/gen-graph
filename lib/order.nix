@@ -48,16 +48,18 @@
 # `partition.fbNode`, the forward–backward arm, bound by name below: it is NOT the closure
 # construction, and the difference is the whole cost story here. Measured at n = 200
 # (`ci/bench/cost-classes.nix`, arms `cycles` / `fbNode` / `topoOrder`): on `cycle` the guard
-# is 41,403 `list.elements` against the partition's 365,017, and on `complete` 160,003
-# against 4,899,017 — the partition is the larger term on both shapes and on all three axes
-# at that size, and the report as a whole is EXPONENT 2.00 on all three, fitted over
-# k = 25/50/100/200 on `cycle`. Do not quote either term as the cost alone.
+# is 41,403 `list.elements` against the partition's 364,817, and on `complete` 160,003
+# against 1,038,617 — the partition is the larger term on both shapes and on all three axes
+# at that size, and the report as a whole is EXPONENT 2.00 on `list` and `nrLookups`, fitted
+# over k = 25/50/100/200 on `cycle`; `sets` is approaching 2.00 from below (1.88 over the
+# last pair) rather than sitting at it. Do not quote either term as the cost alone.
 # ★ THE SURFACE THAT IS SUPER-QUADRATIC IS THE CLOSURE, AND IT IS NOT ON THIS PATH: reaching
-# the same partition through `condensationClosure` instead is exponent 4.00 on `list` over the
-# same k (2.00 on `sets`, 3.00 on `nrLookups` — the three axes disagree by two exponents, so a
-# single-axis budget certifies it as quadratic), and at k = 200 that is 565,722,621 against
-# this path's 406,405, a factor of 1,392. A cost claim about ordering-on-a-cycle that cites the
-# closure is citing a surface this door stopped calling.
+# the same partition through `condensationClosure` instead is exponent 3.00 on `list` over the
+# same k, and 3.00 on `sets` with `nrLookups` approaching 3.00 from below (2.85 over the last
+# pair) — the three axes now agree on the class, where they once disagreed by two exponents
+# and a single-axis budget could certify the path as quadratic. At k = 200 that is 48,641,421
+# against this path's 406,205, a factor of 120. A cost claim about ordering-on-a-cycle that
+# cites the closure is citing a surface this door stopped calling.
 # Ordering succeeds or it REPORTS: `topoOrder` returns `ok = false` with the cycles on a cyclic
 # graph and does not throw for one — `phaseOrder` is the layer that throws. The expensive
 # analysis is on the way out either way.
@@ -514,11 +516,15 @@ let
       # cone entry is one memo cell and one warming step, and ordering keys must be unique
       # or the arm refuses the duplicate by name. `cone` itself is left alone — `order`
       # sorts what the caller handed over, as it always did.
-      # ★ The distinct ids come from `coneSet`, which is already built: `prelude.unique` is
-      # Θ(n²) on the LIST axis — 8,010,002 list elements on a 4,000-element input, measured
-      # — and reaching for it here made the whole surface quadratic in what it allocates
-      # while the ceiling it was removing was a depth problem. Reading the keys off the
-      # membership set is the same answer for the cost of the `attrNames` list.
+      # ★ The distinct ids come from `coneSet`, which is already built. `prelude.unique` is
+      # TWO-PATH: ids are strings, so a dedup here would take its sorting path and cost Θ(n)
+      # on the LIST axis — 36,003 list elements, exactly 9n + 3, on 4,000 distinct strings,
+      # against 16,016,001 on that same fixture for the `foldl'`/`elem` fallback the
+      # non-string domain still takes, both measured. So a dedup here is no longer a
+      # quadratic; it is a sort over a set the membership map already holds, which is
+      # redundant work rather than a cost class. The ceiling this arm was removing was a depth
+      # problem in either case. Reading the keys off the membership set is the same answer for
+      # the cost of the `attrNames` list.
       driver = topoOrderKahn {
         nodes = builtins.attrNames coneSet;
         edges = inConeProducers;

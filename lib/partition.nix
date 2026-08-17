@@ -83,12 +83,15 @@ let
           }) nodes
         )
       );
-      # ★ THE DISTINCT TAGS ARE READ OFF THE GROUPING, NOT UNIQUED OUT OF A LIST.
-      # `prelude.unique` is `foldl' (acc: x: if elem x acc then acc else acc ++ [ x ])`, which
-      # is Θ(n²) on the LIST axis and Θ(n²) in comparisons — so uniquing one tag per node
-      # would make the finisher quadratic in the node count on EVERY shape, including the ones
-      # where both arms are linear. The grouping is already built and its keys are exactly the
-      # distinct tags. Same trap `coneRank` records for the same reason.
+      # ★ THE DISTINCT TAGS ARE READ OFF THE GROUPING, NOT UNIQUED OUT OF A LIST — and the
+      # reason is that the grouping already carries the answer, not that a dedup would be
+      # quadratic. `prelude.unique` is TWO-PATH: on an all-string list it dedups through a
+      # `listToAttrs`/`sort` over first-occurrence indices, Θ(n) on the LIST axis and
+      # Θ(n log n) in comparisons; the `foldl' (acc: x: if elem x acc then acc else acc ++
+      # [ x ])` that is Θ(n²) on both survives only as the fallback for a non-string domain.
+      # Tags are strings, so uniquing one tag per node would take the sorting path — a sort
+      # over a set whose distinct members `membersOf` has already grouped, i.e. redundant work
+      # rather than a quadratic. Same reading `coneRank` records for the same reason.
       tags = builtins.attrNames membersOf;
       # Deduplicated the same way, and the targets come out SORTED rather than in accessor
       # order — so the condensation's edge lists are a function of the graph and not of the
