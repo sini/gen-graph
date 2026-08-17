@@ -24,6 +24,12 @@
 #      node) and `fbWork` (one forward–backward pass per component over a `foldl'`
 #      accumulator). They are complementary rather than ranked, so the pair is the
 #      measurement: neither figure means anything without the other's on the same shape.
+#   2b. the PARTITION CELL'S TWO TERMS — every arm above spends one cost FINDING the
+#      partition and a second one FINISHING it into the record they all return, and a single
+#      column cannot say which of the two moved. The finisher is the term every arm shares
+#      (`condensationOf`), so it is the one a cell that cannot separate them guards least.
+#      `fbNode` against `fbNodeTags` separates them over the published record; the arms are
+#      described where they are built.
 #   3. the ORDERING loop — `topoOrder`'s Kahn emission loop, whose cost is the two
 #      accumulators it carries plus the ready set. None of the three is visible on a shape
 #      that never enters the loop. The emitted sequence is a run list under a binary-counter
@@ -95,6 +101,10 @@
 #         | dependentsFrontier | dependentsFrontierPruned
 #         | cyclesUnhoisted | fbNodeUnhoisted | cyclePathsUnhoisted
 #         | fbWorkHoisted | dependentsOfHoisted
+#         | fbNodeTags              (the decomposition pair with `fbNode`)
+#         | condensationOfDiscrete | discreteTags
+#                                  (the finisher alone and its floor; ACYCLIC shapes only —
+#                                   the arm refuses on the others rather than answering)
 #         | closureNaive            (the round-schedule pair with `transitiveClosure`)
 #         | uniqueStrings | uniqueInts   (the dedup at a fixed L; `n` is L, not a node count)
 #         | sentinel | sentinelPeerOrder | sentinelPeerClosure | sentinelVerdict
@@ -315,6 +325,83 @@ let
 
   fbNodeUnhoisted = accessor: g.condensationOf accessor (nodeTagsUnhoisted accessor);
   fbWorkHoisted = accessor: g.condensationOf accessor (workTagsHoisted accessor);
+
+  # ── THE PARTITION CELL'S TWO TERMS, SEPARATED OVER THE PUBLISHED RECORD ──
+  # Every partition arm's cell is two costs in one column: FINDING the partition, which is the
+  # arm's own construction, and FINISHING it into the record they all return, which is the one
+  # binding they share (`condensationOf`). A single column cannot say which term moved, so the
+  # shared one is the term the existing cells guard least — a change in it lands inside four
+  # arms at once and shows as a few percent on each.
+  #
+  # THE SEPARATION IS THE PUBLISHED RECORD'S OWN, and it needs nothing the library does not
+  # already export. `condensationOf` returns `sccOf` as the tag map it was HANDED, so forcing
+  # that ONE field forces the partition and none of the finisher, where `.sccs` forces both.
+  # `fbNode` against `fbNodeTags` is therefore the whole cell against its first term, and the
+  # finisher is their DIFFERENCE. Read as a pair or not at all, like every other pair here.
+  #
+  # ★★ THAT THE DIFFERENCE IS THE FINISHER IS MEASURED RATHER THAN ARGUED FROM LAZINESS, and
+  # the second arm is what measures it. `condensationOfDiscrete` runs the finisher over the
+  # DISCRETE partition — every node its own class — which is Θ(n) to build and is not a
+  # partitioner: it computes no reachability and reproduces no arm's internals. On an acyclic
+  # graph the discrete partition IS the SCC partition, so that arm is the finisher `fbNode`
+  # pays, standing alone. The two constructions share no code path beyond the finisher itself,
+  # and on `list.elements` they agree TO THE ALLOCATION at every cell measured:
+  #
+  #     shape/n         fbNode      fbNodeTags   difference   condensationOfDiscrete
+  #                                                            net of `discreteTags`
+  #     chain    100      31,839       26,548        5,291        5,994 - 703  =  5,291
+  #     chain    200     114,304      103,098       11,206       12,609 - 1,403 = 11,206
+  #     chain    400     429,835      406,198       23,637       26,440 - 2,803 = 23,637
+  #     wide     200      13,621        3,603       10,018       11,421 - 1,403 = 10,018
+  #     fleet    200      19,461        8,483       10,978       12,861 - 1,883 = 10,978
+  #     total    200     627,428      340,105      287,323      328,327 - 41,004 = 287,323
+  #
+  # ★ ON `sets.elements` THE TWO AGREE TO A CONSTANT 191, at every one of those cells and on
+  # `complete` at n = 100/200/400 as well, and the constant is DECOMPOSED rather than carried:
+  # `(condensationOf acc (discreteTags acc)).sccOf` against `discreteTags` alone — the finisher
+  # ENTERED and its record built, with nothing in it forced — reads `list` +0, `sets` +191,
+  # `nrLookups` +2, invariant in n and in shape. The differential pays that entry on both of its
+  # columns and the direct arm pays it on one, which is the whole of the gap. `nrLookups` does
+  # NOT reduce to a constant between the two (+6 on `complete`, +2n+2 on `chain`): the two arms
+  # hand the finisher DIFFERENT tag maps, and lookups are the axis that reads the input. The
+  # isolation claim is `list` and `sets`; it is not made on the third axis.
+  #
+  # ★★ AND THE CELL THE PAIR EXISTS FOR IS `complete`, where the graph is ONE SCC and the direct
+  # arm therefore refuses — so the differential is the only reading available there, which is why
+  # it had to be shown to be a live one. `list.elements` at n = 100 / 200 / 400:
+  #
+  #     fbNode        259,317 / 1,038,617 / 4,157,217   exponent 2.00
+  #     fbNodeTags    219,403 /   878,803 / 3,517,603   exponent 2.00
+  #     difference     39,914 /   159,814 /   639,614   exponent 2.00
+  #     floor          20,003 /    80,003 /   320,003
+  #
+  # The finisher is 15.39% of the cell at every one of the three sizes, and on `sets.elements`
+  # 22.71 / 22.91 / 22.99% (29,950 / 119,850 / 479,650, also exponent 2.00). ★ BOTH TERMS RUN AT
+  # THE SAME EXPONENT HERE, so the share is flat and neither term is the one a growth claim about
+  # this cell is about — which is exactly what a single column cannot say, and the reason the
+  # finisher's class has to be read off its own column rather than inferred from the arm's. On
+  # `nrLookups` the difference is 10,390 / 40,690 / 161,290, exponent 1.98.
+  #
+  # ★ THE DISCRETE ARM IS SELF-GUARDING RATHER THAN SHAPE-GATED, which is why it carries no
+  # shape list to fall out of date. The quotient by the discrete partition IS the graph, so the
+  # supplied map is a valid SCC partition exactly when the graph is acyclic — and exactly when
+  # it is not, the finisher's ordering pass meets a cyclic quotient and REFUSES by name.
+  # Answerability and validity are coextensive, so the arm cannot report a figure for a
+  # partition that was never one. Measured: it refuses on `complete` and on `cycle`, and answers
+  # on `chain`, `wide`, `fleet` and `total`. `discreteTags` is its floor — the supplied map
+  # alone, no gen-graph work — for the same reason `floor` sits beside every other cell here.
+  #
+  # ★★ ARMED, because a pair nobody has shown able to see a move is not a guard. The dedup was
+  # removed from the finisher's `condEdges` (the rows then carry one entry per in-class edge
+  # instead of the distinct targets) and both columns re-read. At `complete` n = 400 the whole
+  # cell moved `list` 4,157,217 -> 3,997,616 and `sets` 2,085,799 -> 1,606,999, taking the
+  # differential from 639,614 to 480,013 on `list` and from 479,650 to 850 on `sets`, while
+  # `fbNodeTags` was BIT-IDENTICAL on all three axes — the live control saying the move is the
+  # finisher's and not a global one. At `total` n = 200 the differential moved -39,800 and the
+  # direct arm moved -39,800: the same perturbation read by two constructions that share no
+  # path. ★ The direction is DOWNWARD because the dedup is what the finisher spends there, so a
+  # cell budgeting only for growth would have scored that regression a win.
+  discreteTagsOf = { nodes, ... }: prelude.genAttrs nodes (v: v);
 
   # ── THE CLOSURE'S ROUND SCHEDULE, AS A PAIR ──
   # The shipped closure squares: `step current = unionEdges current (compose current current)`,
@@ -883,6 +970,16 @@ let
       (g.fbNode acc).sccs
     else if arm == "fbWork" then
       (g.fbWork acc).sccs
+    # ── THE DECOMPOSITION, AND ITS TWO HALVES ARE READ TOGETHER ── `fbNodeTags` forces the
+    # tag map ALONE, through the field `condensationOf` publishes it as, so `fbNode` minus this
+    # arm is the finisher. `condensationOfDiscrete` is the finisher standing alone on an acyclic
+    # shape and refuses on every other, and `discreteTags` is its floor.
+    else if arm == "fbNodeTags" then
+      (g.fbNode acc).sccOf
+    else if arm == "condensationOfDiscrete" then
+      (g.condensationOf acc (discreteTagsOf acc)).sccs
+    else if arm == "discreteTags" then
+      discreteTagsOf acc
     else if arm == "condensationClosure" then
       (g.condensationClosure acc).sccs
     # ── THE ACCESSOR HOIST, EACH SURFACE AGAINST THE CONSTRUCTION IT REPLACED ──
