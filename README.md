@@ -424,9 +424,10 @@ graph.dependentsOf       g "A"   # → [ "B" "X" ]  (TRANSITIVE — full reverse
 
 ### Ordering
 
-`topoOrder` is **the** ordering front door for the gen ecosystem — Kahn's algorithm
-(A. B. Kahn 1962; not Gilles Kahn 1974, which `preorder.nix` cites for something else)
-over an accessor. `entry*`/`phaseOrder` are the home-manager-style authoring layer on top
+`topoOrder` is **the** ordering front door for the gen ecosystem. Behind it are **two arms**:
+Kahn's algorithm (A. B. Kahn 1962; not Gilles Kahn 1974, which `preorder.nix` cites for
+something else) over an accessor, and a certificate-gated comparator arm that answers only
+where it can prove its answer is the one Kahn's would have given. `entry*`/`phaseOrder` are the home-manager-style authoring layer on top
 of it, for consumers that would rather write `before`/`after` constraints than build an
 accessor.
 
@@ -443,12 +444,32 @@ entryBetween befs afts   : entry
 phaseOrder  { name = entry; ... } : [ name ]           ( forward topological order )
 ```
 
-**`topoOrderKahn accessor`** is that algorithm published under its own name, and
-**`topoOrder`** is the door, which today delegates to it by identity. The two are separate
-because a default is a separate decision from an algorithm: a caller whose correctness
-depends on *which* arm answers binds the arm, and `coneRank` below is exactly such a
-caller. Everything documented for `topoOrder` holds verbatim for the arm — same formals,
-same refusals, same cycle report.
+**`topoOrderKahn accessor`** is Kahn's algorithm published under its own name, and
+**`topoOrder`** is the door, which **selects**. The two are separate because a default is a
+separate decision from an algorithm: a caller whose correctness depends on *which* arm
+answers binds the arm, and `coneRank` below is exactly such a caller. Everything documented
+for `topoOrder` holds verbatim for the arm — same formals, same refusals, same cycle report.
+
+**The selection is invisible in the answer, by construction.** The second arm sorts the nodes
+by `(out-degree, key)` and then CHECKS two things about that candidate: that every edge points
+strictly backwards in it, and that each element is a direct dependency of the next. The first
+makes it a topological order — and, over a total position map, proves the graph acyclic. The
+second means every topological order must place those pairs that way, so by transitivity there
+is exactly **one** such order and the candidate is it. Where both hold, the door emits what
+Kahn's arm would have emitted, necessarily and at every index; where either fails, Kahn's arm
+answers. The gate is what makes that true rather than likely: the same candidate emitted
+ungated diverges from this door on 1,990 of 2,000 positions on a fleet-shaped graph, and on a
+chain whose keys descend with depth it is not a topological order at all.
+
+**What it costs, both ways.** On the dense total order at `n = 2000` the door allocates
+**8,026,003** `list.elements` against the arm's **24,082,640** — 2.010 per edge net of the
+fixture against 10.042 — and **36,522** `sets.elements` against 21,960,278, because the
+comparator arm builds neither the reverse index nor the emission loop. On a shape the gate
+refuses, the door pays the check and nothing else: **`2n − 1`** `list.elements` and **`n`**
+`sets.elements`, constant in `E`, measured on every refused shape including the dense ones.
+★ A caller supplying a `lessThan` that is not a strict total order — the one precondition this
+door documents and cannot afford to check — can only produce a candidate the gate REJECTS, so
+that precondition is guarded here rather than merely stated.
 
 **`topoOrder accessor`** does **not** throw on a cycle. It returns a producers-first
 ordering, or the cycles that prevented one — as strongly-connected-component member sets,
@@ -487,7 +508,9 @@ which the front door declines to order. Measured: a 20,000-node chain orders und
 `topoOrder` and `phaseOrder`. **Cost is the only remaining bound**, and it is no longer a
 quadratic one: over `n = 1000 / 2000 / 4000` the loop's allocation grows by ×2.10–×2.12 per
 doubling on `list.elements` (exponent 1.07–1.08) and ×1.99–×2.18 on `sets.elements`
-(exponent 0.99–1.12), on all four acyclic shapes. A large graph gets slower rather than
+(exponent 0.99–1.12), on all four acyclic shapes — read on arm `topoOrderKahn`, which is the
+loop by name. Through the door the routed shapes are cheaper than that and the refused ones
+are the loop plus `2n − 1`. A large graph gets slower rather than
 refused, and it gets slower roughly in proportion to itself.
 
 **None of the loop's three carried structures is a quadratic.** The emitted sequence is held
@@ -538,7 +561,9 @@ against the wrong one is comparing a library to a fixture.
 
 Re-run, and the figures above have **two different producers**, split by whether they are a
 reading or a comparison. The growth rates and the per-node counts are readings of the shipped
-library: `ci/bench/cost-classes.nix`, arm `topoOrder`, at `n = 1000 / 2000 / 4000`. The
+library: `ci/bench/cost-classes.nix`, arm **`topoOrderKahn`** — the loop by name, which is what
+these figures are about; arm `topoOrder` is the door and answers a routed shape with the other
+arm — at `n = 1000 / 2000 / 4000`. The
 **shares and deltas** — the ready set's 60% / 21% / 43% / 0%, and the heap's 63 → 89 attrsets
 per node — are comparisons between **two revisions of this library**, and the array ready set
 exists at neither the tip nor in any arm of `ci/bench/cost-classes.nix`, so no command in this
@@ -550,7 +575,7 @@ third producer again: their shapes are in no arm of this bench, and they are rec
 `den-architecture`, `specs/2026-08-09-gen-graph-accumulator-remedies-spec.md`, alongside the
 arm-against-arm measurement the residue's fold trigger is derived from. **Post-change** cells
 — what the shipped `topoOrder` costs on any shape, as it stands — come from
-`ci/bench/cost-classes.nix`, arm `topoOrder`, shapes `wide` / `fleet` / `discrim` / `total` /
+`ci/bench/cost-classes.nix`, arm `topoOrderKahn`, shapes `wide` / `fleet` / `discrim` / `total` /
 `deepwide`. ★ Before quoting a
 `sets.elements` figure from that bench, read `ci/bench/sentinel.sh`: `sets` figures are
 comparable only within one revision of the bench file, and the sentinel is what says which
@@ -1002,7 +1027,7 @@ in {
 | `fbWork` | the mirror image: 1.00 on `cycle`, but its accumulator is a whole-value copy per component, so `sets` runs 1.35 → 1.53 on `fleet` while `list`/`nrLookups` stay at 1.04–1.05 | one forward–backward pass per COMPONENT over a `foldl'` accumulator. Complementary to `fbNode`, not ranked. ★ **It does NOT hoist its accessor, though it makes many closures**: hoisting builds a whole-graph `Θ(n)` memo up front, and this arm's closures **partition** the graph rather than re-covering it — each round walks a subgraph the earlier rounds have shrunk — so there is no second traversal over the same edges to spread that build cost over. Same mechanism as `dependentsOf`'s negative cell below. Measured 4.12× better on one deep `chain` (the one shape whose backward walk re-covers the whole unassigned tail every round) and 1.003–1.25× **worse** on `complete`, `fleet`, `wide`, `total` and `cycle`, the decisive losses being `cycle` (1.243×) and `complete`'s `nrLookups` (1.397×). ★ **Restriction ordering is not the lever**, measured: an arm memoizing plain adjacency and restricting *before* wrapping recovers none of it — worst of three on `fleet`, and within 4 sets of the full hoist on `cycle` while both memoizing arms sit ~2,400 above the shipped one. Arms `fbWork` / `fbWorkHoisted` |
 | `condensationClosure` | **closure class** (see below) | one transitive closure. The second closure over the quotient is gone — every arm now takes its `bottomUp` and `depth` from one `coneRank` pass over the condensation instead, which is `topoOrderKahn`-warmed and reaches no fixpoint |
 | `coneRank` | O(|cone| + edges-in-cone) for the recurrence, **plus one ordering pass** — `list` exponent 1.07 on `chain` and `fleet`, `sets` 1.00–1.02, `nrLookups` 1.00–1.06 (n = 1000 → 8000) | `lib.fix` memoized depth, cone-local (no condensation), warmed along `topoOrderKahn`'s order. **No ceiling found to 32,000** on `chain` or `deepwide`; a cyclic cone is a named refusal. The construction it replaced is linear on all three axes and aborts past ~4,000 on `chain` — `ci/bench/cost-classes.nix`, arms `coneRank` / `coneRankShipped` |
-| `topoOrder` / `phaseOrder` | O(n + E) decrements, and **near-linear in allocation** — exponent 1.07–1.08 on `list.elements` and 0.99–1.12 on `sets.elements`, all four acyclic shapes | nothing the loop carries is quadratic: the emitted sequence is a binary-counter run list (Θ(n log n)), the indegree map is a residue over a rebuilt base, and the ready set is a leftist heap (Θ(n log n)), where a re-sorted array was a third quadratic worth 60% of the `wide` list allocation. The heap's `sets.elements` price, 63 → 89 attrsets per node over n = 1000 → 8000, is now the leading set-axis term. No frame ceiling — the loop is a bounded iteration, so no node count aborts or is refused |
+| `topoOrder` / `phaseOrder` | O(n + E) decrements through the Kahn arm, and **near-linear in allocation** — exponent 1.07–1.08 on `list.elements` and 0.99–1.12 on `sets.elements`, all four acyclic shapes, read on arm `topoOrderKahn`. ★ Through the DOOR a shape the certificate admits is cheaper by a class of construction rather than a constant — `18n` on a chain against the loop's 1.07 exponent, 2.010 `list`/edge against 10.042 on the dense total order — and a shape it refuses is the loop plus `2n − 1` | nothing the loop carries is quadratic: the emitted sequence is a binary-counter run list (Θ(n log n)), the indegree map is a residue over a rebuilt base, and the ready set is a leftist heap (Θ(n log n)), where a re-sorted array was a third quadratic worth 60% of the `wide` list allocation. The heap's `sets.elements` price, 63 → 89 attrsets per node over n = 1000 → 8000, is now the leading set-axis term. No frame ceiling — the loop is a bounded iteration, so no node count aborts or is refused |
 | `directDependents` / `directDependentsOf` | `Θ(n + E)` | one `groupBy` reverse-adjacency map — this is `_reverseIndex`, whose `concatMap` visits every node, so a node with no out-edges still costs its visit |
 | `seededFixpoint` | O(work per delta) | semi-naive: each iteration touches only the frontier |
 | `roots` / `leaves` | O(nodes × avg degree) | single scan of all edges |
@@ -1091,7 +1116,7 @@ nix-unit --flake ./ci#testsError   # cells asserting an ERROR (nix-unit `expecte
 nix flake check ./ci               # the batch gate, which covers ./ci#tests
 ```
 
-**404 tests** across **20 suites** in `./ci#tests` (`arms`, `edge-maps`, `enumerate`,
+**410 tests** across **20 suites** in `./ci#tests` (`arms`, `edge-maps`, `enumerate`,
 `fixpoint-tests`, `global`, `hoist`, `integration`, `labeled-global`, `order`,
 `order-front-door`, `partition`, `prelude-domain`, `preorder`, `purity`, `query`, `regex`,
 `registry`, `scan`, `topo`, `traverse`), plus **20** in `./ci#testsError` — run under [nix-unit](https://github.com/nix-community/nix-unit) via
@@ -1113,7 +1138,7 @@ The algorithms and design principles draw from:
 - **Arntzenius & Krishnaswami (2016)** — *Datafun: A Functional Datalog*. *Implements.* Monotone fixpoint iteration with convergence guarantees. The `fixpoint` operator enforces monotonicity (edge count must not shrink between iterations), matching Datafun's requirement that fixpoint computations operate over monotone functions on semilattices. Reverse reachability in `dependents`/`dependentsOf` follows the Datafun reverse-query pattern. `directDependents`/`directDependentsOf` expose the underlying reverse-adjacency index directly: the **immediate** reverse neighbours (one edge), in contrast to `dependentsOf`'s **transitive** reverse closure — the distinction matters when a consumer must enumerate only its direct producers' dependents without re-materializing the whole reverse cone.
 - **Tarjan (1983)** — *Data Structures and Network Algorithms (RTD)*. *Implements.* Topological rank by longest incoming path. `coneRank` assigns each node `depth = 1 + max(depth of producers)` — the standard topological-rank recurrence — but **restricted to a cone**: only producers inside the supplied node set count, so the rank is computed in O(|cone| + edges-in-cone) via `lib.fix` memoization rather than over the whole graph. Ordering by ascending depth yields a producers-first (reverse-topological) enumeration without building `condensation`. The recurrence is memoized, which makes it linear and also made it a *descent*: forcing the memo map in an unfavourable order walked the cone one evaluator frame per link. The map is therefore forced along a topological order of the cone taken from `topoOrderKahn`, which flattens that descent — the rank recurrence is unchanged, only the order in which its cells are demanded.
 - **Neron et al. (2015)** — *A Theory of Name Resolution*. *Implements.* Parent-chain traversal (`ancestorsOf`) follows scope graph P-edge resolution: walking the `parent` partial function upward through scopes corresponds to following P-edges in the resolution calculus (Neron 2015 §2.3). Silent cycle termination chosen over throwing for composability, matching the well-foundedness requirement on the parent relation.
-- **Kahn, A. B. (1962)** — *Topological sorting of large networks*, CACM 5(11). *Implemented.* `topoOrder` is Kahn's algorithm: an indegree count over the dependency relation, a ready set of indegree-zero nodes, decrement-on-emit restricted to the pick's successors, and the residual-emptiness check that detects a cycle. Incomparable nodes are emitted in ascending key order, which is what makes the result a function of the node set rather than of the input permutation. This is A. B. Kahn 1962 and **not** Gilles Kahn 1974 below — a different author and a different result, a conflation this codebase has made before. Min-extraction over the ready set is the one place the algorithm is not linear, and the ready set is a **leftist heap** (see Crane 1972 / Okasaki 1998 below) — O(log m) insert and delete-min, so the loop attains the Ω(m log m) comparison bound that emitting in min-key order under a caller-supplied comparator inherits. ★ This entry previously recorded that a priority queue was out of reach because pure Nix has no mutable heap. That is false: persistent priority queues need no mutation. The same claim is still what `condensationClosure` gives for not being Tarjan's algorithm, and **that** justification is now unsupported rather than re-derived. The cycle report is deliberately **not** read off the Kahn residual, which knows only that nodes went unemitted and not which cycles they form; it comes from `cycles` and a partition arm (`fbNode`, bound by name), so the failure path pays both — and neither may be quoted as the cost alone, since which of the two is larger flips with the graph's shape and with the allocation axis measured — while the success path pays neither.
+- **Kahn, A. B. (1962)** — *Topological sorting of large networks*, CACM 5(11). *Implemented.* **`topoOrderKahn`** is Kahn's algorithm and `topoOrder` is the door that selects it (see Ordering): an indegree count over the dependency relation, a ready set of indegree-zero nodes, decrement-on-emit restricted to the pick's successors, and the residual-emptiness check that detects a cycle. Incomparable nodes are emitted in ascending key order, which is what makes the result a function of the node set rather than of the input permutation. This is A. B. Kahn 1962 and **not** Gilles Kahn 1974 below — a different author and a different result, a conflation this codebase has made before. Min-extraction over the ready set is the one place the algorithm is not linear, and the ready set is a **leftist heap** (see Crane 1972 / Okasaki 1998 below) — O(log m) insert and delete-min, so the loop attains the Ω(m log m) comparison bound that emitting in min-key order under a caller-supplied comparator inherits. ★ This entry previously recorded that a priority queue was out of reach because pure Nix has no mutable heap. That is false: persistent priority queues need no mutation. The same claim is still what `condensationClosure` gives for not being Tarjan's algorithm, and **that** justification is now unsupported rather than re-derived. The cycle report is deliberately **not** read off the Kahn residual, which knows only that nodes went unemitted and not which cycles they form; it comes from `cycles` and a partition arm (`fbNode`, bound by name), so the failure path pays both — and neither may be quoted as the cost alone, since which of the two is larger flips with the graph's shape and with the allocation axis measured — while the success path pays neither.
 - **Crane (1972)** — *Linear Lists and Priority Queues as Balanced Binary Trees*; **Knuth, *TAOCP* vol. 3 §5.2.3**. *Implements.* `topoOrder`'s ready set is a leftist heap: `null | { k; l; r; rank; }`, `rank` the right-spine length, with the leftist invariant `rank l >= rank r` at every node. Merge walks and rebuilds the two right spines, which the invariant keeps at O(log m), and insert and delete-min are both defined as a merge. Immutability is paid in **path copying** rather than in asymptotics — no node is overwritten, so a merge allocates one attrset per node on the spine it rebuilds, giving Θ(n log n) attrsets over the loop. That is an achieved upper bound, not a proven optimum: the comparison-sorting bound rules out a Θ(n) *comparison-based ordering*, but it does not prove Θ(n log n) *allocations* necessary.
 - **Okasaki (1998)** — *Purely Functional Data Structures*, §3.1. *Informed by.* The book's subject is exactly this substrate restriction: priority queues with O(log n) worst-case merge and delete-min and no mutable store. Leftist heaps are §3.1; skew heaps (Sleator & Tarjan 1986) and pairing heaps (Fredman, Sedgewick, Sleator & Tarjan 1986) are alternatives with the same property. Cited here because "pure Nix cannot express a priority queue" was written into this library as a justification for a quadratic, and it is a false impossibility claim.
 - **Kahn (1974)** — *The Semantics of a Simple Language for Parallel Programming*. *Informed by.* Continuous functions over streams with deterministic dataflow semantics. gen-graph's lazy accessor pattern — traversal only forces nodes it visits — aligns conceptually with Kahn's model where computing stations produce output incrementally as input arrives, and monotonicity ensures that receiving more input can only provoke more output (Kahn 1974 §2.2.4). The pre-order combinators (`preorder.nix`) make this demand property load-bearing: `expandPreorder`'s `edges` read the *resolved* payload, so a node's successors are demand-generated, and a `seen0`-pruned frame is never forced.
