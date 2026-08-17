@@ -129,40 +129,38 @@ let
     in
     builtins.sort builtins.lessThan (traverse.reachableFrom { edges = revEdges; } targetId);
 
-  # Reverse-reachability cone of targetId, walked level-by-level, descending into
-  # a node's dependents only when `prune node` is true. A pruned node is still
-  # included (reached) but not expanded — the early-cutoff stop. genericClosure
-  # cannot include-but-not-expand, so this is a hand-rolled BFS with a visited
-  # attrset (cycle guard: each id enters the frontier at most once).
-  # Reduces to `dependentsOf` when `prune = _: true`.
-  # It does NOT inherit the operator's cost law, even in that limit:
-  # Θ(n + E) for the index, then a per-visit Θ( Σ_{u ∈ expanded} (1 + indeg u) ) over what
-  # `prune` admits — a pruned node is reached without paying its in-degree — PLUS an
-  # accumulator term `genericClosure` does not have. The `visited // genAttrs fresh` below
-  # copies the whole visited set once per level, so the walk is Θ(levels × |visited|):
-  # quadratic on a deep cone (a chain, in-degree 1, is the witness) however bounded the
-  # in-degree, where `genericClosure` accumulates natively and stays flat.
+  # Reverse-reachability cone of targetId with an early cutoff: a node's own dependents are
+  # descended into only when `prune node` is true. A pruned node is still included (it was
+  # reached) but is not expanded.
+  #
+  # ★ THAT CUTOFF IS EXPRESSIBLE IN `genericClosure`, AND IS EXPRESSED IN IT. Inclusion and
+  # expansion are two separate moments: a node enters the closure when its PARENT emits it,
+  # and the operator runs on it only afterwards. So an operator returning `[ ]` for a pruned
+  # node INCLUDES that node and does not EXPAND it, which is precisely the early-cutoff stop.
+  # The C-level done set is the cycle guard, and it subsumes both the visited attrset and the
+  # `unique` a hand-rolled level walk needs on its seeds.
+  # Reduces to `dependentsOf` when `prune = _: true`, and inherits the operator's cost law in
+  # that limit: Θ(n + E) for the reverse index, then Θ( Σ_{u ∈ expanded} (1 + indeg u) ) over
+  # what `prune` admits — a pruned node is reached without paying its in-degree — and NO
+  # accumulator term, because there is no accumulator to copy.
   dependentsFrontier =
     { edges, nodes, ... }:
     targetId: prune:
     let
       reverseIndex = _reverseIndex { inherit edges nodes; };
       revOf = id: reverseIndex.${id} or [ ];
-      go =
-        visited: frontier:
-        if frontier == [ ] then
-          visited
-        else
-          let
-            expandable = builtins.filter prune frontier;
-            neighbours = prelude.unique (prelude.concatMap revOf expandable);
-            fresh = builtins.filter (id: !(visited ? ${id})) neighbours;
-          in
-          go (visited // prelude.genAttrs fresh (_: true)) fresh;
-      seed0 = if prune targetId then prelude.unique (revOf targetId) else [ ];
-      reached = go (prelude.genAttrs seed0 (_: true)) seed0;
+      keyed = map (k: {
+        key = k;
+      });
+      seed0 = if prune targetId then revOf targetId else [ ];
+      reached = builtins.genericClosure {
+        startSet = keyed seed0;
+        operator = item: if prune item.key then keyed (revOf item.key) else [ ];
+      };
     in
-    builtins.sort builtins.lessThan (builtins.filter (id: id != targetId) (builtins.attrNames reached));
+    builtins.sort builtins.lessThan (
+      builtins.filter (id: id != targetId) (map (item: item.key) reached)
+    );
 
   # Reverse all edge directions, return new accessor set. Mokhov 2017 §5.2 Graph
   # Transpose: transpose flips the arguments of `connect` and leaves `overlay`

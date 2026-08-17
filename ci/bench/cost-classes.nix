@@ -693,6 +693,22 @@ let
   # published from a pre-`cyclechord` revision is therefore low by 1 at every n: a constant, so
   # no exponent, ratio or class claim quoted from one moves. The offset is LEFT IN.
   #
+  # ★ RUN AND NOT RE-PINNED FOR THE REVERSE-CONE ARMS, which is itself a reading and is recorded
+  # as one. The pins did not move: verdict STABLE, deltas 0 on all three axes on all three
+  # cells, decomposed in the order the ★★★ block above prescribes —
+  #   · the BENCH edit alone, read against the UNEDITED library: STABLE, 0/0/0 on every cell.
+  #     Two arms on the `if`-chain and one `let` binding, no new SHAPE and no new name in the
+  #     library's merged export set, so there is nothing for a pinned cell to see. The same
+  #     zero the `coneRank` arms contributed, and for the same reason;
+  #   · the LIBRARY edit on top of it: STABLE, 0/0/0 again. `dependentsFrontier` was rewritten
+  #     INSIDE an existing binding — the export set is unchanged in name and in arity — and no
+  #     sentinel cell reaches a reverse cone, so both halves are zero and so is their sum.
+  # ★ AND THE ZERO IS A READING RATHER THAN A DEAD INSTRUMENT, established by arming it on the
+  # same tree in the same run: one throwaway shape added to `mkFixtures` moves `sets` +1
+  # UNIFORMLY on all three cells with `list` and `nrLookups` bit-identical, verdict
+  # SHIFTED-BENIGN — the documented one-shape signature above, reproduced. A STABLE verdict
+  # from an instrument nobody has shown able to move is not evidence; this one was shown.
+  #
   # The pins below are read from the FROZEN bench at this revision, with the offsets LEFT IN.
   sentinelPins = {
     sentinel = {
