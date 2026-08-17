@@ -53,8 +53,8 @@ let
     b = [ "c" ];
     c = [ "a" ];
   };
-  # `den-hoag-ges2` F1: a 2-cycle at the head of a chain — the abort arrives at depth 2
-  # while the cone is four nodes deep.
+  # `cycshort` — a 2-cycle at the HEAD of a chain: the abort arrives at depth 2 while the cone is
+  # four nodes deep. That gap is the whole point of the shape, and `cyclic` above does not show it.
   cycshort = mkAcc {
     a = [ "b" ];
     b = [ "a" ];

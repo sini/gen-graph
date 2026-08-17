@@ -7,10 +7,10 @@
 # delegation. `coneRank` binds the ARM, so a caller reading the door's order and a caller
 # reading the arm's must see the same sequence for as long as the door delegates.
 #
-# ELEMENT-WISE, never a summary. `{ first, last, len }` agreement is not agreement: two
-# valid topological orders over the same graph share all three and differ at index 1 (the
-# measurement `den-hoag-nz21` records on `fleet`/`discrim`). Every cell below compares the
-# whole emitted list by value.
+# ELEMENT-WISE, never a summary. `{ first, last, len }` agreement is not agreement: two valid
+# topological orders over the same graph share all three and differ at index 1 — measured on the
+# `fleet` and `discrim` shapes, which are the generated shapes this file and the bench share.
+# Every cell below compares the whole emitted list by value.
 #
 # The shapes are the bench's, verbatim, so a figure measured in `ci/bench/cost-classes.nix`
 # and a verdict asserted here are about the same graphs.

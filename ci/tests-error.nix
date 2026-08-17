@@ -56,8 +56,9 @@ let
       }
     ];
   };
-  # `den-hoag-ges2` F1's own fixture: a 2-cycle at the HEAD of a chain, which is the shape
-  # that shows the abort it replaces arrives at depth 2 rather than at any bound.
+  # `cycshort` — a 2-cycle at the HEAD of a chain, which is the shape that shows the abort it
+  # replaces arrives at depth 2 rather than at any bound. `ci/bench/cone-consultation.nix` builds
+  # the same shape under the same name, so its figure and this refusal are about one graph.
   cycshort = mkGraph {
     edges = [
       {
@@ -186,8 +187,10 @@ let
     surface: cap:
     "^gen-graph: ${surface}: the graph's reachability diameter exceeds 2\\^${toString (cap - 1)}, the depth reached by the closure fixpoint's iteration cap of ${toString cap} under repeated squaring\\. The closure step is monotone on the subset order by construction, so an unconverged closure at the cap is depth and nothing else\\.$";
 
-  # `den-hoag-73uq`'s mode: removes one edge and adds another, so `countEdges` is constant and the
-  # cardinality guard never fires. Non-convergence surfaces `maxIter` rounds later.
+  # The antitone mode: removes one edge and adds another, so `countEdges` is constant and the
+  # cardinality guard never fires. Non-convergence surfaces `maxIter` rounds later — which is what
+  # makes this step the one worth pinning: a step that changed the count would be caught earlier,
+  # by the guard, and would say nothing about the iteration bound.
   antitoneStep = cur: if (cur.a or [ ]) == [ "x" ] then { a = [ "y" ]; } else { a = [ "x" ]; };
 in
 {
