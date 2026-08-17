@@ -1091,10 +1091,10 @@ nix-unit --flake ./ci#testsError   # cells asserting an ERROR (nix-unit `expecte
 nix flake check ./ci               # the batch gate, which covers ./ci#tests
 ```
 
-**339 tests** across **17 suites** in `./ci#tests` (`arms`, `edge-maps`, `enumerate`,
-`fixpoint-tests`, `global`, `integration`, `labeled-global`, `order`, `order-front-door`,
-`preorder`, `purity`, `query`, `regex`, `registry`, `scan`, `topo`, `traverse`), plus **3**
-in `./ci#testsError` — run under [nix-unit](https://github.com/nix-community/nix-unit) via
+**404 tests** across **20 suites** in `./ci#tests` (`arms`, `edge-maps`, `enumerate`,
+`fixpoint-tests`, `global`, `hoist`, `integration`, `labeled-global`, `order`,
+`order-front-door`, `partition`, `prelude-domain`, `preorder`, `purity`, `query`, `regex`,
+`registry`, `scan`, `topo`, `traverse`), plus **20** in `./ci#testsError` — run under [nix-unit](https://github.com/nix-community/nix-unit) via
 the gen CI harness (`gen.lib.mkCi`). The `purity` suite asserts the library source stays
 nixpkgs-lib-free (gen-prelude only).
 
