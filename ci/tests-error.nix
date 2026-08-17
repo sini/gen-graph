@@ -92,7 +92,17 @@ let
   # closure needs 23 rounds), and the fork supplies the out-degree: `transitiveReduction`
   # shares one closure binding behind a `mid != to` guard, so on a graph whose every node has
   # out-degree ≤ 1 that binding is never forced and the surface would not reach the ceiling
-  # at all. One node with two successors puts all four members on the same path.
+  # at all. One node with two successors puts all four members on the same path — measured:
+  # under the squared schedule all four have the same cap boundary on this fixture.
+  #
+  # ★★ ITS DIAMETER IS 23, NOT 24, AND THE FORK EDGE IS WHY. `n000000 → n000002` is a
+  # SHORTCUT: it skips `n000001`, so the longest shortest path is one hop shorter than the
+  # bare chain's. Measured by BFS — this fixture 23, the same chain WITHOUT the fork edge 24,
+  # a 50-node bare chain 49 as the control that the instrument reads a chain correctly. The
+  # "23 rounds" above is therefore right, and the naive schedule's own boundary confirms it
+  # from the other side: it returns iff the cap ≥ the diameter, and on this fixture that is
+  # cap ≥ 23 rather than 24. Worth stating because the fork reads like added depth and is
+  # subtracted depth, and a reader who counts chain links gets 24.
   pad =
     i:
     let
@@ -119,9 +129,27 @@ let
   # cap of 1,000 stands for a diameter of 2^999, and no fixture reaches that.
   # ★ ONE BINDING, because the cap and the bound the cells assert must move together. The
   # refusal pattern derives its bound from this number; a second copy is a copy to keep in step.
-  cappedIter = 5;
+  #
+  # ★★ THE MARGIN IS FOUR ROUNDS, AND IT IS STATED HERE BECAUSE IT USED TO BE ONE. These cells
+  # assert a THROW, so they go vacuously green the moment the cap reaches the boundary at which
+  # the closure converges — and the squared schedule moved that boundary from 23 rounds to 6.
+  # At the previous cap of 5 the margin was a SINGLE round: one fixture or cap edit from a cell
+  # that passes by converging rather than by refusing, with nothing in the file saying so. The
+  # cap is 2 and the measured boundary on this fixture is 6, on all four surfaces, so the
+  # margin is four rounds. Lowering the cap is the right lever rather than deepening the
+  # fixture, because the shipped-cap controls below are themselves a cell about the SCHEDULE
+  # and a deeper fixture would move their answers for an unrelated reason.
+  cappedIter = 2;
   capped = fork // {
     maxIter = cappedIter;
+  };
+  # One round below the measured boundary of 6: the tightest cap at which this fixture must
+  # still refuse. It is the margin's tripwire, and it is derived from the boundary rather than
+  # written beside it so that moving one moves the other.
+  boundaryIter = 6;
+  marginProbeIter = boundaryIter - 1;
+  marginProbe = fork // {
+    maxIter = marginProbeIter;
   };
 
   # ONE DRIVER PER CLASS MEMBER, keyed by the name its refusal must carry. The cells below
@@ -224,6 +252,21 @@ in
             expectedError = {
               type = "ThrownError";
               msg = closureRefusal surface cappedIter;
+            };
+          };
+        }) genGraph.closureClass
+        # ★ THE MARGIN, ASSERTED RATHER THAN LEFT FOR A READER TO COMPUTE. The cells above pass
+        # by REFUSING, so they go vacuously green the moment the closure starts converging
+        # inside the cap. `marginProbe` is one round BELOW the measured boundary: it must still
+        # throw. If a cheaper schedule ever moves the boundary down onto the cap, this cell goes
+        # red first and says so, where the cells above would simply stop testing anything.
+        ++ map (surface: {
+          name = "test-closure-${surface}-still-refuses-one-round-below-the-boundary";
+          value = {
+            expr = drive.${surface} marginProbe;
+            expectedError = {
+              type = "ThrownError";
+              msg = closureRefusal surface marginProbeIter;
             };
           };
         }) genGraph.closureClass
