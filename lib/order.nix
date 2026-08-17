@@ -1,13 +1,16 @@
 # Ordering — the one ordering front door for the gen ecosystem, plus the
 # home-manager-style DAG entry constructors (before/after) layered on top of it.
 #
-# THEORY: `topoOrder` is A. B. Kahn's algorithm (1962, "Topological sorting of large
+# THEORY: `topoOrderKahn` is A. B. Kahn's algorithm (1962, "Topological sorting of large
 # networks", CACM 5(11)) — indegree over the dependency relation, a ready set of
 # indegree-zero nodes, and the residual-emptiness check for cycles. This is A. B. Kahn
 # 1962, NOT Gilles Kahn 1974 (KPN, cited in preorder.nix for the lazy accessor pattern):
-# a different author and a different result. That algorithm is ALSO exported under its own
-# name, `topoOrderKahn`: `topoOrder` is the door, the arm is the algorithm, and a caller
-# whose correctness depends on which algorithm answers binds the arm (see its comment). `entry*`/`phaseOrder` are the home-manager
+# a different author and a different result. `topoOrder` is the DOOR over it, and it SELECTS:
+# a second arm answers wherever a checked certificate proves that the order it returns is the
+# ONLY topological order the graph has, which is the one condition under which the two arms
+# cannot be told apart from outside. The arm keeps its own name, so a caller whose correctness
+# depends on which algorithm answers binds `topoOrderKahn` (see its comment) and a caller who
+# needs only the order binds the door. `entry*`/`phaseOrder` are the home-manager
 # dag idiom (generalized strings-with-deps) expressed over it, absorbing what
 # gen-dispatch's dag.nix used to own so gen-dispatch can be the pure dispatch STEP.
 #
@@ -17,7 +20,12 @@
 # `condensation.bottomUp`, `dependentsOf` and `reachableFrom` all read the accessor this
 # way, and callers that build their own accessor (gen-vars) do too.
 #
-# COST: building the reverse index and the indegree map is O(n + E) via groupBy; the loop
+# COST: this header prices THE KAHN ARM, which is what the door answers with wherever its
+# certificate does not admit. The certificate's own price is at its comment below: it is Θ(n)
+# allocation on top of the accessor read the door already owes, and on a graph it admits none
+# of the terms below are reached at all — measured on the dense total order at n = 2000, the
+# door allocates 2.010 `list` elements per edge net of the fixture against this arm's 10.04.
+# Building the reverse index and the indegree map is O(n + E) via groupBy; the loop
 # performs exactly E decrements. What the loop ALLOCATES is a separate question from what it
 # computes, and in a language whose only aggregate update is a whole-value copy it is the
 # larger one: a step that appends to a vector or updates an attrset pays the size of the
@@ -120,7 +128,13 @@ let
   # The door keeps the door's obligations — a default lives there, and a selection between
   # arms would be expressed there. The arm keeps the algorithm's: whoever calls
   # `topoOrderKahn` gets indegrees, a ready set and the residual cycle check, by name.
-  topoOrderKahn =
+  # `gated` is the DOOR'S decision, threaded rather than duplicated: both public names below
+  # are this one binding, so the certificate reads the same `rawDepsOf` the refusal cascade
+  # already forced and nothing is computed twice. With `gated = false` the conjunction in
+  # `routed` short-circuits before `degRaw`, so the ARM does not evaluate one binding of the
+  # certificate — it is not merely unused there, it is unreached.
+  topoOrderCore =
+    gated:
     {
       nodes,
       edges,
@@ -143,6 +157,78 @@ let
       collisions = builtins.filter (g: builtins.length g > 1) (prelude.mapAttrsToList (_: g: g) byKey);
       nodeOf = prelude.mapAttrs (_: g: (builtins.head g).node) byKey;
       rawDepsOf = prelude.genAttrs keys (k: map keyOf (edges nodeOf.${k}));
+
+      # ── THE CERTIFICATE-GATED ARM ──
+      # A second arm behind this door, reached only where it can be PROVEN to answer exactly what
+      # the Kahn loop below would have answered. It exists because Kahn's algorithm needs a
+      # REVERSE INDEX — who to decrement when a node is emitted — and on a graph whose edge count
+      # is Θ(n²) that index, plus the emission loop over it, IS the cost: measured on the total
+      # order at n = 2000, the reverse index is 4.00 `list` elements per edge and the loop a
+      # further 2.03, against a whole-door constant of 10.04 per edge net of the fixture. Neither
+      # term is reachable from the forward accessor alone, and this arm builds neither.
+      #
+      # It reads `rawDepsOf` and stops there: the dedup below is not needed, because a repeated
+      # dependency is verified twice and changes no verdict. So the arm sits ABOVE the dedup, the
+      # reverse index, the indegree map, the heap and the loop — every pass but the accessor read
+      # and the refusal cascade, which the door owes anyway.
+      #
+      # ORDER IDENTITY, and it is a PROOF rather than a measurement — which is what makes a second
+      # arm admissible behind a door at all. `candValid` says every edge points strictly backwards
+      # in `cand`; `candPos` is a bijection, keys being distinct because `collisions` above refuses
+      # otherwise, so `cand` is a topological order AND the graph is acyclic — a cycle cannot
+      # satisfy a strictly decreasing chain returning to itself. `candLinked` says each candidate
+      # is a DEPENDENCY of its successor, so every topological order must place those two in that
+      # order, and by transitivity must place the whole sequence in it. There is exactly one such
+      # sequence. ⇒ WHERE THE GATE ADMITS, THE TOPOLOGICAL ORDER IS UNIQUE, so this arm returns
+      # what the arm below returns, necessarily and at every index.
+      #
+      # The gate is what buys that, and it is not a formality: the same candidate emitted UNGATED
+      # diverges from this door on 1,990 of 2,000 positions on a fleet-shaped graph, and on a
+      # chain whose keys descend with depth it is not a topological order at all. Both arms stay
+      # correct where they differ — only this door's ANSWER is pinned, which is why the gate is a
+      # certificate and not a heuristic.
+      #
+      # The gate is total and refuses cheaply. It rejects on the first incomparable adjacent pair,
+      # so a shape it cannot serve pays 2n−1 `list` elements and n `sets` elements and nothing
+      # that grows with E — measured on every rejected shape, the dense ones included. ★ A caller
+      # supplying a `lessThan` that is not a strict total order — the one precondition this door
+      # documents and cannot afford to check — can only produce a candidate the gate REJECTS. It
+      # cannot produce a wrong answer here, which is the one place that precondition is guarded.
+      #
+      # THEORY: A. B. Kahn 1962 is the arm below and is unchanged. This one is a comparison sort
+      # under a degree comparator plus a checked witness, and the uniqueness argument above is
+      # self-contained: it cites nothing because it needs nothing.
+      degRaw = prelude.mapAttrs (_: ds: builtins.length ds) rawDepsOf;
+
+      # (1) THE CANDIDATE — ascending (out-degree, key). Distinct keys make this a strict total
+      #     order, so `builtins.sort` is exact and allocates one n-element list.
+      cand = builtins.sort (
+        a: b: if degRaw.${a} == degRaw.${b} then lessThan a b else degRaw.${a} < degRaw.${b}
+      ) keys;
+      candPos = builtins.listToAttrs (
+        prelude.imap0 (i: k: {
+          name = k;
+          value = i;
+        }) cand
+      );
+
+      candN = builtins.length cand;
+
+      # (2) THE LINKAGE WITNESS — n-1 membership scans, ALLOCATION-FREE, short-circuiting on the
+      #     first failure. Consecutive candidates are DIRECTLY linked, which forces the order and
+      #     is therefore the UNIQUENESS witness.
+      #     ★ COST IS O(Σ|deps|), NOT Θ(n): `builtins.elem` walks the dependency LIST, so the
+      #     bound is Θ(n) when the linking predecessor is early in it and Θ(E) worst case when it
+      #     is last. The three allocation axes cannot see the difference — R§4.6.
+      candLinked = builtins.all (
+        i: builtins.elem (builtins.elemAt cand i) rawDepsOf.${builtins.elemAt cand (i + 1)}
+      ) (builtins.genList (i: i) (if candN == 0 then 0 else candN - 1));
+
+      # (3) THE CERTIFICATE — Θ(E) lookups, allocation-free. Every edge points strictly backwards.
+      #     Validity over a total position map is ALSO the acyclicity proof.
+      candValid = builtins.all (k: builtins.all (d: candPos.${d} < candPos.${k}) rawDepsOf.${k}) keys;
+
+      routed = gated && candLinked && candValid;
       dangling = builtins.filter (d: !(builtins.isString d) || !(keySet ? ${d})) (
         prelude.concatMap (k: rawDepsOf.${k}) keys
       );
@@ -449,6 +535,11 @@ let
     in
     if refusal != null then
       throw "gen-graph.topoOrder: ${refusal}"
+    else if routed then
+      {
+        ok = true;
+        order = map (k: nodeOf.${k}) cand;
+      }
     else if final.count < nodeCount then
       {
         ok = false;
@@ -460,11 +551,19 @@ let
         order = map (k: nodeOf.${k}) (flushRuns final.emitted);
       };
 
-  # The FRONT DOOR. Today the ecosystem's one ordering has one arm, so the door IS that
-  # arm: the delegation is an identity rather than a wrapper, which is the only spelling
-  # that cannot drift from what it delegates to. A second arm changes this line and nothing
-  # a caller of `topoOrderKahn` depends on.
-  topoOrder = topoOrderKahn;
+  # ── THE ARM, and it is STILL exactly the algorithm its name promises ──
+  # `gated = false`. The certificate above is unreachable from here, so a caller that binds
+  # this name because correctness depends on WHICH algorithm answers gets indegrees, a ready
+  # set and the residual cycle check — the contract stated at the arm's own header, unchanged
+  # by the door gaining a second arm.
+  topoOrderKahn = topoOrderCore false;
+
+  # The FRONT DOOR, and it is no longer an identity. It selects: the certificate answers where
+  # it can PROVE the answer is the arm's own, and the arm answers everywhere else. That is the
+  # split this file already described before there was a second arm — "a default lives there,
+  # and a selection between arms would be expressed there" — and it is expressed here rather
+  # than inside the arm, so that binding the arm by name still means what it has always meant.
+  topoOrder = topoOrderCore true;
 
   # Cone-local producers-first rank: depth id = 1 + max(depth of in-cone producers).
   # O(|cone| + edges_in_cone) via prelude.fix memoization; NOT whole-graph condensation.

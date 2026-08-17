@@ -920,5 +920,219 @@ in
         "b7"
       ];
     };
+    # ── THE CERTIFICATE-GATED ARM (`lib/order.nix`) ──
+    # The door has two arms and the gate decides between them. These cells pin the DECISION,
+    # not the cost: every exact order already pinned above is the identity assertion for the
+    # shapes it covers, and it is unchanged by the arm — which is the point of the certificate.
+    #
+    # The total order is the routed class: node i depends on every j > i, so the topological
+    # order is FORCED and there is exactly one. Both arms answer it; the gate is what lets the
+    # cheap one answer.
+    test-topo-certificate-routes-a-forced-order = {
+      expr =
+        (topoOrder (
+          acc
+            [
+              "a"
+              "b"
+              "c"
+              "d"
+            ]
+            {
+              a = [
+                "b"
+                "c"
+                "d"
+              ];
+              b = [
+                "c"
+                "d"
+              ];
+              c = [ "d" ];
+            }
+        )).order;
+      expected = [
+        "d"
+        "c"
+        "b"
+        "a"
+      ];
+    };
+    # ★ THE CELL THAT SAYS THE GATE IS LOAD-BEARING. Here the (out-degree, key)-sorted candidate
+    # is a VALID topological order — `[ "m0" "m1" "a0" "a1" ]` — and it is NOT this door's
+    # answer, because the two source nodes are incomparable and the candidate stratifies them
+    # while the door interleaves by key. The linkage witness refuses (`m0` is not a dependency
+    # of `m1`), so the Kahn arm answers and the sequence is unchanged. Delete the witness and
+    # this cell is what goes red.
+    test-topo-certificate-refuses-a-valid-candidate-that-reorders = {
+      expr =
+        (topoOrder (
+          acc
+            [
+              "a0"
+              "a1"
+              "m0"
+              "m1"
+            ]
+            {
+              a0 = [ "m0" ];
+              a1 = [ "m1" ];
+            }
+        )).order;
+      expected = [
+        "m0"
+        "a0"
+        "m1"
+        "a1"
+      ];
+    };
+    # The gate reads the RELATION, not the key order: this chain's keys descend with depth, so
+    # the candidate is not even a topological order and the certificate rejects it.
+    test-topo-certificate-refuses-on-descending-keys = {
+      expr =
+        (topoOrder (
+          acc
+            [
+              "n0"
+              "n1"
+              "n2"
+              "n3"
+            ]
+            {
+              n0 = [ "n1" ];
+              n1 = [ "n2" ];
+              n2 = [ "n3" ];
+            }
+        )).order;
+      expected = [
+        "n3"
+        "n2"
+        "n1"
+        "n0"
+      ];
+    };
+    # A cycle can never route: validity over a total position map IS the acyclicity proof, so
+    # `candValid` fails and the residual check reports as before.
+    test-topo-certificate-never-routes-a-cycle = {
+      expr =
+        let
+          r = topoOrder (
+            acc
+              [
+                "x"
+                "y"
+              ]
+              {
+                x = [ "y" ];
+                y = [ "x" ];
+              }
+          );
+        in
+        {
+          inherit (r) ok cycles;
+        };
+      expected = {
+        ok = false;
+        cycles = [
+          [
+            "x"
+            "y"
+          ]
+        ];
+      };
+    };
+    # ★ `lessThan` must be a strict total order and this door cannot afford to check it. The
+    # certificate is the one place that precondition is GUARDED rather than documented: the
+    # comparator only builds the candidate, while validity is checked against positions, so a
+    # comparator this degenerate can cause a REJECTION and not a wrong answer. Both shapes
+    # below return correctly under a comparator that is constantly false.
+    test-topo-certificate-survives-a-non-total-lessThan = {
+      expr = {
+        forced =
+          (topoOrder {
+            nodes = [
+              "a"
+              "b"
+              "c"
+              "d"
+            ];
+            edges =
+              id:
+              {
+                a = [
+                  "b"
+                  "c"
+                  "d"
+                ];
+                b = [
+                  "c"
+                  "d"
+                ];
+                c = [ "d" ];
+              }
+              .${id} or [ ];
+            lessThan = _: _: false;
+          }).order;
+        chain =
+          (topoOrder {
+            nodes = [
+              "p"
+              "q"
+              "r"
+            ];
+            edges =
+              id:
+              {
+                p = [ "q" ];
+                q = [ "r" ];
+              }
+              .${id} or [ ];
+            lessThan = _: _: false;
+          }).order;
+      };
+      expected = {
+        forced = [
+          "d"
+          "c"
+          "b"
+          "a"
+        ];
+        chain = [
+          "r"
+          "q"
+          "p"
+        ];
+      };
+    };
+    # The gate runs on KEYS, so a node value that is not its own identity routes exactly as a
+    # string-keyed one does — the arm never touches the node values except to project them back.
+    test-topo-certificate-routes-under-keyOf = {
+      expr =
+        map (n: n.id)
+          (topoOrder {
+            nodes = [
+              { id = "a"; }
+              { id = "b"; }
+              { id = "c"; }
+            ];
+            keyOf = n: n.id;
+            edges =
+              n:
+              if n.id == "a" then
+                [
+                  { id = "b"; }
+                  { id = "c"; }
+                ]
+              else if n.id == "b" then
+                [ { id = "c"; } ]
+              else
+                [ ];
+          }).order;
+      expected = [
+        "c"
+        "b"
+        "a"
+      ];
+    };
   };
 }
