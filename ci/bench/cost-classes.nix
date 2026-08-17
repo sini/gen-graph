@@ -95,7 +95,7 @@
 #      the finisher rather than in the operator.
 #
 # INTERFACE — `arm` × `shape` × `n`:
-#   arm   = cycles | condensation | dependents | transitiveClosure
+#   arm   = cycles | condensation | dependents | transitiveClosure | topoOrderKahn
 #         | transitiveReduction | topoOrder | coneRank | coneRankShipped | floor
 #         | fbNode | fbWork | condensationClosure | cyclePaths | dependentsOf
 #         | dependentsFrontier | dependentsFrontierPruned
@@ -108,7 +108,8 @@
 #         | closureNaive            (the round-schedule pair with `transitiveClosure`)
 #         | uniqueStrings | uniqueInts   (the dedup at a fixed L; `n` is L, not a node count)
 #         | sentinel | sentinelPeerOrder | sentinelPeerClosure | sentinelVerdict
-#   shape = complete | cycle | cyclechord | chain | wide | fleet | discrim | total | deepwide
+#   shape = complete | cycle | cyclechord | chain | wide | fleet | discrim | total | totalrev
+#         | deepwide
 #   n     = node count (use doublings, e.g. 50/100/200, so a ratio reads as 2^exp)
 #
 # The four `sentinel*` arms ignore `shape` and `n` — their cells are fixed in the file (see
@@ -618,6 +619,22 @@ let
             value = [ (key "m" i) ];
           }) (ix m)
         );
+      # `totalrev` is `total` UP TO THE ORDER WITHIN EACH DEPENDENCY LIST — same nodes, same
+      # edge set, same degrees, same (unique) topological order — and it exists because the
+      # front door's certificate walks those lists. The linking predecessor sits FIRST in
+      # `total` and LAST here, which moves the certificate's pre-gate between the two ends of
+      # its range, and NONE OF THE THREE AXES CAN SEE IT: the walk is `builtins.elem`, which
+      # allocates nothing. Measured at n = 2000 and 4000, `topoOrder` on the two shapes is
+      # BIT-IDENTICAL on `list`, `sets` and `nrLookups` while `cpuTime` moves 7-12%, growing
+      # with E. ★ So this is a fixture whose whole purpose is a term the counters do not
+      # count: read it with `cpuTime`, know that `cpuTime` is corroboration and never a
+      # predicate, and do not expect a row here to move.
+      totalrev = fromPairs (map (key "n") (ix n)) (
+        map (i: {
+          name = key "n" i;
+          value = map (j: key "n" (n - 1 - j)) (ix (n - i - 1));
+        }) (ix n)
+      );
       total = fromPairs (map (key "n") (ix n)) (
         map (i: {
           name = key "n" i;
@@ -878,21 +895,54 @@ let
   # recorded as one. The offsets are LEFT IN, so every closure-class figure published against
   # the previous pins is off by more than a constant.
   #
+  #
+  # ★★ RE-PINNED FOR THE FRONT DOOR'S CERTIFICATE-GATED ARM, AND THIS READS SHIFTED-STRUCTURAL
+  # for a reason no previous entry here records: THE TWO ORDERING CELLS MOVE IN OPPOSITE
+  # DIRECTIONS. One is routed and gets cheaper; the other is refused and pays the gate. A
+  # verdict cannot express that and is not meant to — the decomposition is, and it is done in
+  # the order the ★★★ block above prescribes.
+  #   · the BENCH edit alone, the new file replayed against the OLD library in a detached
+  #     worktree: `sets` +1 UNIFORMLY on all three cells (2,825 / 4,215 / 150,465 against pins
+  #     of 2,824 / 4,214 / 150,464) with `list` and `nrLookups` BIT-IDENTICAL on every one —
+  #     SHIFTED-BENIGN, and the same one-shape signature `cyclechord` recorded, because this
+  #     edit adds one shape (`totalrev`). The `topoOrderKahn` arm it also adds contributes
+  #     ZERO, which is the reading the `coneRank` and reverse-cone arms established for a
+  #     dispatch branch that adds no name to the library's merged export set;
+  #   · the LIBRARY edit on top of it, and all three cells say something different:
+  #       `sentinel` — `topoOrder` on a CHAIN, which the certificate ADMITS. `list` −1,589
+  #         (2,740 → 1,151, −58.0%), `sets` −1,148, `nrLookups` −2,370. A chain's topological
+  #         order is forced, so the arm proves it and skips the reverse index, the indegree
+  #         map, the heap and the loop.
+  #       `peerOrder` — `topoOrder` on the WIDE shape, which the certificate REFUSES: its two
+  #         independent legs make the first adjacent candidate pair incomparable. `list` +127,
+  #         `sets` +64, `nrLookups` +204. ★ **+127 is 2n−1 and +64 is n, at n = 64** — the
+  #         refusal price the spec of record predicts, reproduced here on a cell that was
+  #         pinned long before the arm existed and at a size nothing in that document measured.
+  #       `peerClosure` — BIT-IDENTICAL on all three axes. It reaches no ordering code, so it
+  #         is the live control saying both movements belong to the door and not to a global
+  #         offset; and it is the opposite of a harness edit's signature, which moves every
+  #         cell including the ones that call no changed code.
+  # ★ The two ordering cells moving APART is itself the finding: a single ratio, or a single
+  # cell, would have reported this landing as a win or as a regression depending on which one
+  # was read. It is both, and which one a caller gets is decided by a predicate on its graph.
+  # The offsets are LEFT IN, so every `topoOrder` figure published against the previous pins is
+  # off by more than a constant — it is off by whether the shape routes.
+  #
   # The pins below are read from the FROZEN bench at this revision, with the offsets LEFT IN.
   sentinelPins = {
     sentinel = {
-      list = 2740;
-      sets = 2824;
-      nrLookups = 4332;
+      list = 1151;
+      sets = 1677;
+      nrLookups = 1962;
     };
     peerOrder = {
-      list = 2461;
-      sets = 4214;
-      nrLookups = 7705;
+      list = 2588;
+      sets = 4279;
+      nrLookups = 7909;
     };
     peerClosure = {
       list = 117973;
-      sets = 150464;
+      sets = 150465;
       nrLookups = 6560;
     };
   };
@@ -1034,6 +1084,19 @@ let
     else if arm == "topoOrder" then
       let
         r = g.topoOrder acc;
+      in
+      if r.ok then r.order else r.cycles
+    # The DOOR's other arm, by name — `topoOrderKahn` is the Kahn loop with the door's
+    # certificate unreached, so this is the UNGATED baseline and it needs no vendored copy:
+    # the pair is `topoOrder` against `topoOrderKahn` on one shape, in one run. Their
+    # DIFFERENCE on a shape the certificate admits is what the arm saves; on a shape it
+    # refuses the difference is the gate's own price, which is 2n-1 `list` and n `sets` and
+    # nothing that grows with E. ★ The two must return the SAME ORDER on every acyclic shape
+    # — that is the certificate's whole claim, and it is a case in `ci/tests/order.nix`
+    # rather than a reading here, because an equality is not a cost.
+    else if arm == "topoOrderKahn" then
+      let
+        r = g.topoOrderKahn acc;
       in
       if r.ok then r.order else r.cycles
     # The CONE RANK, both arms. `.order` is forced FIRST and cold, which is the read both
