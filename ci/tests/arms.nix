@@ -15,6 +15,21 @@
 # The shapes are the bench's, verbatim, so a figure measured in `ci/bench/cost-classes.nix`
 # and a verdict asserted here are about the same graphs.
 #
+# ── AND THE DOOR SELECTS, so the agreement has a REASON and not only a delegation ──
+# The door is a certificate-gated pair. Where a candidate order can be PROVEN to be the
+# UNIQUE topological order of its input the door emits that candidate; everywhere else the
+# Kahn arm answers. Uniqueness is what makes a second arm admissible behind one door:
+# linkage over a permutation of all keys is a directed Hamiltonian path in the dependency
+# relation, and a DAG whose relation contains one has exactly one topological order. So the
+# identity cells below assert a theorem's consequence, and a red in them is a defect in the
+# gate rather than a re-baseline of a loose order.
+#
+# The GATE is what buys that, and no green identity cell can say so by itself — if the
+# certificate were deleted and the candidate emitted unconditionally, every cell here would
+# still pass on the shapes where the two happen to coincide. The gate-defeated arm is
+# therefore run beside them, and it FIRES: the ungated candidate is still a VALID
+# topological order on every shape and a DIFFERENT one on three of seven.
+#
 # ── AND `coneRank` BEFORE AGAINST AFTER ──
 # `coneRank` now warms its memo map along the arm's order. The claim that makes that a
 # REMOVAL rather than a re-implementation is that the answer did not move, so the
@@ -127,6 +142,41 @@ let
         value = [ (key "m" i) ];
       }) (ix m)
     );
+  # n/2 producers, each releasing exactly one consumer: the widest shape with any edge at
+  # all, and the one whose candidate order the ungated arm gets right by coincidence.
+  wide =
+    n:
+    let
+      m = n / 2;
+    in
+    fromPairs (map (key "a") (ix m) ++ map (key "b") (ix m)) (
+      map (i: {
+        name = key "b" i;
+        value = [ (key "a" i) ];
+      }) (ix m)
+    );
+  # The transitive tournament: node i depends on every j > i. E is Θ(n²) and the topological
+  # order is UNIQUE, so this is the dense shape the door's certificate can prove.
+  total =
+    n:
+    fromPairs (map (key "n") (ix n)) (
+      map (i: {
+        name = key "n" i;
+        value = map (j: key "n" (i + 1 + j)) (ix (n - i - 1));
+      }) (ix n)
+    );
+  # `total` up to the order WITHIN each dependency list — same nodes, same edge set, same
+  # degrees, same unique order. It is a distinct fixture because the certificate's linkage
+  # witness WALKS those lists, and the linking predecessor sits first in `total` and last
+  # here.
+  totalrev =
+    n:
+    fromPairs (map (key "n") (ix n)) (
+      map (i: {
+        name = key "n" i;
+        value = map (j: key "n" (n - 1 - j)) (ix (n - i - 1));
+      }) (ix n)
+    );
   # one 4000-node chain PLUS (n-4000)/2 independent 2-chains: depth and width additive.
   deepwide =
     n:
@@ -166,10 +216,117 @@ let
     discrim = discrim small;
   };
 
+  # The bench's ten fixtures less its three cyclic ones. `cycle`, `cyclechord` and
+  # `complete` emit no order for an index-wise comparison — the door reports a cycle there,
+  # which is the direct-arm cell below — so they are excluded by construction rather than
+  # by omission. Four entries are `shapes`' own rather than rebuilt copies, so the two
+  # families are the same graphs and not two spellings of them.
+  benchShapes = {
+    inherit (shapes)
+      chain
+      fleet
+      discrim
+      deepwide
+      ;
+    wide = wide small;
+    total = total small;
+    totalrev = totalrev small;
+  };
+
   doorOrder = fx: (topoOrder fx).order;
   armOrder = fx: (topoOrderKahn fx).order;
   reversed =
     xs: builtins.genList (i: builtins.elemAt xs (builtins.length xs - 1 - i)) (builtins.length xs);
+
+  # ELEMENT-WISE AS A PER-INDEX FOLD, and the COUNT is the point. `==` over two lists
+  # returns the same verdict today; a count of divergent positions says how far apart two
+  # orders are, and it is the form that cannot be quietly weakened into the
+  # `{ first, last, len }` triple two different valid topological orders share.
+  diffPositions =
+    xs: ys:
+    let
+      lx = builtins.length xs;
+      ly = builtins.length ys;
+      shared = if lx < ly then lx else ly;
+    in
+    # A length mismatch is divergence at every unshared position, COUNTED rather than
+    # thrown: a throw here would crash the batch asserter instead of failing its cell.
+    (lx + ly - 2 * shared)
+    + builtins.length (builtins.filter (i: builtins.elemAt xs i != builtins.elemAt ys i) (ix shared));
+
+  triple = xs: {
+    first = builtins.head xs;
+    last = builtins.elemAt xs (builtins.length xs - 1);
+    len = builtins.length xs;
+  };
+
+  # 0-INDEXED 1 AND 2, NEVER 0 AND 1. The triple above samples positions 0 and n-1, so a
+  # transposition touching either makes the WEAK predicate fire — after which the control
+  # looks armed while certifying nothing about the blindness it exists to exhibit. Both
+  # predicates are read in the same cell so that blindness is visible rather than inferred.
+  swap12 =
+    xs:
+    builtins.genList (
+      i:
+      builtins.elemAt xs (
+        if i == 1 then
+          2
+        else if i == 2 then
+          1
+        else
+          i
+      )
+    ) (builtins.length xs);
+
+  # THE CANDIDATE THE DOOR'S CERTIFICATE SCORES, emitted with NO certificate: ascending
+  # (out-degree, key), the door's own comparator. `keyOf` is the identity on every fixture
+  # here, so the node list is the key list.
+  bareCandidate =
+    fx:
+    let
+      deg = builtins.listToAttrs (
+        map (k: {
+          name = k;
+          value = builtins.length (fx.edges k);
+        }) fx.nodes
+      );
+    in
+    builtins.sort (
+      a: b: if deg.${a} == deg.${b} then builtins.lessThan a b else deg.${a} < deg.${b}
+    ) fx.nodes;
+
+  # VALIDITY, kept apart from EQUALITY: both arms emit valid orders, so "is topological"
+  # and "is the same list" are different findings and a cell reporting one cannot say which
+  # of them failed.
+  isTopological =
+    fx: order:
+    let
+      pos = builtins.listToAttrs (
+        builtins.genList (i: {
+          name = builtins.elemAt order i;
+          value = i;
+        }) (builtins.length order)
+      );
+    in
+    builtins.all (k: builtins.all (d: pos.${d} < pos.${k}) (fx.edges k)) fx.nodes;
+
+  # The certificate's two predicates re-derived over the FIXTURE: consecutive candidates
+  # directly linked, and every edge pointing strictly backwards. This says which shapes the
+  # door's gate ADMITS. It is not a witness that the door took that path and there can be
+  # no such witness in this language — the proof behind the gate is exactly the statement
+  # that the two paths are observationally identical. What it buys is that the identity
+  # cell cannot go vacuous: an all-false column would mean those cells are comparing the
+  # Kahn arm against itself.
+  certifies =
+    fx:
+    let
+      cand = bareCandidate fx;
+      cn = builtins.length cand;
+    in
+    builtins.all (i: builtins.elem (builtins.elemAt cand i) (fx.edges (builtins.elemAt cand (i + 1)))) (
+      ix (if cn == 0 then 0 else cn - 1)
+    )
+    && isTopological fx cand;
 in
 {
   flake.tests.arms = {
@@ -202,6 +359,127 @@ in
     test-arm-door-reversal-control = {
       expr = builtins.mapAttrs (_: fx: doorOrder fx == reversed (armOrder fx)) shapes;
       expected = builtins.mapAttrs (_: _: false) shapes;
+    };
+
+    # ── THE DOOR'S TWO ARMS EMIT THE SAME LIST, INDEX BY INDEX, ON THE BENCH'S SHAPES ──
+    # `diff` is the per-index fold: on a routed shape the door emits its own candidate and
+    # must still agree with the Kahn arm because the certificate proves that order is the
+    # only one; on a rejected shape it agrees because it IS the Kahn arm. `routed` is
+    # written out per fixture rather than summarised, so a gate that stopped admitting
+    # anything reds this cell instead of leaving it comparing the arm with itself — and it
+    # records which three of the seven the certificate accepts, one of them the sparse
+    # chain and two of them dense.
+    # `swapDiff`/`swapTripleSame` are the armed control for the fold itself: transposing
+    # the elements at 1 and 2 moves two positions, which the fold sees and the retired
+    # triple does not.
+    test-arm-door-elementwise-bench-shapes = {
+      expr = builtins.mapAttrs (_: fx: {
+        diff = diffPositions (doorOrder fx) (armOrder fx);
+        routed = certifies fx;
+        swapDiff = diffPositions (doorOrder fx) (swap12 (doorOrder fx));
+        swapTripleSame = triple (doorOrder fx) == triple (swap12 (doorOrder fx));
+      }) benchShapes;
+      expected = {
+        chain = {
+          diff = 0;
+          routed = true;
+          swapDiff = 2;
+          swapTripleSame = true;
+        };
+        wide = {
+          diff = 0;
+          routed = false;
+          swapDiff = 2;
+          swapTripleSame = true;
+        };
+        fleet = {
+          diff = 0;
+          routed = false;
+          swapDiff = 2;
+          swapTripleSame = true;
+        };
+        discrim = {
+          diff = 0;
+          routed = false;
+          swapDiff = 2;
+          swapTripleSame = true;
+        };
+        total = {
+          diff = 0;
+          routed = true;
+          swapDiff = 2;
+          swapTripleSame = true;
+        };
+        totalrev = {
+          diff = 0;
+          routed = true;
+          swapDiff = 2;
+          swapTripleSame = true;
+        };
+        deepwide = {
+          diff = 0;
+          routed = false;
+          swapDiff = 2;
+          swapTripleSame = true;
+        };
+      };
+    };
+
+    # ── THE GATE-DEFEATED CONTROL, AND IT FIRES ──
+    # The cell above says "these two agree"; it cannot say "the GATE is what makes them
+    # agree". `bareCandidate` is the same candidate with the certificate removed, and the
+    # divergence is measured rather than asserted to exist: `fleet` 290 of 300, `discrim`
+    # 298 of 300, `deepwide` 2 of 4002 — the counts at these sizes, pinned so a control
+    # that stopped firing reds instead of passing quietly.
+    # `bareValid` is why the gate has to be a certificate and not a heuristic: the ungated
+    # candidate is not WRONG anywhere here, it is a DIFFERENT valid topological order, and
+    # only the linkage witness separates the shapes on which there is no other one to emit.
+    # `revValid` arms that checker in the same cell — a reversal is topological on none of
+    # these, so a checker stuck at `true` is visible beside the `bareValid` column rather
+    # than assumed away.
+    test-arm-door-bare-candidate-control = {
+      expr = builtins.mapAttrs (_: fx: {
+        bareDiff = diffPositions (doorOrder fx) (bareCandidate fx);
+        bareValid = isTopological fx (bareCandidate fx);
+        revValid = isTopological fx (reversed (doorOrder fx));
+      }) benchShapes;
+      expected = {
+        chain = {
+          bareDiff = 0;
+          bareValid = true;
+          revValid = false;
+        };
+        wide = {
+          bareDiff = 0;
+          bareValid = true;
+          revValid = false;
+        };
+        fleet = {
+          bareDiff = 290;
+          bareValid = true;
+          revValid = false;
+        };
+        discrim = {
+          bareDiff = 298;
+          bareValid = true;
+          revValid = false;
+        };
+        total = {
+          bareDiff = 0;
+          bareValid = true;
+          revValid = false;
+        };
+        totalrev = {
+          bareDiff = 0;
+          bareValid = true;
+          revValid = false;
+        };
+        deepwide = {
+          bareDiff = 2;
+          bareValid = true;
+          revValid = false;
+        };
+      };
     };
 
     # ── the arm is a live surface, called by name ──
