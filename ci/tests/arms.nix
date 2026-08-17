@@ -562,6 +562,60 @@ in
       expected = false;
     };
 
+    # ── AND THE DOOR IS NOT WEAKER THAN THE ARM IT DRIVES, on the ill-typed classes ──
+    # A door that binds an arm inherits the arm's guarantees only where its own preamble
+    # lets the arm see the input. `coneRank`'s did not: both of its preamble sites index an
+    # attrset by a caller-supplied value, so a non-string cone id or edge target died there
+    # as a TYPE ERROR — an abort `tryEval` cannot catch — strictly before the arm's
+    # `nonString` and `dangling` guards ran. Measured both ways at `6469382`: the arm
+    # refused both catchably and the door lost the evaluation on the same two inputs.
+    #
+    # The four cells are a PARITY claim and are written as two pairs on the SAME inputs for
+    # that reason. Asserting only the door's half would leave "as catchable as its own arm"
+    # argued rather than measured, and the arm's half is what fixes the standard.
+    test-arm-direct-refuses-non-string-key = {
+      expr =
+        !(builtins.tryEval (
+          builtins.deepSeq (topoOrderKahn {
+            nodes = [ 42 ];
+            edges = _: [ ];
+          }) true
+        )).success;
+      expected = true;
+    };
+    test-conerank-refuses-non-string-cone-id = {
+      expr = !(builtins.tryEval (builtins.deepSeq (coneRank { edges = _: [ ]; } [ 42 ]) true)).success;
+      expected = true;
+    };
+    test-arm-direct-refuses-non-string-edge-target = {
+      expr =
+        !(builtins.tryEval (
+          builtins.deepSeq (topoOrderKahn {
+            nodes = [ "a" ];
+            edges = _: [ 42 ];
+          }) true
+        )).success;
+      expected = true;
+    };
+    test-conerank-refuses-non-string-edge-target = {
+      expr =
+        !(builtins.tryEval (builtins.deepSeq (coneRank { edges = _: [ 42 ]; } [ "a" ]) true)).success;
+      expected = true;
+    };
+    # LIVE CONTROL for the four cells above, same run and same instrument: a well-formed
+    # cone through the door is not caught. Without it they are consistent with a `coneRank`
+    # that refuses everything, which is the failure the door's own repair could introduce.
+    test-conerank-refusal-control = {
+      expr =
+        !(builtins.tryEval (
+          builtins.deepSeq (coneRank { edges = k: if k == "b" then [ "a" ] else [ ]; } [
+            "a"
+            "b"
+          ]) true
+        )).success;
+      expected = false;
+    };
+
     # ── coneRank: the emitted order and the whole depth map did not move ──
     # One cell per shape, both arms run in it, and the comparison is over the WHOLE map and
     # the WHOLE list. `deepwide` is absent by necessity: its deep leg is 4,000 nodes and the

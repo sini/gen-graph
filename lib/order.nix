@@ -608,11 +608,50 @@ let
   # the ordering call that supplies the warming order is the same call that reports the
   # cycle, and it names it. Two consumers were answering this precondition two different
   # ways — one guarding by hand, one documenting it and not guarding — and neither had to.
+  #
+  # ★★ THE ILL-TYPED CLASSES ARE THE DOOR'S OWN REFUSALS, AND THEY ARE NOT A BY-PRODUCT.
+  # The cycle above is the one precondition the driver can answer for this door. The two
+  # ill-typed ones — a non-string cone id, a non-string edge target — it cannot, and the
+  # door was strictly WEAKER than the arm it drives on exactly the inputs the arm refuses
+  # cleanly: both sites in the preamble below index an attrset by a caller-supplied value,
+  # so a non-string reaching either is an evaluator TYPE ERROR, an abort `tryEval` cannot
+  # catch, raised strictly BEFORE the driver runs and therefore before the arm's
+  # `nonString` and `dangling` guards can see the value. Every consumer of this surface
+  # inherited that abort on a class its own substrate names one layer down, which is what
+  # the refusal discipline forbids: an operation returns a value or a NAMED refusal.
+  #
+  # ★ AND THE EDGE-TARGET CLASS CANNOT BE DELEGATED DOWNWARD even with the preamble made
+  # total, so the guard below is not a duplicate of `dangling`. `inConeProducers` FILTERS
+  # to in-cone targets: under any total membership test a non-string is out-of-cone, so it
+  # is DROPPED before the driver could report it, and this is the only place the class is
+  # visible at all.
   coneRank =
     accessor: cone:
     let
+      # `all` rather than the arm's `filter`: the arm keeps its filtered list because it
+      # reports the offending index and reuses `keyed` for four later passes, while this
+      # check has no second reader — so it takes the allocation-free, short-circuiting
+      # spelling and recovers the offending entry lazily on the refusal path, which is
+      # about to throw and can afford a scan.
+      idsAreStrings = builtins.all builtins.isString cone;
+      badId = builtins.head (builtins.filter (id: !builtins.isString id) cone);
+
       coneSet = prelude.genAttrs cone (_: true);
-      inConeProducers = id: builtins.filter (d: coneSet ? ${d}) (accessor.edges id);
+      # The membership test is TOTAL: a target that cannot be tested for cone membership
+      # refuses by name AT THE SITE that used to abort on it. Guarding the predicate rather
+      # than pre-scanning the edge lists is what keeps the accessor read where it already
+      # was — a `dangling`-shaped eager pass would be a THIRD call into a caller-supplied
+      # accessor that the driver and the memo map both read already — and it refuses
+      # exactly the targets the old spelling died on, no earlier and no later.
+      inConeProducers =
+        id:
+        builtins.filter (
+          d:
+          if builtins.isString d then
+            coneSet ? ${d}
+          else
+            throw "gen-graph.coneRank: edge target of type ${builtins.typeOf d} on node ${builtins.toJSON id} is not a string; cone membership needs a string target"
+        ) (accessor.edges id);
 
       # The driver ranges over the DISTINCT ids: the memo map is keyed by id, so a repeated
       # cone entry is one memo cell and one warming step, and ordering keys must be unique
@@ -658,7 +697,14 @@ let
         a: b: if warmDepth.${a} == warmDepth.${b} then a < b else warmDepth.${a} < warmDepth.${b}
       ) cone;
     in
-    if !driver.ok then
+    # ── refusals, in the order that makes each one's own check safe to run ──
+    # The id check first, and for the same reason the arm puts `isString` first: `driver`
+    # forces `coneSet`, which is `genAttrs` over these very ids, so consulting the verdict
+    # ahead of this check reinstates the abort it exists to replace. Reading it first costs
+    # one `isString` per id and forces nothing else.
+    if !idsAreStrings then
+      throw "gen-graph.coneRank: cone entry is a non-string key (type ${builtins.typeOf badId}); cone ids must be strings"
+    else if !driver.ok then
       throw "gen-graph.coneRank: cyclic cone has no producers-first rank; cycles ${builtins.toJSON driver.cycles}"
     else
       {

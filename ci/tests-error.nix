@@ -219,8 +219,44 @@ in
           msg = ".*cyclic cone.*\\[\\[\"a\",\"b\"\\]\\].*";
         };
       };
+      # ── THE ILL-TYPED CLASSES, NAMED ──
+      # That these refuse AT ALL is a boolean, and it is asserted beside the arm's own
+      # halves in `ci/tests/arms.nix`, which is where the door-against-arm parity claim
+      # belongs. What only this output can assert is that the refusal NAMES the class and
+      # the type it found: the two sites abort identically, so a caller handed a cone built
+      # from keys it did not check cannot tell them apart from the failure alone and is
+      # sent back to bisect its own fixture. Anchored at both ends for the reason the
+      # closure refusals are — an unanchored pattern goes green on a message that has grown
+      # a cause it cannot support.
+      test-conerank-non-string-cone-id-names-the-class-and-the-type = {
+        expr = (coneRank { edges = _: [ ]; } [ 42 ]).order;
+        expectedError = {
+          type = "ThrownError";
+          msg = "^gen-graph\\.coneRank: cone entry is a non-string key \\(type int\\); cone ids must be strings$";
+        };
+      };
+      # The other site. It names the NODE the target hangs off, which is the only locator
+      # the door has: the cone is a list the caller supplied and the edges come out of a
+      # function, so there is no index to give and the producing node is what there is.
+      test-conerank-non-string-edge-target-names-the-class-and-the-node = {
+        expr = (coneRank { edges = _: [ 42 ]; } [ "a" ]).order;
+        expectedError = {
+          type = "ThrownError";
+          msg = "^gen-graph\\.coneRank: edge target of type int on node \"a\" is not a string; cone membership needs a string target$";
+        };
+      };
+      # The type is READ OFF THE VALUE rather than a fixed word: the same site with a list
+      # target says `list`. Without this the two cells above are consistent with a message
+      # that hard-codes `int`, which is the shape a copied refusal takes.
+      test-conerank-non-string-edge-target-reports-the-type-it-found = {
+        expr = (coneRank { edges = _: [ [ "x" ] ]; } [ "a" ]).depth;
+        expectedError = {
+          type = "ThrownError";
+          msg = "^gen-graph\\.coneRank: edge target of type list on node \"a\" is not a string; cone membership needs a string target$";
+        };
+      };
       # LIVE CONTROL, same run: an acyclic cone through the same accessor does not refuse.
-      # Without it, the two cells above are consistent with a surface that refuses everything.
+      # Without it, the cells above are consistent with a surface that refuses everything.
       # It is an `expected` cell in an `expectedError` output on purpose — the control has to
       # run in the same invocation as the thing it controls, or it controls nothing.
       test-conerank-acyclic-control = {
