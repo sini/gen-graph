@@ -111,10 +111,22 @@ let
   # on a complete lattice; the ascending-chain construction that reaches it is Kleene's.)
   #
   # ★ The READING is this binding's and the CAP is `fixpoint`'s. `refusal` receives the cap
-  # that was exhausted and converts it to a diameter here, so a cheaper iteration schedule —
-  # repeated squaring reaches diameter 2^rounds rather than rounds — changes the conversion at
-  # this one site and at no caller. Same discipline as the shared finisher in `partition.nix`:
-  # agreement by construction rather than four copies kept in step.
+  # that was exhausted and converts it to a diameter here, which is what lets the schedule and
+  # its conversion move together at one site and at no caller. Same discipline as the shared
+  # finisher in `partition.nix`: agreement by construction rather than four copies kept in step.
+  #
+  # ★★ THE SCHEDULE IS REPEATED SQUARING, AND THE CONVERSION IS ITS OTHER HALF. `step` squares
+  # the current relation rather than composing it with the seed, so round r holds every path of
+  # length ≤ 2^r instead of ≤ r and the round count falls to log₂ of the diameter. The cap
+  # therefore no longer bounds the diameter by itself: reaching it means the diameter exceeds
+  # 2^(cap−1), and the refusal says that instead of quoting the cap as if it were a depth.
+  # Measured on both fixtures the suites use: returns iff 2^(cap−1) ≥ D, exact at every cell.
+  #
+  # ★ THE BOUND IS NAMED AS A POWER AND NOT COMPUTED, and that is forced rather than stylistic.
+  # Nix integers are 64-bit and overflow THROWS ("integer overflow in multiplying"), so at the
+  # default cap of 1000 evaluating 2^999 would replace this refusal with an arithmetic error —
+  # the one path where an error must survive to be read. Naming the exponent is exact at every
+  # cap, and it keeps one message SHAPE, which is what a caller's anchored pattern can match.
   closureOf =
     surface:
     assert builtins.elem surface closureClass;
@@ -129,10 +141,10 @@ let
       builtins.intersectAttrs { maxIter = null; } args
       // {
         seed = mat;
-        step = current: edgeMaps.unionEdges current (compose current mat);
+        step = current: edgeMaps.unionEdges current (compose current current);
         refusal =
           cap:
-          "gen-graph: ${surface}: the graph's reachability diameter exceeds ${toString cap}, the closure fixpoint's iteration cap. The closure step is monotone on the subset order by construction, so an unconverged closure at the cap is depth and nothing else.";
+          "gen-graph: ${surface}: the graph's reachability diameter exceeds 2^${toString (cap - 1)}, the depth reached by the closure fixpoint's iteration cap of ${toString cap} under repeated squaring. The closure step is monotone on the subset order by construction, so an unconverged closure at the cap is depth and nothing else.";
       }
     );
 

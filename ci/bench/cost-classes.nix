@@ -737,6 +737,25 @@ let
   # as one. The offsets are LEFT IN, so every `list` and `sets` figure published for a
   # closure-class cell from a pre-bump revision is off by more than a constant.
   #
+  # ★★ RE-PINNED FOR THE SQUARED ROUND SCHEDULE, AND THIS ONE ALSO READS SHIFTED-STRUCTURAL —
+  # twice in one arc, from two different subjects, with the same signature both times. The
+  # commit that moved it edits ONE file, `lib/fixpoint.nix`, and only two non-comment lines of
+  # it (the step and the refusal); this bench is byte-identical to the revision before it, so
+  # the harness component is zero and needs no replay to establish.
+  #   · `sentinel` and `peerOrder` are BIT-IDENTICAL on all three axes. Both are `topoOrder` on
+  #     an acyclic shape, which reaches no `closureOf` at all — the live control saying the
+  #     movement belongs to the closure path and not to a global offset, and the same reading
+  #     that says the change adds no name to the merged export set (it adds none).
+  #   · `peerClosure` alone moves, on all three axes and every one of them DOWNWARD: `list`
+  #     −95,232 (213,205 → 117,973, −44.7%), `sets` −9,760 (160,224 → 150,464, −6.1%),
+  #     `nrLookups` −22,628 (29,188 → 6,560, −77.5%). Squaring reaches diameter 2^r in r rounds
+  #     where composing with the seed reaches r, so on a 32-node ring the round count falls to
+  #     its own logarithm — and `nrLookups` is where a dropped round shows most directly, since
+  #     every round re-reads the whole map.
+  # A single-cell three-axis move with two bit-identical controls is a subject move, and it is
+  # recorded as one. The offsets are LEFT IN, so every closure-class figure published against
+  # the previous pins is off by more than a constant.
+  #
   # The pins below are read from the FROZEN bench at this revision, with the offsets LEFT IN.
   sentinelPins = {
     sentinel = {
@@ -750,9 +769,9 @@ let
       nrLookups = 7705;
     };
     peerClosure = {
-      list = 213205;
-      sets = 160224;
-      nrLookups = 29188;
+      list = 117973;
+      sets = 150464;
+      nrLookups = 6560;
     };
   };
   sentinelCells = {

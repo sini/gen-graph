@@ -54,12 +54,15 @@
 # over k = 25/50/100/200 on `cycle`; `sets` is approaching 2.00 from below (1.88 over the
 # last pair) rather than sitting at it. Do not quote either term as the cost alone.
 # ★ THE SURFACE THAT IS SUPER-QUADRATIC IS THE CLOSURE, AND IT IS NOT ON THIS PATH: reaching
-# the same partition through `condensationClosure` instead is exponent 3.00 on `list` over the
-# same k, and 3.00 on `sets` with `nrLookups` approaching 3.00 from below (2.85 over the last
-# pair) — the three axes now agree on the class, where they once disagreed by two exponents
-# and a single-axis budget could certify the path as quadratic. At k = 200 that is 48,641,421
-# against this path's 406,205, a factor of 120. A cost claim about ordering-on-a-cycle that
-# cites the closure is citing a surface this door stopped calling.
+# the same partition through `condensationClosure` instead is exponent 2.93 on `list` over the
+# same k and 2.97 on `sets`, while `nrLookups` sits a full exponent below both at 1.88. The
+# closure's round schedule is repeated squaring, so its round count is the LOGARITHM of the
+# diameter while the work inside a round is not — and the per-round map reads therefore fall
+# away much faster than the allocation does. The three axes are not interchangeable here and a
+# single-axis budget still picks the wrong class, a different wrong one than the two-exponent
+# spread this note used to record. At k = 200 that is 26,050,421 against this path's 406,205,
+# a factor of 64. A cost claim about ordering-on-a-cycle that cites the closure is citing a
+# surface this door stopped calling.
 # Ordering succeeds or it REPORTS: `topoOrder` returns `ok = false` with the cycles on a cyclic
 # graph and does not throw for one — `phaseOrder` is the layer that throws. The expensive
 # analysis is on the way out either way.

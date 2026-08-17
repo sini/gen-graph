@@ -115,10 +115,13 @@ let
       ];
   };
   # A closure-class surface forwards a `maxIter` set on its own argument record. Lowering it
-  # is what makes the ceiling reachable in a cell at all: the shipped cap of 1,000 needs a
-  # diameter over 1,000, and a graph that deep costs a closure no suite can afford.
+  # is what makes the ceiling reachable in a cell at all: under repeated squaring the shipped
+  # cap of 1,000 stands for a diameter of 2^999, and no fixture reaches that.
+  # ★ ONE BINDING, because the cap and the bound the cells assert must move together. The
+  # refusal pattern derives its bound from this number; a second copy is a copy to keep in step.
+  cappedIter = 5;
   capped = fork // {
-    maxIter = 5;
+    maxIter = cappedIter;
   };
 
   # ONE DRIVER PER CLASS MEMBER, keyed by the name its refusal must carry. The cells below
@@ -147,9 +150,13 @@ let
   # The refusal text, raised once at the closure binding and inherited by the four. Anchored
   # at both ends: an unanchored pattern would go green on a message that had grown a cause it
   # cannot support, and the whole point of the split is which causes may be named where.
+  # ★ The bound is DERIVED FROM THE CONVERSION rather than written down beside the cap. Under
+  # repeated squaring round r holds every path of length ≤ 2^r, so exhausting a cap of c means
+  # the diameter exceeds 2^(c−1); this expression re-derives that the moment the cap moves,
+  # where a literal would go on asserting a bound the library no longer states.
   closureRefusal =
-    surface:
-    "^gen-graph: ${surface}: the graph's reachability diameter exceeds 5, the closure fixpoint's iteration cap\\. The closure step is monotone on the subset order by construction, so an unconverged closure at the cap is depth and nothing else\\.$";
+    surface: cap:
+    "^gen-graph: ${surface}: the graph's reachability diameter exceeds 2\\^${toString (cap - 1)}, the depth reached by the closure fixpoint's iteration cap of ${toString cap} under repeated squaring\\. The closure step is monotone on the subset order by construction, so an unconverged closure at the cap is depth and nothing else\\.$";
 
   # `den-hoag-73uq`'s mode: removes one edge and adds another, so `countEdges` is constant and the
   # cardinality guard never fires. Non-convergence surfaces `maxIter` rounds later.
@@ -216,7 +223,7 @@ in
             expr = drive.${surface} capped;
             expectedError = {
               type = "ThrownError";
-              msg = closureRefusal surface;
+              msg = closureRefusal surface cappedIter;
             };
           };
         }) genGraph.closureClass
