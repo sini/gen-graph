@@ -61,6 +61,20 @@
 #      ratio against a cell that aborted is not a comparison; `ci/bench/cone-ceiling.sh` is
 #      where that abort is the subject rather than a missing figure.
 #
+#   4a. the REVERSE-CONE pair — `dependentsOf` and `dependentsFrontier`, which share one
+#      reverse index and one C-level BFS and differ only in whether the operator consults a
+#      prune predicate. They are a PAIR for the same reason 2a is: the frontier's law is the
+#      operator's law RESTRICTED to what `prune` admits, so a frontier figure means nothing
+#      without the unpruned operator's on the same shape and n. `dependentsFrontier` runs
+#      `prune = _: true` and is therefore the reduction cell — it must land ON `dependentsOf`,
+#      and a gap between them is a defect in the frontier and not a property of pruning.
+#      `dependentsFrontierPruned` runs the half-prune below, which is the only cell that
+#      exercises the early cutoff at all.
+#      ★ THE PAIR IS ALSO THE ACCUMULATOR DETECTOR. A level-walked frontier carrying a visited
+#      attrset diverges from the operator on `sets` and on `nrOpUpdateValuesCopied` while
+#      matching it on `list`, and that signature is invisible from either column alone: the
+#      frontier's own column is monotone in n whichever construction is underneath it.
+#
 #   5. the ACCESSOR HOIST, which is not a class of surfaces but a PAIRING over five of them.
 #      `cycles` and `fbNode` re-cover the same edges once per node, so they read the accessor
 #      ONCE (`traverse.hoistEdges`) instead of at every visit, and `cyclePaths` inherits that
@@ -78,6 +92,7 @@
 #   arm   = cycles | condensation | dependents | transitiveClosure
 #         | transitiveReduction | topoOrder | coneRank | coneRankShipped | floor
 #         | fbNode | fbWork | condensationClosure | cyclePaths | dependentsOf
+#         | dependentsFrontier | dependentsFrontierPruned
 #         | cyclesUnhoisted | fbNodeUnhoisted | cyclePathsUnhoisted
 #         | fbWorkHoisted | dependentsOfHoisted
 #         | sentinel | sentinelPeerOrder | sentinelPeerClosure | sentinelVerdict
@@ -512,6 +527,25 @@ let
   acc = fixtures.${shape} or (throw "unknown shape ${shape}");
   inherit (acc) nodes edges;
 
+  # THE HALF-PRUNE, for `dependentsFrontierPruned`. Every fixture here names its nodes with a
+  # ZERO-PADDED index, so the ids sort in index order and a string comparison against the
+  # midpoint id admits exactly the lower half of the index range — Θ(1) per call and NO map,
+  # so the predicate contributes no term of its own to the arm's reading. That matters: a
+  # prune built from an index attrset would add Θ(n) allocation to the very column the cutoff
+  # is supposed to REMOVE, and the arm would price the predicate rather than the walk.
+  # ★ A PRUNE EVERY NODE PASSES CANNOT WITNESS THE CUTOFF, which is why this is a separate arm
+  # from `dependentsFrontier` rather than a parameter on it. On `chain` and `cycle` — the
+  # bounded-degree shapes whose cone is deep — it halts the walk at the midpoint with half the
+  # cone reached. On `complete` every node is already one hop from the target, so the cutoff
+  # removes expansions without removing anything from the RESULT: the `len` control below is
+  # what says which of the two regimes a cell is in, and reading a `complete` cell as evidence
+  # about the cutoff's reach is reading the wrong shape.
+  halfPrune =
+    let
+      midId = builtins.elemAt nodes (n / 2);
+    in
+    id: builtins.lessThan id midId;
+
   # ── THE HARNESS SENTINEL ──────────────────────────────────────────────────────────
   # A shared bench file is a MUTABLE INSTRUMENT. Adding one attribute to the dispatch
   # attrset shifts `sets.elements` on every arm reached through it — measured on THIS file, by
@@ -773,6 +807,14 @@ let
       g.dependentsOf acc (builtins.head nodes)
     else if arm == "dependentsOfHoisted" then
       dependentsOfHoisted acc (builtins.head nodes)
+    # ── THE REVERSE-CONE PAIR ── same target as `dependentsOf` above, so the cone is the same
+    # one and the two columns are directly comparable. `dependentsFrontier` is the REDUCTION
+    # cell (`prune = _: true`) and must land on `dependentsOf`; `dependentsFrontierPruned` is
+    # the only cell that reaches the cutoff.
+    else if arm == "dependentsFrontier" then
+      g.dependentsFrontier acc (builtins.head nodes) (_: true)
+    else if arm == "dependentsFrontierPruned" then
+      g.dependentsFrontier acc (builtins.head nodes) halfPrune
     # `dependents` is curried (accessor -> targetId) and computes the FULL closure
     # before filtering, so the closure cost is paid whichever target is named.
     else if arm == "dependents" then
@@ -877,6 +919,12 @@ else
     # `transitiveReduction` ⇒ len 0 on `complete`: every edge is implied by a two-hop
     # path, and `differenceEdges` drops a key whose row empties — producing that answer
     # still forces the closure, which is the cost being measured.
+    # ★ For the reverse-cone pair this control is what says the CUTOFF FIRED. `dependentsOf`
+    # and `dependentsFrontier` must report the SAME len — they walk one cone and the frontier
+    # is at `prune = _: true` — while `dependentsFrontierPruned` must report a STRICTLY
+    # SMALLER one on any shape whose cone is deeper than one hop. Equal lens on the pruned arm
+    # mean the prune admitted everything it was asked about, and that cell is measuring the
+    # unpruned walk under another name.
     len =
       if builtins.isList result then
         builtins.length result
