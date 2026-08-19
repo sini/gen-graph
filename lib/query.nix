@@ -69,6 +69,127 @@ let
       edges = id: prelude.unique (map (e: e.target) (labeledEdges id));
     };
 
+  # ── THE LABELED TRANSPOSE ──
+  # `labeledTranspose : labeledGraph → labeledGraph`. Every edge is reversed AND CARRIES
+  # ITS LABEL, so the reverse read of a labeled query is the forward construction over the
+  # transposed accessor with the query's parameters untouched — one construction with a
+  # direction argument, rather than two constructions that can drift apart.
+  #
+  # THEORY. Mokhov 2017 §5.2 *Graph Transpose*: transpose flips the arguments of `connect`
+  # and leaves `overlay` unchanged, so direction is REVERSED, not erased — the same law
+  # `global.nix`'s `transpose` realises on the plain accessor. The labelled reading adds
+  # nothing to that law and takes nothing away: a label is carried BY an edge, so flipping
+  # the edge relation moves the label with it, and the law's own prohibition is on erasure.
+  # Projecting a labeled graph through `forgetLabels` to reach the plain `transpose` erases
+  # precisely the component the query engine reads, which is why that composition is not a
+  # labeled transpose and this is not sugar for it.
+  #
+  # WHY IT IS A FUNCTION AT ALL. An accessor's domain is not enumerable, and reversal is a
+  # question about who points AT a node — unanswerable without visiting every source. The
+  # total labeled contract above, where `nodes` is a required formal, is what supplies that
+  # domain; against the seeded-only half of the contract there was nothing to write.
+  #
+  # COST AND SHARING. Θ(n + E): one pass of the accessor over `nodes`, one `groupBy`, no
+  # repeated `//`. The index is a single thunk shared by every lookup, so the source
+  # accessor is read once for the whole transposed graph rather than once per queried node
+  # — and not at all if the result is never queried.
+  #
+  # EDGE ORDER is source order: a node's in-edges arrive in `nodes` order, then in that
+  # source's own edge order. So the transpose is a function of the graph and not of when it
+  # was asked, and `labeledTranspose (labeledTranspose g)` restores `g`'s edge relation
+  # with each node's out-edges re-sorted into `nodes` order.
+  labeledTranspose =
+    {
+      labeledEdges,
+      nodes,
+      ...
+    }:
+    let
+      incoming = builtins.groupBy (e: e.target) (
+        builtins.concatMap (
+          from:
+          map (e: {
+            inherit (e) label target;
+            inherit from;
+          }) (labeledEdges from)
+        ) nodes
+      );
+    in
+    {
+      inherit nodes;
+      labeledEdges =
+        id:
+        map (e: {
+          inherit (e) label;
+          target = e.from;
+        }) (incoming.${id} or [ ]);
+    };
+
+  # ── THE BOUNDARY MARKS, AND THE DIAGNOSTIC THAT MAKES THEM VISIBLE ──
+  # `boundedBy : labeledGraph → (nodeId → [ mark ]) → boundedLabeledGraph`, where a mark is
+  # `{ name; admits; }` — a NAME the diagnostic can quote and a `label → bool` predicate.
+  # The result is a labeled graph whose `labeledEdges` yields only admitted edges, plus a
+  # companion `withheld : nodeId → [ { label; target; marks; } ]` in which `marks` is every
+  # mark that withheld that edge, never empty.
+  #
+  # NARROWING IS STRUCTURAL, NOT PROMISED. The construction only ever REMOVES edges from
+  # what the underlying accessor offers, so a caller holding the bounded graph has no
+  # operation that recovers a withheld edge into the walk: widening is not forbidden, it is
+  # unsayable. That is the whole reason the marks are applied at the accessor rather than
+  # inside the label regex — `regex.deriv` takes a label and an expression and never sees a
+  # node, so a per-node intersection is not expressible there at all.
+  #
+  # SILENCE IS NEVER A RESULT, which is why `withheld` is not optional. An accessor that
+  # filtered and said nothing would answer an empty query with an empty answer and no way
+  # to tell a boundary from an absent edge — the two are indistinguishable in the answer
+  # and must not be indistinguishable in the diagnostic. A caller whose query came back
+  # short asks `withheld` at the node and is told which mark did it, by name.
+  #
+  # AN EDGE WITHHELD BY SEVERAL MARKS IS ONE DIAGNOSTIC ENTRY NAMING ALL OF THEM. Picking
+  # one would make the report depend on mark order, and reporting the edge once per mark
+  # would make `withheld` uncountable as a set of edges.
+  #
+  # LAZINESS is preserved node-wise: the per-node verdict is memoized as a thunk so the two
+  # accessors share one classification, and no node's edges are forced until it is asked
+  # for. Only the memo's spine — one name per member of `nodes` — is built eagerly.
+  boundedBy =
+    graph: marksOf:
+    let
+      classify =
+        id:
+        let
+          marks = marksOf id;
+          verdicts = map (e: {
+            edge = {
+              inherit (e) label target;
+            };
+            blockers = builtins.filter (m: !(m.admits e.label)) marks;
+          }) (graph.labeledEdges id);
+        in
+        {
+          admitted = map (v: v.edge) (builtins.filter (v: v.blockers == [ ]) verdicts);
+          withheld = map (
+            v:
+            v.edge
+            // {
+              marks = map (m: m.name) v.blockers;
+            }
+          ) (builtins.filter (v: v.blockers != [ ]) verdicts);
+        };
+      memo = builtins.listToAttrs (
+        map (id: {
+          name = id;
+          value = classify id;
+        }) graph.nodes
+      );
+      at = id: memo.${id} or (classify id);
+    in
+    {
+      inherit (graph) nodes;
+      labeledEdges = id: (at id).admitted;
+      withheld = id: (at id).withheld;
+    };
+
   # ── WHICH EDGES SATISFYING `p` LIE ON A CYCLE ──
   # `cyclicEdgesWhere : labeledGraph → (label → bool) → [ { from; label; to; } ]`.
   # Empty ⇒ no cycle of this graph carries an edge whose label satisfies `p`.
@@ -192,6 +313,130 @@ let
       );
     in
     builtins.attrNames answers;
+
+  # ── THE ARRIVAL CARRIER: EDGE-KEYED, LINEAR, DISTANCE-CARRYING ──
+  # `queryArrivals` walks the same (node × derivative-state) product automaton `queryAll`
+  # closes, and differs from it in exactly two respects, both of which are the point:
+  #
+  #   1. IT IS KEYED ON THE ARRIVING EDGE, not on the node. `queryAll`'s key is
+  #      ⟨node, derivative-state⟩, so two DISTINCT labels reaching one node collapse to one
+  #      answer whenever the follow expression derivates both to the same state — an
+  #      alternation over the two labels does exactly that. The collapse is invisible in the
+  #      answer: nothing in `[ "x" ]` says a second edge was dropped. Keying on
+  #      ⟨arriving edge, derivative-state⟩ keeps both arrivals distinct, and termination is
+  #      untouched: edges are finite and Brzozowski derivatives are finite modulo the ACI
+  #      identities `regex.nix` normalizes by, so the refined key set is still finite and
+  #      still fences cycles. Refining a fence does not remove it. The price is the
+  #      in-degree factor — the key space is |E| × |derivatives| where `queryAll`'s is
+  #      |V| × |derivatives| — which is why `queryAll` keeps its own contract and this is a
+  #      separate surface rather than a replacement.
+  #
+  #   2. IT RETURNS A SEQUENCE, NOT A SET. Answers come out in the closure's own visitation
+  #      order with no `listToAttrs`/`attrNames` round trip, so neither a reorder nor a
+  #      node-level dedup happens after the walk. A caller wanting the coarser answer states
+  #      the collapse it wants; it cannot recover multiplicity the carrier already threw away.
+  #
+  # `advance` IS A REQUIRED FORMAL AND CARRIES THE DISTANCE RULE.
+  # `advance : { distance; from; label; to; } → int` is handed the distance already
+  # accumulated AT the step's source together with the step, and returns the distance after
+  # it. Plain hop count is `s: s.distance + 1`. A caller whose graph reifies a relation as a
+  # node with labelled incidence — where one relation is spelled as two edges through the
+  # reified node — writes a rule that does not increment on the edge completing the pair, so
+  # that a representation choice does not silently move a distance. There is no default:
+  # a defaulted distance rule is a semantics nobody wrote down, and this library already
+  # takes the required-formal position on `nodes` for the same reason.
+  #
+  # ★ WHAT `distance` IS, STATED AS THE BOUND IT IS, BECAUSE THE BOUND IS SHARP.
+  # The payload is the distance of the FIRST arrival at a key in visitation order —
+  # `genericClosure` keeps the first item inserted under a key and discards later ones, so
+  # no minimum is computed anywhere.
+  #
+  # That first arrival IS the minimum when `advance` is nondecreasing in hop count: the
+  # visitation order is nondecreasing in hops (`ci/tests/closure-order.nix` asserts exactly
+  # that property), so under such a rule the first arrival is also the cheapest. Plain hop
+  # count and every rule charging a positive constant are of that kind.
+  #
+  # IT IS NOT THE MINIMUM FOR A RULE THAT CAN CHARGE ZERO, and the failure is not merely
+  # that the payload is wrong — the cheaper number can be ABSENT FROM THE ANSWER ALTOGETHER.
+  # A route that is longer in hops but charges zero on some of them can total less than a
+  # shorter one, and the shorter one is visited first. Whether the cheaper arrival survives
+  # depends on its LAST edge: arrivals are distinguished by the edge that delivered them, so
+  # a cheaper route entering by a different final edge is kept beside the dearer one and a
+  # caller can fold the minimum out of the sequence — but a cheaper route entering by the
+  # SAME final edge in the same derivative state shares the key with the dearer first
+  # arrival and is discarded, and then no fold of this sequence recovers it. Both halves are
+  # measured in `ci/tests/arrivals.nix`, against a hop-count control in the same run.
+  # A caller needing a true minimum under a zero-charging rule needs a relaxing traversal,
+  # which this is not and does not pretend to be.
+  #
+  # `via` is `null` at the root and `{ from; label; }` at every other arrival — the root
+  # arrived by no edge, and saying so is a statement rather than a missing field.
+  # `admission` is the canonical key of the residual follow expression at the arrival: the
+  # admission policy that remains in force there, and the component a caller needs to state
+  # a ⟨node, derivative-state⟩ collapse of its own.
+  queryArrivals =
+    {
+      graph,
+      from,
+      follow,
+      advance,
+      where ? (_: true),
+    }:
+    let
+      closure = builtins.genericClosure {
+        startSet = [
+          {
+            key = builtins.toJSON [
+              null
+              from
+              (regex.stateKey follow)
+            ];
+            node = from;
+            st = follow;
+            distance = 0;
+            via = null;
+          }
+        ];
+        operator =
+          item:
+          builtins.concatMap (
+            e:
+            let
+              st' = regex.deriv e.label item.st;
+              k = regex.stateKey st';
+              via = {
+                from = item.node;
+                inherit (e) label;
+              };
+            in
+            if k == "0" then
+              [ ]
+            else
+              [
+                {
+                  key = builtins.toJSON [
+                    via
+                    e.target
+                    k
+                  ];
+                  node = e.target;
+                  st = st';
+                  distance = advance {
+                    inherit (item) distance;
+                    from = item.node;
+                    inherit (e) label;
+                    to = e.target;
+                  };
+                  inherit via;
+                }
+              ]
+          ) (graph.labeledEdges item.node);
+      };
+    in
+    map (item: {
+      inherit (item) node distance via;
+      admission = regex.stateKey item.st;
+    }) (builtins.filter (item: regex.nullable item.st && where item.node) closure);
 
   # `paths` mode: witness-carrying DFS. Enumerates ACYCLIC paths only (the
   # pathsBetween precedent) with derivative pruning; enumeration-priced —
@@ -405,8 +650,11 @@ in
   inherit
     labeledFrom
     forgetLabels
+    labeledTranspose
+    boundedBy
     cyclicEdgesWhere
     query
+    queryArrivals
     queryFold
     ;
 }

@@ -859,6 +859,48 @@ contract `mkGraph` states.
 graph.condensation (graph.forgetLabels g)   # SCC partition of a labeled graph
 ```
 
+**`labeledTranspose g`** reverses every edge **and carries its label**, so a reverse read is
+the forward construction over a transposed accessor with `follow`, `order` and `groupBy`
+untouched — one construction with a direction argument, not two that can drift apart.
+
+```nix
+query { graph = g;                        from = "root"; follow = regex.parse "contains+"; }
+query { graph = graph.labeledTranspose g; from = "u1";   follow = regex.parse "contains+"; }
+# → what root contains         /         → what contains u1
+```
+
+Mokhov 2017 §5.2's law is that transpose flips the arguments of `connect` and leaves
+`overlay` unchanged: direction is **reversed, not erased**. Going through `forgetLabels` to
+reach the plain `transpose` erases exactly the component a label regex reads, which is why
+this is not sugar for that composition. It is Θ(n + E) — one accessor pass, one `groupBy`,
+shared by every lookup and not forced at all if the transposed graph is never queried — and
+it is expressible only because `nodes` is a required formal: reversal asks who points **at**
+a node, which an accessor's non-enumerable domain cannot answer alone.
+
+**`boundedBy g marksOf`** applies per-node **boundary marks** to a labeled graph, yielding a
+labeled graph plus a companion diagnostic. A mark is `{ name; admits; }` — a name the
+diagnostic can quote and a `label → bool` predicate. `marksOf : id → [ mark ]`, and an
+unmarked node returns `[ ]`.
+
+```nix
+b = graph.boundedBy g (
+  id: if id == "gate" then [ { name = "sealed"; admits = l: l == "e"; } ] else [ ]
+);
+
+b.labeledEdges "gate"   # → [ { label = "e"; target = "ok"; } ]         the admitted edges
+b.withheld     "gate"   # → [ { label = "q"; target = "no"; marks = [ "sealed" ]; } ]
+```
+
+The construction only ever **removes** edges, so a caller holding the bounded graph has no
+operation that recovers a withheld one: widening is not forbidden, it is unsayable. That is
+also why marks are applied at the accessor rather than inside the label regex — `deriv`
+takes a label and an expression and never sees a node, so a per-node intersection is not
+expressible there at all. **`withheld` is not optional**: a filtering accessor that said
+nothing would answer a boundary and an absent edge identically, and those two must not be
+indistinguishable in the diagnostic as well as in the answer. An edge withheld by several
+marks is one entry naming all of them — picking one would make the report depend on mark
+order.
+
 **`cyclicEdgesWhere g p`** — the edges whose label satisfies `p` **and** which lie on a
 cycle, as `[ { from; label; to; } ]` sorted by `(from, label, to)`. Empty means no cycle of
 this graph carries such an edge. It completes the family `cycles` (which *nodes*) and
@@ -948,6 +990,60 @@ queryFold {
 `combine` is expected to be a commutative-idempotent monoid; under those laws the canonical
 order is unobservable. Recursive node-valued fixpoints (a node's value depending on its
 neighbours') remain [`fixpoint`](#fixpoint) territory.
+
+**`queryArrivals`** walks the same product automaton as `all` and differs from it in exactly
+two ways, both of which are the point: it is keyed on the **arriving edge** rather than the
+node, and it returns a **sequence** rather than a set.
+
+```nix
+queryArrivals {
+  graph = g;
+  from = "s";
+  follow = regex.parse "a | b";
+  advance = s: s.distance + 1;    # REQUIRED — the per-step distance rule
+  # where ? (_: true)
+}
+# → [ { node = "x"; distance = 1; via = { from = "s"; label = "a"; }; admission = "e"; }
+#     { node = "x"; distance = 1; via = { from = "s"; label = "b"; }; admission = "e"; } ]
+#   ("e" is stateKey's rendering of eps — nothing further is admitted here; a literal
+#    label `e` would render `'e`)
+```
+
+`all` answers that query `[ "x" ]`. Its seen-key is ⟨node, derivative-state⟩ and an
+alternation derivates both labels to the same state, so the second edge vanishes with
+nothing in the answer to say it existed. Keying on ⟨arriving edge, derivative-state⟩ keeps
+both, and termination is untouched: edges are finite and derivatives are finite modulo the
+ACI identities `regex.nix` normalizes by, so the refined key set is still finite and still
+fences cycles — refining a fence does not remove it. The price is the in-degree factor
+(|E| × |derivatives| against `all`'s |V| × |derivatives|), which is why `all` keeps its own
+contract and this is a separate surface rather than a replacement. There is no
+`listToAttrs`/`attrNames` round trip either, so answers come out in visitation order with no
+reorder and no node-level dedup after the walk.
+
+`advance : { distance; from; label; to; } → int` is **required**. It is handed the distance
+already accumulated at the step's source together with the step, and returns the distance
+after it; plain hop count is `s: s.distance + 1`. A graph that reifies a relation as a node
+with labelled incidence — one relation spelled as two edges through the reified node — can
+write a rule that does not charge the edge completing the pair, so that a representation
+choice does not silently move a distance. It has no default: a defaulted distance rule is a
+semantics nobody wrote down.
+
+`via` is `null` at the root (it arrived by no edge, and saying so is a statement rather than
+a missing field) and `{ from; label; }` everywhere else. `admission` is the canonical key of
+the residual `follow` expression at the arrival — the admission policy still in force there,
+and the component a caller needs to state a ⟨node, state⟩ collapse of its own.
+
+> **`distance` is a first arrival, not a minimum, and the bound is sharp.** `genericClosure`
+> keeps the first item inserted under a key. That first arrival *is* the minimum when
+> `advance` is nondecreasing in hop count — visitation is nondecreasing in depth, which
+> `ci/tests/closure-order.nix` asserts against a seeded depth-first control — so plain hop
+> count and every positive-constant rule are safe. Under a rule that can charge **zero** it
+> is not: a longer route charging zero on some hops can total less, and the shorter one is
+> visited first. Whether the cheaper arrival survives at all depends on its **last** edge —
+> entering by a different final edge it is kept beside the dearer one and a caller can fold
+> the minimum out of the sequence; entering by the *same* final edge in the same state it
+> shares the key and is discarded, and then no fold of this sequence recovers it. A true
+> minimum under a zero-charging rule needs a relaxing traversal, which this is not.
 
 **gen-scope adapter recipe** (recipe only — gen-graph does **not** import gen-scope):
 
@@ -1116,10 +1212,11 @@ nix-unit --flake ./ci#testsError   # cells asserting an ERROR (nix-unit `expecte
 nix flake check ./ci               # the batch gate, which covers ./ci#tests
 ```
 
-**410 tests** across **20 suites** in `./ci#tests` (`arms`, `edge-maps`, `enumerate`,
-`fixpoint-tests`, `global`, `hoist`, `integration`, `labeled-global`, `order`,
-`order-front-door`, `partition`, `prelude-domain`, `preorder`, `purity`, `query`, `regex`,
-`registry`, `scan`, `topo`, `traverse`), plus **20** in `./ci#testsError` — run under [nix-unit](https://github.com/nix-community/nix-unit) via
+**465 tests** across **24 suites** in `./ci#tests` (`arms`, `arrivals`, `boundaries`,
+`closure-order`, `edge-maps`, `enumerate`, `fixpoint-tests`, `global`, `hoist`,
+`integration`, `labeled-global`, `labeled-transpose`, `order`, `order-front-door`,
+`partition`, `prelude-domain`, `preorder`, `purity`, `query`, `regex`, `registry`, `scan`,
+`topo`, `traverse`), plus **23** in `./ci#testsError` — run under [nix-unit](https://github.com/nix-community/nix-unit) via
 the gen CI harness (`gen.lib.mkCi`). The `purity` suite asserts the library source stays
 nixpkgs-lib-free (gen-prelude only).
 
