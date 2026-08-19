@@ -314,6 +314,86 @@ let
     in
     builtins.attrNames answers;
 
+  # ── `series` MODE: THE ANSWERS AS A SEQUENCE, IN VISITATION ORDER ──
+  # `queryAll` with the answer-set layer deleted — the same closure, the same
+  # ⟨node, derivative-state⟩ seen-key, the same termination, returning the answers in
+  # visitation order instead of routing them through `listToAttrs`/`attrNames`.
+  #
+  # ★ IT IS A NEW MODE BESIDE `all`, NEVER A REDEFINITION OF IT. `all` keeps its shipped
+  # contract — a sorted set — and every existing caller keeps its answer.
+  #
+  # ON THE NAME. `series` names what comes back: the answers as a series rather than as a
+  # set. The two obvious alternatives were rejected on measurement rather than taste.
+  # `sequence` is a HOMONYM AT THE PRIMARY: van Antwerpen 2016 spends that word on the
+  # label word projected from a path — *"projecting the sequence of labels from the path"*,
+  # *"the lexicographic order on the projected label sequences"* — which is E's and `<`'s
+  # INPUT, not a query's answer order, so the name would collide with the source this
+  # library's query engine is built from. `arrivals` is taken, by the edge-keyed carrier
+  # below, which is a different key answering a different question. `series` carries no
+  # technical sense at either primary and no prior use anywhere in the gen libraries.
+  #
+  # WHAT THE DELETION BUYS, and it is two separate things:
+  #   · THE REORDER GOES. `attrNames` sorts lexicographically, so `all` returns an order
+  #     that is a fact about node NAMES and not about the graph. The answer order here is
+  #     the traversal, which is the only order a query has any business pinning.
+  #   · THE STATE COLLAPSE GOES. `listToAttrs` is first-wins on the node name, so a node
+  #     reached in two DISTINCT nullable derivative states is answered once. The closure
+  #     already distinguished them; the answer layer threw the distinction away.
+  #
+  # ★ WHAT THE DELETION DOES NOT BUY, because an earlier reading of this claimed it did:
+  # this is NOT a multiplicity-preserving traversal in the general sense. The
+  # ⟨node, derivative-state⟩ key survives the deletion, and it must — it is what fences
+  # cycles, and the answer set never did. So two paths reconverging on one node in the SAME
+  # state still yield one answer, and two DISTINCT labels reaching one node still collapse
+  # whenever the follow expression derivates both to the same state. Recovering those needs
+  # the edge-keyed carrier (`queryArrivals`), which is a different key and a different
+  # surface, not this deletion.
+  #
+  # THE SHIPPING PRECONDITION IS THE ORDER GUARD, NOT THIS FUNCTION. A pinned answer order
+  # is only worth pinning if the order is a property of the walk rather than of the C
+  # worklist's mood: `ci/tests/closure-order.nix` asserts that visitation is nondecreasing
+  # in depth, armed in-suite against a seeded depth-first control.
+  querySeries =
+    args:
+    let
+      closure = builtins.genericClosure {
+        startSet = [
+          {
+            key = builtins.toJSON [
+              args.from
+              (regex.stateKey args.follow)
+            ];
+            node = args.from;
+            st = args.follow;
+          }
+        ];
+        operator =
+          item:
+          builtins.concatMap (
+            e:
+            let
+              st' = regex.deriv e.label item.st;
+              k = regex.stateKey st';
+            in
+            if k == "0" then
+              [ ]
+            else
+              [
+                {
+                  key = builtins.toJSON [
+                    e.target
+                    k
+                  ];
+                  node = e.target;
+                  st = st';
+                }
+              ]
+          ) (args.graph.labeledEdges item.node);
+      };
+      where = args.where or (_: true);
+    in
+    map (item: item.node) (builtins.filter (item: regex.nullable item.st && where item.node) closure);
+
   # ── THE ARRIVAL CARRIER: EDGE-KEYED, LINEAR, DISTANCE-CARRYING ──
   # `queryArrivals` walks the same (node × derivative-state) product automaton `queryAll`
   # closes, and differs from it in exactly two respects, both of which are the point:
@@ -633,6 +713,8 @@ let
     in
     if mode == "all" then
       queryAll core
+    else if mode == "series" then
+      querySeries core
     else if mode == "paths" then
       queryPaths core
     else if mode == "visible" then

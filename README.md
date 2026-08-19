@@ -952,10 +952,23 @@ query : { graph; from; follow; where?; mode?; order?; groupBy?; … } → result
 | Mode | Result | Notes |
 |------|--------|-------|
 | `all` (default) | sorted `[ id ]` | reachable set; `from` included iff `follow` is nullable. `genericClosure` over the (node × derivative-state) product — scales, no path materialization |
+| `series` | `[ id ]` in visitation order | the same closure with the answer-set layer deleted. No `attrNames` sort, and a node reached in two **distinct** nullable derivative states is answered twice instead of once. Same cost class, same cycle tolerance |
 | `paths` | `[ { node; path = [ { label; from; to; } … ]; } ]` | labeled path **witnesses** (the "why"); acyclic paths only |
 | `visible` | `{ visible; shadowed; }` | nearest-wins resolution under `order`, grouped by `groupBy` (default: the answer node) |
 | `layers` | `[ [ answer … ] … ]` | all answers grouped into ordered layers by rank word (the cascade shape) |
 | `fixpoint` | fold result | dispatch-alias for `queryFold` (below) |
+
+**`all` versus `series`, because the difference is exactly two lines and neither is cosmetic.**
+`all` ends `builtins.attrNames (builtins.listToAttrs …)`. `attrNames` sorts, so `all`'s answer
+order is a fact about node *names* and not about the graph; and `listToAttrs` is first-wins on
+the node name, so a node the closure reached in two different nullable derivative states — and
+had already told apart — comes back once. `series` returns the closure's own order and keeps
+that distinction. It does **not** make the traversal multiplicity-preserving in general: the
+⟨node, derivative-state⟩ seen-key survives, and must, because it is what fences cycles (the
+answer set never did). Two paths reconverging on one node in the *same* state still give one
+answer, and two distinct labels still collapse when `follow` derivates both to one state —
+that is `queryArrivals`' key, not this one. `all` is unchanged and every existing caller keeps
+its answer.
 
 `order = { labels = [ … ]; endOfPath ? -1; }` gives a per-query specificity order: earlier
 labels are more specific, unlisted labels rank after all listed. `endOfPath` is the rank of
