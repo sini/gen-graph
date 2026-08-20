@@ -176,14 +176,20 @@ closure = graph.transitiveClosure g;
 # closure."gateway" → [ "api" "cache" "db" "web" ] — the full picture
 ```
 
-The fixpoint iteration (from *Datafun*) works like this:
+The fixpoint iteration — the classical closure ascent, read here through *Datafun*'s monotone-fixpoint framing rather than taken from it as an algorithm — works like this:
 
 1. Start with direct edges
 2. Compose the current map with the original (discover two-hop paths)
 3. Union the result with what we had
 4. Repeat until nothing changes
 
-gen-graph enforces **monotonicity** — each iteration must add edges, never remove them. If a step shrinks the graph, something is wrong, and gen-graph throws. This guarantee comes directly from Arntzenius's lattice-theoretic framework: queries over monotone functions always converge.
+gen-graph enforces **monotonicity** — each iteration must add edges, never remove them. If a step shrinks the graph, something is wrong, and gen-graph throws.
+
+★ **That guard does not buy termination, and this guide used to say it did.** The sentence that stood here — "queries over monotone functions always converge" — is refuted by the very paper it credited. Datafun, pp. 11–12: requiring the body of a fixed point to be monotone "ensures that the recursive definition is well-defined, but is **not sufficient by itself to guarantee termination**."
+
+What terminates the ascent is **finiteness**. Datafun's Lemma 4, *Fixed points in finite-height pointed posets*: "Any monotone map `f : P → P` on a poset `P` of **finite height** with a least element `ε` has a least fixed point of the form `fⁿ(ε)`." Its proof turns on exactly that — the iterates `ε, f(ε), f²(ε), …` form an ascending chain, and "since `P` has finite height, this chain cannot be infinite." Datafun buys the finiteness with a type discipline; Datalog buys it by restricting terms to atoms so the lattice of sets of atomic predicates is finite; gen-graph gets it for free, because the edge set over a finite node set is finite and so the lattice the ascent climbs has finite height.
+
+So the two premises are both load-bearing and neither substitutes for the other: **monotonicity makes the chain ascending, finiteness makes it stop.** The guard here is worth keeping for what it actually catches — a step that is not monotone is a bug in the step, and the throw names it at the iteration where it happens rather than letting a wrong answer converge. `closureOf` states the same pair correctly in its own comment (`lib/fixpoint.nix`), citing Tarski 1955 for the least fixed point of a monotone map on a complete lattice and Kleene for the ascending-chain construction that reaches it.
 
 ## Edge map algebra: Mokhov's algebraic graphs
 
@@ -413,7 +419,7 @@ The papers behind gen-graph's design, in order of influence:
 
 2. **Mokhov, A. (2017)** — *Algebraic Graphs with Class.* Edge map set operations (union, intersect, difference) as a closed algebra. Transitive reduction as "closure minus composed edges." gen-graph's edge-map operations follow this framework.
 
-3. **Arntzenius, M. & Krishnaswami, N. (2016)** — *Datafun: A Functional Datalog.* Monotone fixpoint computation over finite lattices. gen-graph's `fixpoint` enforces monotonicity (growing edge count), guaranteeing convergence. `reachableWhere` draws from Datafun's predicate-filtered queries.
+3. **Arntzenius, M. & Krishnaswami, N. (2016)** — *Datafun: A Functional Datalog.* Monotone fixpoint computation over finite-height lattices, and specifically **Lemma 4**, which is the result gen-graph's ascent rests on. `fixpoint`'s monotonicity guard is **not** what makes it converge — finiteness of the edge lattice is (see [the transitive closure](#the-transitive-closure-seeing-everything-at-once), where the paper's own refutation of the stronger claim is quoted). ★ Two further borrowings once claimed here are **withdrawn as unsupported at the primary**: `reachableWhere` does not draw on "Datafun's predicate-filtered queries" — that phrase names no construct in the paper — and the reverse-reachability operators are not Datafun's either, since *reverse* occurs **0** times in it (live controls in the same run: *monotone* 48, *semilattice* 41, *transitive closure* 10). Both are gen-graph's own.
 
 4. **Kahn, G. (1974)** — *The Semantics of a Simple Language for Parallel Programming.* Demand-driven evaluation — only compute what's asked for. gen-graph's lazy traversal (only visiting reachable nodes) is this principle applied to graph queries in a lazy language.
 

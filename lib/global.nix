@@ -5,7 +5,11 @@
 # cyclePaths: one representative simple cycle per cyclic component, ORDERED, so
 #   consecutive pairs are real edges. SCC partition is Tarjan 1972, Lemma 9;
 #   full simple-cycle enumeration (Johnson 1975) is deliberately not provided.
-# dependents/dependentsOf: Arntzenius 2016 (Datafun reverse reachability).
+# dependents/dependentsOf: gen-graph's own, claimed from no paper. These cited
+#   "Arntzenius 2016 (Datafun reverse reachability)" and no longer do — `reverse`
+#   occurs 0 times in Datafun, and `reachability` once, in a motivating aside (live
+#   controls in the same run: `monotone` 48, `semilattice` 41). The construction is
+#   stated on its own terms below.
 #   dependents uses full transitive closure (amortized for multi-target).
 #   dependentsOf uses reverse traversal — Θ( Σ_{u ∈ reach⁻ t} (1 + indeg u) ) for single-target,
 #   i.e. O(reachable) only where IN-degree is bounded, since the reversed operator re-reads the
@@ -99,7 +103,8 @@ let
       builtins.filter (id: id != targetId) (reversed.${targetId} or [ ])
     );
 
-  # Single-target reverse reachability via reverse traversal (Arntzenius 2016).
+  # Single-target reverse reachability via reverse traversal (this library's own; the
+  # Arntzenius 2016 attribution that stood here is withdrawn — see the file header).
   # Θ(n + E) to build the reverse index — it reads every node's out-edges — then a C-level BFS
   # over that index costing
   #   Θ( Σ_{u ∈ reach⁻ targetId} (1 + indeg u) )

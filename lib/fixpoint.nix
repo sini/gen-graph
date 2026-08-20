@@ -52,7 +52,17 @@ let
   # `dF`, not the whole accumulator (the semi-naive saving over `fixpoint`, which
   # re-steps the whole map each iteration). Converges when the frontier empties.
   # No monotonicity guard — union-accumulation cannot shrink the result.
-  # (Arntzenius 2016 §9, semi-naive evaluation.)
+  #
+  # THE NAME IS STANDARD DATALOG; THE DATAFUN COORDINATE IT USED TO CARRY IS NOT.
+  # This line read "(Arntzenius 2016 §9, semi-naive evaluation.)" and cannot be
+  # defended: `semi-naive` occurs exactly ONCE in that paper, in §9 Related Work,
+  # about FLIX rather than about Datafun, in a sentence whose reason clause is
+  # "because Flix does not extend Datalog to higher order, efficient Datalog
+  # implementation strategies (such as semi-naive evaluation) continue to apply".
+  # Nothing incremental there is ours to cite either — `delta`, `derivative`,
+  # `difference`, `incremental` and `frontier` are each 0 (live controls in the same
+  # run: `monotone` 48, `semilattice` 41). Semi-naive evaluation is folklore of the
+  # Datalog literature, and the operator keeps the NAME on that basis and no other.
   seededFixpoint =
     {
       seed,
