@@ -1,9 +1,8 @@
 # SCC partitioning — the one published door and the forward–backward arms behind it.
 #
 # THEORY. A strongly connected component is an equivalence class of the mutual-reachability
-# relation (Tarjan 1972; Kosaraju's two-pass formulation of the same partition), and the
-# condensation is the QUOTIENT of the graph by that relation — Mokhov 2017 §4.6 Preorders and
-# Equivalence Relations, the quotient-graph idiom. The quotient is ACYCLIC: a cycle among
+# relation (Tarjan 1972, Lemma 9), and the condensation is the QUOTIENT of the graph by that
+# relation — Mokhov 2017 §4.6 Preorders and Equivalence Relations, the quotient-graph idiom. The quotient is ACYCLIC: a cycle among
 # classes would make every class on it mutually reachable, i.e. one class. Every construction
 # below rests on that fact, and the finisher is where it is spent.
 #
@@ -19,9 +18,17 @@
 # pivot on EVERY node and does no cutting at all, which is why it carries no accumulator —
 # it is the definition, not the algorithm built on it.
 #
-# NEITHER ARM IS TARJAN'S LINEAR SINGLE-DFS. Its mutable stack and lowlink are out of
-# substrate for pure Nix — the reason `condensationClosure` (`lib/global.nix`) already gives
-# for not being it either.
+# NEITHER ARM IS TARJAN'S LINEAR SINGLE-DFS, AND THE MUTABLE STACK IS NOT WHY. A persistent
+# structure holds a stack and a lowlink map without mutation, the way this library's own
+# ready set is a purely functional heap (`lib/order.nix`); "pure Nix cannot express it" is
+# the same false impossibility claim the ordering surface already retired. THE OBSTRUCTION IS
+# RECURSION. Tarjan's single pass is a self-applying DFS step, and such a step is closed off
+# twice over: ADR-0022 makes NON-RECURSIVE SCC detection a binding constraint, and the
+# evaluator's call-depth ceiling ends a step that applies itself with an uncatchable `stack
+# overflow; max-call-depth exceeded` — measured on this library at ~10^4 frames (AGENTS.md's
+# frame-ceiling row) and again as `coneRank`'s descent (`lib/order.nix`, its driver). Both
+# arms below ITERATE over a worklist, which is what keeps them inside that constraint — the
+# reason `condensationClosure` (`lib/global.nix`) also gives for not being it either.
 #
 # THE DOOR CARRIES THE DEFAULT, THE ARM CARRIES THE ALGORITHM — the pattern `lib/order.nix`
 # landed for ordering, applied to the concern the same reasoning assigns to this library. A

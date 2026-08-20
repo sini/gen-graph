@@ -567,7 +567,10 @@ let
 
   # Cone-local producers-first rank: depth id = 1 + max(depth of in-cone producers).
   # O(|cone| + edges_in_cone) via prelude.fix memoization; NOT whole-graph condensation.
-  # RTD 1983 topological enumeration restricted to a dependent cone.
+  # THE MECHANISM ON ITS OWN TERMS: longest-incoming-path topological rank over the cone —
+  # depth = 1 + max over producers — restricted to a dependent cone. (cf. Tarjan 1983, *Data
+  # Structures and Network Algorithms* — UNHELD, cite unverified: the recurrence is standard
+  # and nothing here is claimed from that text.)
   #
   # ── WHY THERE IS A DRIVER ──
   # The recurrence memoizes, which is what makes it linear, and memoization is also what

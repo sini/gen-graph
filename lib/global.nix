@@ -3,7 +3,7 @@
 # cycles: standard cycle detection (a node is in a cycle iff reachable from
 #   itself). Uses genericClosure per-node for C-level BFS.
 # cyclePaths: one representative simple cycle per cyclic component, ORDERED, so
-#   consecutive pairs are real edges. SCC partition is Tarjan 1972 / Kosaraju;
+#   consecutive pairs are real edges. SCC partition is Tarjan 1972, Lemma 9;
 #   full simple-cycle enumeration (Johnson 1975) is deliberately not provided.
 # dependents/dependentsOf: Arntzenius 2016 (Datafun reverse reachability).
 #   dependents uses full transitive closure (amortized for multi-target).
@@ -206,8 +206,11 @@ let
   # transitive closure and asking it. The door is an unconditional alias for the
   # forward–backward arm (`condensation = fbNode`, `lib/partition.nix`) instead;
   # a caller whose correctness depends on THIS construction answering binds this name.
-  # Not Tarjan's linear O(V+E) single-DFS — its mutable stack/lowlink is out-of-substrate
-  # for pure Nix.
+  # Not Tarjan's linear O(V+E) single-DFS — and not because of the mutable stack/lowlink,
+  # which a persistent structure holds without mutation. Tarjan's pass is a SELF-APPLYING DFS
+  # step: ADR-0022 makes non-recursive SCC detection a binding constraint, and the evaluator's
+  # call-depth ceiling ends a self-applying step with an uncatchable `max-call-depth exceeded`.
+  # `lib/partition.nix`'s header carries the full reason; this arm iterates instead.
   #
   # COST is the CLOSURE-CLASS cost shared with `dependents`/`transitiveReduction` —
   # SUPER-QUADRATIC and shape-dependent, not O(n²). The closure callers measure as ONE
@@ -232,7 +235,7 @@ let
   # three copies in step. The closure this arm is named for is spent on the PARTITION; a
   # second closure over the quotient is not needed to order it, and it would put the capped
   # fixpoint's ceiling on the result of every arm rather than on this one.
-  # (Tarjan 1972 / Kosaraju for SCCs; Mokhov 2017 §4.6 Preorders and Equivalence Relations
+  # (Tarjan 1972, Lemma 9 for SCCs; Mokhov 2017 §4.6 Preorders and Equivalence Relations
   # for the quotient-graph idiom — a condensation is the quotient by the co-SCC equivalence.)
   condensationClosure =
     args@{ edges, nodes, ... }:
@@ -261,7 +264,7 @@ let
   # on its head.
   #
   # ONE per component, not all: the strongly connected component is the canonical object (Tarjan
-  # 1972 / Kosaraju — the partition `condensation` above already anchors), while the cycle through
+  # 1972, Lemma 9 — the partition `condensation` above already anchors), while the cycle through
   # it is existential. Enumerating every simple cycle is Johnson 1975, whose output is itself
   # exponential in the graph; it is deliberately not provided here.
   #
