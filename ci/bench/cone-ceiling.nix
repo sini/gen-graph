@@ -128,7 +128,7 @@ let
   # is precisely the BENIGN case: `genAttrs` forces in sorted key order, which on `chain` is
   # topological, so no descent happens and the SHIPPED arm returns at 32,000. Measured: the
   # first version of this cell did exactly that and reported no ceiling for either arm.
-  # `.order` cold is also the read both real consumers make (`gen-rebuild/lib/eager.nix`,
+  # `.order` cold is also the read both real consumers make (`gen-memo/lib/eager.nix`,
   # `den-hoag/lib/coordinates.nix`), so it is the cell's subject as well as its discriminant.
   cold = builtins.deepSeq rank.order rank;
 in

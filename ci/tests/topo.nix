@@ -5,7 +5,7 @@
 # So a sound `coneRank.order` has every PRODUCER before its CONSUMER, i.e. for every
 # edge { from = consumer; to = producer; } the producer precedes the consumer.
 #
-# coneRank is LOAD-BEARING for gen-rebuild's propagateEager (V-push): the worklist
+# coneRank is LOAD-BEARING for gen-memo's propagateEager (V-push): the worklist
 # drains in producers-first rank order, byte-identical to a full build ONLY IF every
 # dependency is ranked before its dependent. directDependents must be DIRECT (the
 # immediate reverse neighbours) and NOT the transitive closure (dependentsOf) — the

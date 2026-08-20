@@ -17,7 +17,7 @@ Quoted text is the owner's own `flake.nix` `description` field, verbatim.
 | Minting identity, kinds, instances, registries | `gen-schema` — "gen-schema: typed record registry with extension points for the pure-gen module system". `fromRegistry` consumes a caller-supplied attrset and mints nothing |
 | Type checking / `verify` | `gen-types` — "gen-types: pure, nixpkgs-lib-free structural type checker for the gen ecosystem" |
 | General utilities — gen-graph's ONLY dependency | `gen-prelude` — "gen-prelude: vendored, nixpkgs-lib-free pure utilities for the gen ecosystem" |
-| Incremental rebuild / change propagation / AFFECTED sets | `gen-rebuild` — "gen-rebuild: pure-Nix incremental rebuilder core (Mokhov rebuilder dimension)". Consumes gen-graph |
+| Incremental rebuild / change propagation / AFFECTED sets | `gen-memo` — "gen-memo — the incremental plane: a decision layer over the evaluator that never evaluates, only decides reuse". Consumes gen-graph |
 | Content movement, edge materialization fold, edge-trace parity | `gen-edge` — "gen-edge — the content-movement contract: the (S,T,P,M) edge algebra, toposorted materialization fold, and the frozen edge-trace parity oracle". Consumes gen-graph |
 | Typed demand cascade / stratified demand resolution | `gen-demand` — "gen-demand — typed demand cascade (kinds resolve demands into resources + wiring + sub-demands; a stratified, terminating fold resolves the multiset with full provenance)". Consumes gen-graph |
 | RAG attribute schedule + convergence loop | `gen-resolve` — "gen-resolve — demand-driven higher-order RAG evaluator over algebraic scope graphs (Knuth 1968 attribute schedule + Vogt 1989 HOAG)" |
