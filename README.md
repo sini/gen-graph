@@ -475,12 +475,13 @@ that precondition is guarded here rather than merely stated.
 ordering, or the cycles that prevented one — as strongly-connected-component member sets,
 sorted within each component, **all** of them, so a caller sees every cycle at once rather
 than fixing one and meeting the next. A self-loop is reported as its own singleton
-component. Consumers that build their own diagnostic (gen-pipe names the channels and the
-operators forming each edge) need the members, not a throw.
+component. Consumers that build their own diagnostic (the retired gen-pipe named the channels
+and the operators forming each edge) need the members, not a throw.
 
 - **`keyOf`** projects a node to its string identity, which is also its tie-break key. It
-  is what admits nodes that are not themselves strings — gen-edge orders edge *records* by
-  a canonical sort key. **Not** gen-class's `mkClasses { nodes; keyOf; }` argument, which
+  is what admits nodes that are not themselves strings — the retired gen-edge ordered edge
+  *records* by a canonical sort key, and gen-view, which inherited that materialization,
+  reaches this library's Kahn arm the same way. **Not** gen-class's `mkClasses { nodes; keyOf; }` argument, which
   shares the name and the `node -> string` shape but plays the opposite role: that key
   *partitions* nodes into share-classes, deliberately mapping many nodes to one key, while
   this one *identifies* a node and a collision in it is a refusal. (`query.nix` also binds

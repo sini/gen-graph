@@ -467,9 +467,11 @@ in
         "r"
       ];
     };
-    # gen-edge's Law E2 — incomparable nodes emit in FROZEN SORT KEY order, which is what
-    # makes an ordering a function of the node SET and its edge trace a parity oracle.
-    # A hardcoded name tie-break could not reproduce this; a caller-supplied key can.
+    # The retired gen-edge's Law E2 (ADR-0010 §3) — incomparable nodes emit in FROZEN SORT
+    # KEY order, which is what makes an ordering a function of the node SET and made its edge
+    # trace a parity oracle. A hardcoded name tie-break could not reproduce this; a
+    # caller-supplied key can. The law is cited, not depended on: it names where the
+    # requirement on this arm came from, and it outlived the library that stated it.
     test-topo-tiebreak-canonical-key = {
       expr =
         (topoOrder {

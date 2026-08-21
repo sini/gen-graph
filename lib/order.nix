@@ -87,13 +87,16 @@ let
   # topoOrder { nodes; edges; keyOf ? id; lessThan ? builtins.lessThan }
   #   => { ok = true; order = [ node ]; } | { ok = false; cycles = [ [ node ] ]; }
   #
-  # NON-THROWING on a cycle: both migrating consumers build their own diagnostic from the
-  # cycle set (gen-pipe names the channels and the operators; gen-edge names the
+  # NON-THROWING on a cycle: the consumers that drove this shape build their own diagnostic
+  # from the cycle set (gen-pipe named the channels and the operators; gen-edge named the
   # (target, channel) chain), so a front door that throws first denies them the material.
+  # Both of those libraries retired under ADR-0010 §3 and their materialization is gen-view's
+  # now, which reaches this arm through `accumulatorOrder`; the requirement outlived them
+  # because it is about what a cycle report has to carry, not about who asked for it.
   # `phaseOrder` below is the throwing convenience layer for callers that want one.
   #
   # `keyOf` projects a node to its STRING identity, which is also its tie-break key. It
-  # admits node values that are not themselves strings — gen-edge orders edge RECORDS by
+  # admits node values that are not themselves strings — gen-edge ordered edge RECORDS by
   # a canonical sort key — and it is what makes the tie-break caller-supplied: ordering
   # incomparable nodes by a frozen key is what makes an ordering a pure function of the
   # node SET rather than of the input permutation. `lessThan` orders those keys, so a
