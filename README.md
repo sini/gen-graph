@@ -816,6 +816,66 @@ g = graph.fromRegistry {
 | `serviceGraph` | web/api/worker/db/cache/queue with nodeData |
 | `disconnected` | a → b plus isolated `island` node |
 
+### Endpoint Projection
+
+An evaluating substrate hands out its structural attributes as `id → { name → value }` — an
+attribute-name-indexed **record**, which is not even the arity of an edge set. `mkEndpointProjection`
+is the projection that reads it as one, `id → [id]`, so an accessor-shaped `edges` can be built from
+a substrate that never had one.
+
+```nix
+structuralEdges = graph.mkEndpointProjection {
+  childBearing = name: name == "children" || name == "derived-children";
+  isNode = t: builtins.elem t ev.allNodeIds;
+} ev.structuralAttributes;
+
+structuralEdges "a"   # => [ "b" "a-spawned" "c" ]
+```
+
+| Export | Signature |
+|---|---|
+| `mkEndpointProjection` | `{ childBearing, isNode } -> (id -> structuralRecord) -> id -> [id]` |
+| `mkProjectionFindings` | `{ childBearing, isNode } -> (id -> structuralRecord) -> id -> [string]` |
+
+**The two parameters are injected, not derived.** `childBearing` decides which attributes hold an
+attrset **keyed by child node id** (endpoints = its keys) rather than a list of node references
+(endpoints = itself); `isNode` is the membership authority. Both are facts about an evaluated
+substrate, and this library has no evaluator — its only input is gen-prelude. A constructor taking
+them as parameters mints its answer inside the caller's own evaluation, which is what keeps the
+dependency edge pointing at this library rather than away from it. A private copy of the
+child-bearing names here would be correct only for as long as someone kept the two copies in step,
+and the failure when they stop agreeing is silent.
+
+**The result is a SET.** A relational projection is set-valued, so `prelude.unique` is part of the
+definition rather than a tidy-up: the same target reached under two labels, or a child that is also
+an `imports` target, contributes one element. That is the set-of-targets contract `forgetLabels` and
+`mkGraph` already state.
+
+**The codomain contract is checked here, and only on the non-child-bearing family.** A construct's
+codomain contract belongs at its construction site; a consumer-site check guards a path, not a
+construct. Child-bearing attributes are contracted by the substrate that built them, so a check
+there asks a question already answered. Every other structural attribute is the **consumer's own
+equation**: it must evaluate to a list of ids, each a member of the evaluated node set, and is
+refused by name otherwise.
+
+**The refusal is staged, and the order is load-bearing.** The whole value is tested with `isList`
+before anything is mapped, each element with `isString` before it is interpolated, and only then is
+membership asked. Naming a non-string offender in a message interpolates it, and interpolating a
+non-string is a *coercion* error rather than a `throw` — uncatchable, so a check written the other
+way round converts a silent defect into an abort no oracle can observe. Each stage therefore names
+only what it can legitimately name: shape refusals name the reading node, the attribute, and
+**type-and-position**; only the membership refusal names an **id**.
+
+`mkProjectionFindings` runs the same three tests and **returns** their messages as a list, `[ ]`
+when the node's governed attributes are clean. Nothing on the production path forces it. Assert on
+this returned message rather than on a caught throw — a caught throw proves only that something
+refused, never that it refused for the reason under test.
+
+Membership is a claim about the **whole** graph, so reading the projection forces the node set, and
+one broken structural equation anywhere refuses every projection read. That is the intended
+direction of failure: a projection that answered while its authority was unavailable would assert a
+membership it could not verify.
+
 ### Labeled Queries
 
 The label-blind surface above (`edges : id → [id]`) is untouched; labeled queries are a

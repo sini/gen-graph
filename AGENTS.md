@@ -127,6 +127,13 @@ Entry: `inputs.gen-graph.lib` (flake). Root `default.nix` is a FUNCTION `{ prelu
 | `fixtures` | `{ chain, cyclic, diamond, disconnected, serviceGraph, tree }` (public, see traps) |
 | `labeledFixtures` | `{ cyclic, poisoned, world }` (public, see traps) — each is `{ labeledEdges; nodes; }` |
 
+**Endpoint projection** — `lib/endpoints.nix`
+
+| Export | Signature |
+|---|---|
+| `mkEndpointProjection` | `{ childBearing, isNode } -> (id -> structuralRecord) -> id -> [id]` — reads an evaluating substrate's `id -> { name -> value }` structural RECORD as an edge relation. `childBearing` names the attributes whose value is an attrset KEYED BY CHILD NODE ID (endpoints = its keys); every other attribute IS a list of node references (endpoints = itself). Both formals are INJECTED — they are facts about an evaluated substrate and this library has no evaluator, so a constructor taking them mints its answer inside the caller's eval and the dependency edge keeps pointing here. Emits a SET (`prelude.unique` is part of the definition, not a tidy-up: a target reached under two labels, or a child that is also an `imports` target, is ONE element). ★ The codomain contract is checked HERE and ONLY on the non-child-bearing family — the child-bearing families are contracted by the substrate that built them, so a check there asks a question already answered. A governed attribute must be a list of ids each in `isNode`, refused BY NAME otherwise. ★★ **The refusal is STAGED and the order is load-bearing**: `isList` on the whole value → `isString` per element → membership. Naming a non-string offender interpolates it, and that is a COERCION abort rather than a `throw` — `tryEval`-uncatchable, so the reversed order makes the junk-element mode undetectable by any oracle (measured). Shape refusals name node · attribute · TYPE-AND-POSITION; only the membership refusal names an id. ★ Reading it forces `isNode`'s whole node set — membership is a global claim, so one broken structural equation anywhere refuses every projection read, which is the intended direction of failure |
+| `mkProjectionFindings` | `{ childBearing, isNode } -> (id -> structuralRecord) -> id -> [string]` — the same three tests as a VALUE, returning every violating attribute's message and `[ ]` when clean. Nothing on the production path forces it. ★ Assert on THIS returned message, never on a caught throw: a caught throw proves something refused, never that it refused for the reason under test. The projection throws the FIRST of these findings, so the two surfaces cannot drift into stating different contracts |
+
 **Labeled queries** — `lib/query.nix`
 
 | Export | Signature |
