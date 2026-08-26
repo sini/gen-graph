@@ -721,10 +721,25 @@ let
   # after=[d] on n => n depends on d (edge n->d); before=[t] on n => t depends on n
   # (edge t->n). Both readings are the library direction stated in the header, so the
   # order comes straight off the front door with nothing to compensate for.
+  #
+  # An undeclared name must refuse BY NAME regardless of which arity names it. Left to
+  # `topoOrder`'s own dangling-edge check, the two arities are NOT symmetric: `after`
+  # puts the ghost name on the TARGET side of an arc whose SOURCE is a real, declared
+  # node, so `rawDepsOf` reads it and the dangling check catches it — but `before`
+  # puts the ghost name on the SOURCE side, and `edges` is only ever called for
+  # declared names (`nodes = names`), so an arc keyed by an undeclared source is never
+  # read at all and is silently dropped, at any phase count. Checking every referenced
+  # name against `names` up front, before any arc is built, makes both arities refuse
+  # the same way.
   phaseOrder =
     entries:
     let
       names = builtins.attrNames entries;
+      nameSet = prelude.genAttrs names (_: true);
+      referenced = prelude.concatMap (
+        n: (entries.${n}.after or [ ]) ++ (entries.${n}.before or [ ])
+      ) names;
+      undeclared = builtins.filter (d: !(nameSet ? ${d})) referenced;
       arcs = prelude.concatMap (
         n:
         map (d: {
@@ -742,8 +757,10 @@ let
         edges = id: map (x: x.to) (grouped.${id} or [ ]);
       };
     in
+    if undeclared != [ ] then
+      throw "gen-graph.phaseOrder: undeclared name ${builtins.toJSON (builtins.head undeclared)} referenced in before/after; every referenced name must be a declared entry"
     # Throw-on-cycle preserves the contract gen-dispatch's dag.nix had.
-    if result.ok then
+    else if result.ok then
       result.order
     else
       throw "gen-graph.phaseOrder: cyclic ordering constraints: ${builtins.toJSON result.cycles}";

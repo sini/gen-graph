@@ -225,6 +225,34 @@ in
       });
       expected = false;
     };
+    # SEEDED RED (den-hoag-qbs7): an undeclared `before` name used to be silently
+    # DROPPED rather than refused — the asymmetric twin of the `after` case above, and
+    # the one the shipped guard missed. Two phases: on the pre-fix code this returns
+    # `[ "a" ]` (ghost's non-existent constraint vanishes) instead of throwing.
+    test-order-refuses-unknown-phase-before = {
+      expr = didThrow (phaseOrder {
+        a = entryAnywhere;
+        b = entryBefore [ "ghost" ];
+      });
+      expected = true;
+    };
+    # Same defect, ONE phase: the bead's own measurement found the silent-drop and the
+    # throw selected by phase COUNT, which is the tell that the old guard was
+    # positional rather than by-name. A single phase must refuse exactly as two do.
+    test-order-refuses-unknown-phase-before-single = {
+      expr = didThrow (phaseOrder {
+        b = entryBefore [ "ghost" ];
+      });
+      expected = true;
+    };
+    # LIVE CONTROL for the `before` refusal: a well-formed `before` set is NOT caught.
+    test-order-unknown-phase-before-control = {
+      expr = didThrow (phaseOrder {
+        a = entryAnywhere;
+        b = entryBefore [ "a" ];
+      });
+      expected = false;
+    };
     # `before` must denote the same graph as the equivalent `after`.
     test-order-before-matches-after = {
       expr =
