@@ -622,14 +622,35 @@ let
     order: pa: pb:
     wordLess (order.endOfPath or (-1)) (rankWordOf order pa) (rankWordOf order pb);
 
+  # `groupBy` is REQUIRED and TOTAL, never defaulted — den-hoag-l7af / ADR-0024 ruling 3.
+  # It is the query's competition key: the relation that decides which answers compete
+  # for visibility. The shipped per-node default (`ans: ans.node`) made competition
+  # vacuous — every node is its own group, so nothing ever shadows anything, and a mode
+  # NAMED for the shadowing split silently returns the gather-all answer with
+  # `shadowed = []`. ABSENCE IS A DECISION (see `labeledFrom`'s `nodes` above, the same
+  # rule applied here): a caller who wants the per-node reading states it — `groupBy =
+  # ans: ans.node;` is still expressible and still correct where it is what's meant —
+  # but the omission now refuses, naming the missing argument, rather than silently
+  # answering a question the caller never asked.
+  #
+  # `groupBy ? null` is a SENTINEL, not a default: on this Nix (2.34.8) a bare required
+  # formal's "called without required argument" error is not `tryEval`-catchable (measured:
+  # neither it nor a plain attribute-missing error is — only `throw`/`assert` are), so a
+  # bare required formal here would make the refusal real but ITS OWN GUARD TEST unable to
+  # observe it, unlike `phaseOrder`'s and `closureOf`'s `throw`/`assert`-based refusals.
+  # The `null` sentinel is caught and refused explicitly below; the API contract — REQUIRED,
+  # TOTAL, never a silent behavioural default — is unaffected.
   queryVisible =
     args@{
       order ? {
         labels = [ ];
       },
-      groupBy ? (ans: ans.node),
+      groupBy ? null,
       ...
     }:
+    assert
+      groupBy == null
+      -> throw "gen-graph.queryVisible: groupBy is required and is never defaulted (den-hoag-l7af / ADR-0024 ruling 3); a caller wanting the per-node reading states `groupBy = ans: ans.node;` explicitly";
     let
       answers = queryPaths (
         builtins.removeAttrs args [

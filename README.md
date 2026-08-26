@@ -1007,15 +1007,19 @@ regex.parse "own | include owni"        # a declaration here, or one hop through
 **`query`** runs a labeled query in one of five modes:
 
 ```
-query : { graph; from; follow; where?; mode?; order?; groupBy?; … } → result
+query : { graph; from; follow; where?; mode?; order?; groupBy; … } → result
 ```
+
+`groupBy` is required only in `visible` mode — see the mode table below (den-hoag-l7af / ADR-0024
+ruling 3: it is total, never defaulted, so a caller must state its grouping rather than inherit one
+silently).
 
 | Mode | Result | Notes |
 |------|--------|-------|
 | `all` (default) | sorted `[ id ]` | reachable set; `from` included iff `follow` is nullable. `genericClosure` over the (node × derivative-state) product — scales, no path materialization |
 | `series` | `[ id ]` in visitation order | the same closure with the answer-set layer deleted. No `attrNames` sort, and a node reached in two **distinct** nullable derivative states is answered twice instead of once. Same cost class, same cycle tolerance |
 | `paths` | `[ { node; path = [ { label; from; to; } … ]; } ]` | labeled path **witnesses** (the "why"); acyclic paths only |
-| `visible` | `{ visible; shadowed; }` | nearest-wins resolution under `order`, grouped by `groupBy` (default: the answer node) |
+| `visible` | `{ visible; shadowed; }` | nearest-wins resolution under `order`, grouped by `groupBy` — REQUIRED, never defaulted; a caller wanting the per-node reading states `groupBy = ans: ans.node;` |
 | `layers` | `[ [ answer … ] … ]` | all answers grouped into ordered layers by rank word (the cascade shape) |
 | `fixpoint` | fold result | dispatch-alias for `queryFold` (below) |
 
@@ -1043,6 +1047,7 @@ query {
   follow = regex.parse "own | include";
   mode = "visible";
   order.labels = [ "own" "include" ];   # own shadows include
+  groupBy = ans: ans.node;              # required: the per-node reading
 }
 # → { visible = [ … own answers … ]; shadowed = [ … include answers … ]; }
 ```

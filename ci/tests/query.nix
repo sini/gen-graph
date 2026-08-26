@@ -10,6 +10,7 @@ let
     ;
   r = regex;
   sorted = builtins.sort builtins.lessThan;
+  didThrow = v: !(builtins.tryEval (builtins.deepSeq v true)).success;
 in
 {
   flake.tests.query = {
@@ -334,8 +335,9 @@ in
         shadowed = [ "x@t" ];
       };
     };
-    test-visible-default-group-no-cross-shadow = {
-      # default groupBy = node: distinct nodes both visible
+    test-visible-per-node-group-no-cross-shadow = {
+      # per-node groupBy (den-hoag-l7af: no longer the default — stated explicitly):
+      # distinct nodes both visible
       expr =
         let
           g = labeledFrom {
@@ -358,6 +360,7 @@ in
               "own"
               "include"
             ];
+            groupBy = ans: ans.node;
           };
         in
         builtins.sort builtins.lessThan (map (a: a.node) res.visible);
@@ -365,6 +368,59 @@ in
         "a"
         "b"
       ];
+    };
+    # SEEDED RED (den-hoag-l7af / ADR-0024 ruling 3): `groupBy` omitted entirely used to
+    # default to per-node, silently returning the gather-all answer with `shadowed = []`
+    # under a mode named for the shadowing split. It must now refuse, naming the missing
+    # argument, rather than answer a competition question the caller never asked.
+    test-visible-refuses-missing-groupby = {
+      expr = didThrow (query {
+        graph = labeledFrom {
+          nodes = [
+            "s"
+            "mid"
+            "root"
+          ];
+          perLabel.parent =
+            id:
+            {
+              s = [ "mid" ];
+              mid = [ "root" ];
+            }
+            .${id} or [ ];
+        };
+        from = "s";
+        follow = r.star (r.lit "parent");
+        mode = "visible";
+        order.labels = [ "parent" ];
+      });
+      expected = true;
+    };
+    # LIVE CONTROL: the same query WITH `groupBy` supplied is not caught, so the refusal
+    # above discriminates rather than always firing.
+    test-visible-groupby-supplied-control = {
+      expr = didThrow (query {
+        graph = labeledFrom {
+          nodes = [
+            "s"
+            "mid"
+            "root"
+          ];
+          perLabel.parent =
+            id:
+            {
+              s = [ "mid" ];
+              mid = [ "root" ];
+            }
+            .${id} or [ ];
+        };
+        from = "s";
+        follow = r.star (r.lit "parent");
+        mode = "visible";
+        order.labels = [ "parent" ];
+        groupBy = ans: ans.node;
+      });
+      expected = false;
     };
     test-visible-prefix-beats-extension = {
       # same group, one answer at depth 1 and one at depth 2 through equal-rank labels:
@@ -501,6 +557,7 @@ in
         follow = r.parse "contains";
         mode = "visible";
         where = _: false;
+        groupBy = ans: ans.node;
       };
       expected = {
         visible = [ ];
