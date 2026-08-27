@@ -69,19 +69,33 @@ let
   # that a cap could catch — it is a clean convergence carrying an unsupported conclusion.
   #
   # THE CHECK: at convergence, every conclusion must be an axiom (`seed ∪ frontier`) or be
-  # RE-DERIVED by `step` from the converged accumulator — `acc ⊆ base ∪ step acc acc`. The
-  # semi-naive delta form applied with the frontier set to the whole relation IS the naive
-  # step, so this is one full application of the caller's own rules against the final graph.
-  # For a `step` monotone in BOTH arguments it cannot fire: every round saw inputs contained
-  # in the converged accumulator, so everything it produced is produced again. It fires
-  # exactly on a conclusion that the converged graph withdraws.
+  # RE-DERIVED by `step` from the converged accumulator — `acc ⊆ base ∪ step acc acc`. That
+  # is ONE-STEP SUPPORT, and it is one full application of the caller's own rules against
+  # the final graph. For a `step` monotone in BOTH arguments it cannot fire: every round saw
+  # inputs contained in the converged accumulator, so everything it produced is produced
+  # again. It fires exactly on a conclusion that the converged graph withdraws.
+  #
+  # ★★ THE RESIDUAL CLASS, WHICH IS THE SAME DEFECT CLASS ONE LAYER IN. SUPPORT IS STRICTLY
+  # WEAKER THAN FOUNDEDNESS, SO PASSING THIS CHECK IS NOT EVIDENCE THAT `step` IS MONOTONE.
+  # A conclusion drawn on an absence that later acquires a CIRCULAR re-derivation is
+  # supported, and is returned: `p :- not r. p :- p. r :- a` has a measurably non-monotone
+  # step (`step {a}` yields `p`, `step {a,r}` does not), is NOT refused, and returns `p` —
+  # which the well-founded model makes FALSE. That is the supported-model / founded-model
+  # gap. Closing it is ADR-0020's WELL-FOUNDED ENGINE, which that ADR puts in Phase-C den
+  # territory. The ceiling is INSTRUMENTED rather than merely described:
+  # `test-seeded-circular-rederivation-is-supported-and-RETURNED` asserts the wrong answer
+  # is RETURNED, so the day this starts refusing it, a cell says so.
+  #
+  # ★ WHICH CRITERION ADR-0020 SUPPLIES, STATED SO THIS IS NOT READ AS IMPLEMENTING IT: its
+  # refusal oracle is STABLE-MODEL EXISTENCE, and this check does not implement that oracle.
+  # The program above HAS a stable model — `{a,r}` — and is returned as something else. What
+  # is implemented here is support, and nothing wider.
   #
   # ★ WHY OBSERVED AND NOT MADE INEXPRESSIBLE, which is this repository's usual arm.
   # ADR-0033 rules that a stratum's in-flight output is not nameable from inside it — but
   # AS AMENDED 2026-08-19 that inexpressibility reaches SUBSTRATE-CONSTRUCTED closure only,
   # and here the knot is tied by `step`, which is the caller's arbitrary function in a host
-  # language with no way to restrict what it reads. That is the amendment's other side,
-  # where a cycle is expressible and the price is paid by naming it. MEASURED, not assumed:
+  # language with no way to restrict what it reads. MEASURED, not assumed:
   # dropping `acc` from the signature does not make the absence read inexpressible, it only
   # moves it onto `dF` — the suite carries that oscillation as a cell. Same reading as the
   # cap refusal above: where `step` is the caller's, this binding OBSERVES.
@@ -93,12 +107,21 @@ let
   # refusal: the criterion is stated, and a result that fails it is refused by name rather
   # than returned as an admitted fact.
   #
-  # THE PRICE, MEASURED RATHER THAN FEARED: one extra full step application per call, which
-  # reads as a NAIVE round and might be expected to double a semi-naive run. It does not —
-  # the loop's per-round unions and differences dominate. On the canonical closure instance
-  # over a 400-node chain, allocation went 45,307,630 → 45,637,203 thunks, **+0.73%**;
-  # `cpuTime` over three runs a side (25.3–29.2s against 28.2–30.2s) OVERLAPS, so the wall
-  # clock does not resolve it and the thunk count is the instrument that does.
+  # THE PRICE, MEASURED — AND ITS AXIS IS ROUND COUNT, NOT SIZE. One extra full step per
+  # call. On a DEEP instance the loop's per-round unions and differences dilute it to
+  # nothing: the canonical closure over a 400-node chain runs ~399 rounds and goes
+  # 45,307,630 → 45,637,203 thunks, **+0.73%**, with `cpuTime` over three runs a side
+  # (25.3–29.2s against 28.2–30.2s) OVERLAPPING, so the thunk count is the instrument that
+  # resolves it and the wall clock is not. ★ THAT FIGURE DOES NOT GENERALIZE. A diameter-2
+  # graph converges in 2 rounds and there is nothing to dilute against: **+31% to +36%**,
+  # and the ratio holds across a 4× size change (402 and 1,602 nodes), which is what
+  # identifies the axis as rounds rather than nodes. Shallow dependency graphs — gen-graph's
+  # own consumers — pay the high end.
+  #
+  # ★ AND `step` IS NOW INVOKED WHERE THE PARENT DID NOT INVOKE IT: an EMPTY frontier used
+  # to return the seed without ever applying `step`, and the check applies it once. A `step`
+  # that throws on inputs the empty-frontier path never used to reach now throws. Pinned by
+  # `test-seeded-empty-frontier-still-applies-the-step`.
   #
   # THE OTHER PRICE: a `step` that itself differences against `acc`
   # (`differenceEdges (compose dF r) acc`) is ANTITONE in its second argument and will be

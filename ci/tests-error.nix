@@ -393,12 +393,14 @@ in
         };
       };
 
-    # ── THE SEEDED FIXPOINT REFUSES BY NAMING THE CONCLUSIONS, NOT BY NAMING A CAUSE ──
+    # ── THE SEEDED FIXPOINT REFUSES BY NAMING THE CONCLUSIONS, NOT ONLY BY NAMING A CAUSE ──
     #
-    # Unlike the cap, this refusal HAS observed its cause: it re-derived from the converged
-    # accumulator and the caller's own rules did not produce these facts. So it names them.
-    # A refusal that only said "not monotone" would leave the caller to find which of its
-    # conclusions the converged graph withdrew, on an accumulation the library has in hand.
+    # Unlike the cap, this refusal HAS observed its cause — it re-derived from the converged
+    # accumulator and the caller's own rules did not produce these facts — so it is entitled
+    # to name one, and the shipped message does (`step` must be monotone in both arguments).
+    # What these cells assert is the part a cause cannot supply: a refusal that said ONLY
+    # "not monotone" would leave the caller to find which of its conclusions the converged
+    # graph withdrew, on an accumulation the library already has in hand.
     flake.testsError.seeded-support-refusal = {
       test-seeded-refusal-names-the-unsupported-conclusion = {
         expr = genGraph.seededFixpoint {

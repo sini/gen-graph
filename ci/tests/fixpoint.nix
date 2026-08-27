@@ -329,10 +329,64 @@ in
         })).success;
       expected = true;
     };
+    # ★★ THE CEILING, INSTRUMENTED — THIS CELL ASSERTS THE WRONG ANSWER IS RETURNED.
+    #
+    # The check is ONE-STEP SUPPORT, strictly weaker than foundedness, so the absence of a
+    # refusal is NOT evidence that a step is monotone. `p :- not r. p :- p. r :- a` draws
+    # `p` from the absence of `r`, and the self-loop `p :- p` then supports `p` forever
+    # after `r` arrives. Its step is measurably non-monotone — `step {a}` yields `p`,
+    # `step {a,r}` does not — and it is RETURNED, `p` included, which the well-founded
+    # model makes FALSE. Closing the gap is ADR-0020's well-founded engine, Phase-C den
+    # territory, not this binding's.
+    #
+    # Written against the RETURNED VALUE rather than `tryEval success`, so it pins WHAT
+    # comes back and not merely that something does. When the gap closes this goes red.
+    test-seeded-circular-rederivation-is-supported-and-RETURNED = {
+      expr =
+        let
+          has = m: x: builtins.elem x (m.root or [ ]);
+          answer = seededFixpoint {
+            seed = {
+              root = [ "a" ];
+            };
+            frontier = {
+              root = [ "a" ];
+            };
+            step = _dF: acc: {
+              root =
+                (if !(has acc "r") then [ "p" ] else [ ])
+                ++ (if has acc "p" then [ "p" ] else [ ])
+                ++ (if has acc "a" then [ "r" ] else [ ]);
+            };
+          };
+        in
+        builtins.sort builtins.lessThan (answer.root or [ ]);
+      # The well-founded model is [ "a" "r" ]; `p` is unfounded and comes back anyway.
+      expected = [
+        "a"
+        "p"
+        "r"
+      ];
+    };
+    # The support check applies `step` once at convergence, INCLUDING on the empty-frontier
+    # path, where the loop returns without ever entering a round. A step that throws on
+    # inputs that path never used to reach now throws. Behaviour change against the parent
+    # rev, pinned rather than left for a caller to discover.
+    test-seeded-empty-frontier-still-applies-the-step = {
+      expr =
+        !(builtins.tryEval (seededFixpoint {
+          seed = {
+            root = [ "a" ];
+          };
+          frontier = { };
+          step = _dF: _acc: throw "step reached";
+        })).success;
+      expected = true;
+    };
     # LIVE CONTROL on the same predicate in the same run: a MONOTONE step that genuinely
-    # derives new facts passes the check and returns them. Without it the two cells above
-    # are consistent with a seededFixpoint that now refuses everything that derives
-    # anything at all.
+    # derives new facts passes the check and returns them. Without it the cells above are
+    # consistent with a seededFixpoint that now refuses everything that derives anything
+    # at all.
     test-seeded-monotone-step-deriving-new-facts-is-not-refused = {
       expr =
         let
