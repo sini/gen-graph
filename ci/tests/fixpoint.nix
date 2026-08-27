@@ -290,5 +290,60 @@ in
         ];
       expected = true;
     };
+
+    # ── THE CONVERGENCE CHECK: A CONCLUSION THE CONVERGED GRAPH WITHDRAWS ──
+    #
+    # A rule that fires on the ABSENCE of a fact and then produces it. Round 0 sees no
+    # y-child and spawns one; round 1 sees the y-child and does not; union cannot retract,
+    # so the run converges holding a conclusion the converged graph no longer supports.
+    # Measured before the check: this RETURNED `root -> [ "a" "y" ]`, converged and
+    # well-formed, with nothing reporting. WHICH conclusion the refusal names is asserted
+    # on `./ci#testsError`, the only runner that can read a message.
+    test-seeded-refuses-a-conclusion-the-converged-graph-withdraws = {
+      expr =
+        !(builtins.tryEval (seededFixpoint {
+          seed = {
+            root = [ "a" ];
+          };
+          frontier = {
+            root = [ "a" ];
+          };
+          step = _dF: acc: if builtins.elem "y" (acc.root or [ ]) then { } else { root = [ "y" ]; };
+        })).success;
+      expected = true;
+    };
+    # ★ THE SAME WRONG ANSWER WITH `acc` DISCARDED, which is why the remedy is a check and
+    # not a narrower signature. Removing the accumulator argument would not make the
+    # absence read inexpressible — it moves it onto the frontier and converges on the same
+    # unsupported conclusion. The cell holds that refutation so it cannot be re-argued.
+    test-seeded-refuses-the-same-oscillation-read-through-the-frontier-alone = {
+      expr =
+        !(builtins.tryEval (seededFixpoint {
+          seed = {
+            root = [ "a" ];
+          };
+          frontier = {
+            root = [ "a" ];
+          };
+          step = dF: _acc: if builtins.elem "y" (dF.root or [ ]) then { } else { root = [ "y" ]; };
+        })).success;
+      expected = true;
+    };
+    # LIVE CONTROL on the same predicate in the same run: a MONOTONE step that genuinely
+    # derives new facts passes the check and returns them. Without it the two cells above
+    # are consistent with a seededFixpoint that now refuses everything that derives
+    # anything at all.
+    test-seeded-monotone-step-deriving-new-facts-is-not-refused = {
+      expr =
+        let
+          mat = materialize fixtures.chain;
+        in
+        (builtins.tryEval (seededFixpoint {
+          seed = mat;
+          frontier = mat;
+          step = dF: _: compose dF mat;
+        })).success;
+      expected = true;
+    };
   };
 }

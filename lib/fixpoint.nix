@@ -51,7 +51,59 @@ let
   # Semi-naive delta-frontier fixpoint: `step dF acc` sees only the current frontier
   # `dF`, not the whole accumulator (the semi-naive saving over `fixpoint`, which
   # re-steps the whole map each iteration). Converges when the frontier empties.
-  # No monotonicity guard — union-accumulation cannot shrink the result.
+  #
+  # ── THE CONVERGENCE CHECK, AND WHY IT IS NOT THE SUBSET GUARD ──
+  #
+  # This line used to read "No monotonicity guard — union-accumulation cannot shrink the
+  # result", published as the reason none was needed. THE SENTENCE IS TRUE ABOUT THE
+  # ACCUMULATOR AND SAYS NOTHING ABOUT THE CONTENT. A subset predicate is VACUOUS here —
+  # `unionEdges` cannot shrink, so it holds no matter what `step` concluded or why. What
+  # union cannot do is RETRACT: a conclusion drawn while a fact was absent stays in the
+  # result after that fact arrives, and the run then converges on an accumulation the
+  # converged graph does not support. Terminating, well-formed, wrong, with nothing
+  # reporting.
+  #
+  # ★ FINITENESS BUYS NOTHING AGAINST IT. Finite height bounds CHAINS, and a chain is what
+  # monotonicity produces; drop monotonicity and the iterates are an arbitrary WALK, which
+  # in a finite carrier OSCILLATES rather than diverges. The failure is not non-termination
+  # that a cap could catch — it is a clean convergence carrying an unsupported conclusion.
+  #
+  # THE CHECK: at convergence, every conclusion must be an axiom (`seed ∪ frontier`) or be
+  # RE-DERIVED by `step` from the converged accumulator — `acc ⊆ base ∪ step acc acc`. The
+  # semi-naive delta form applied with the frontier set to the whole relation IS the naive
+  # step, so this is one full application of the caller's own rules against the final graph.
+  # For a `step` monotone in BOTH arguments it cannot fire: every round saw inputs contained
+  # in the converged accumulator, so everything it produced is produced again. It fires
+  # exactly on a conclusion that the converged graph withdraws.
+  #
+  # ★ WHY OBSERVED AND NOT MADE INEXPRESSIBLE, which is this repository's usual arm.
+  # ADR-0033 rules that a stratum's in-flight output is not nameable from inside it — but
+  # AS AMENDED 2026-08-19 that inexpressibility reaches SUBSTRATE-CONSTRUCTED closure only,
+  # and here the knot is tied by `step`, which is the caller's arbitrary function in a host
+  # language with no way to restrict what it reads. That is the amendment's other side,
+  # where a cycle is expressible and the price is paid by naming it. MEASURED, not assumed:
+  # dropping `acc` from the signature does not make the absence read inexpressible, it only
+  # moves it onto `dF` — the suite carries that oscillation as a cell. Same reading as the
+  # cap refusal above: where `step` is the caller's, this binding OBSERVES.
+  #
+  # ★ AND SILENCE IS NOT AN OPTION FOR IT. ADR-0020 rules that a negative cycle's contested
+  # atoms are UNDEFINED — a named third value, never silence — with stable-model existence
+  # as the refusal oracle. An edge map has no third value to write and the well-founded
+  # engine is Phase-C den territory by that ADR's own text, so what is available here is the
+  # refusal: the criterion is stated, and a result that fails it is refused by name rather
+  # than returned as an admitted fact.
+  #
+  # THE PRICE, MEASURED RATHER THAN FEARED: one extra full step application per call, which
+  # reads as a NAIVE round and might be expected to double a semi-naive run. It does not —
+  # the loop's per-round unions and differences dominate. On the canonical closure instance
+  # over a 400-node chain, allocation went 45,307,630 → 45,637,203 thunks, **+0.73%**;
+  # `cpuTime` over three runs a side (25.3–29.2s against 28.2–30.2s) OVERLAPS, so the wall
+  # clock does not resolve it and the thunk count is the instrument that does.
+  #
+  # THE OTHER PRICE: a `step` that itself differences against `acc`
+  # (`differenceEdges (compose dF r) acc`) is ANTITONE in its second argument and will be
+  # refused — correctly by the stated criterion, though its answer may happen to be right.
+  # That subtraction is already the loop's own job below, so the fix is to drop it.
   #
   # THE NAME IS STANDARD DATALOG; THE DATAFUN COORDINATE IT USED TO CARRY IS NOT.
   # This line read "(Arntzenius 2016 §9, semi-naive evaluation.)" and cannot be
@@ -71,6 +123,21 @@ let
       maxIter ? 1000,
     }:
     let
+      base = edgeMaps.unionEdges seed frontier;
+
+      supported =
+        acc:
+        let
+          unsupported = edgeMaps.differenceEdges acc (edgeMaps.unionEdges base (step acc acc));
+          pairs = builtins.concatMap (
+            from: map (to: "${from} → ${to}") (builtins.sort builtins.lessThan unsupported.${from})
+          ) (builtins.attrNames unsupported);
+        in
+        if pairs == [ ] then
+          acc
+        else
+          throw "gen-graph: seededFixpoint: the result holds ${toString (builtins.length pairs)} conclusion(s) the converged accumulator does not support: ${builtins.concatStringsSep ", " pairs}. Re-deriving from the converged accumulator does not produce them, so they were drawn while a fact was absent and union-accumulation never retracted them. `step` must be monotone in both arguments.";
+
       go =
         iter: acc: dF:
         if iter >= maxIter then
@@ -85,7 +152,7 @@ let
           in
           go (iter + 1) acc' dF';
     in
-    go 0 (edgeMaps.unionEdges seed frontier) frontier;
+    supported (go 0 base frontier);
 
   compose =
     e1: e2:

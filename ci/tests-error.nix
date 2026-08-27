@@ -393,6 +393,74 @@ in
         };
       };
 
+    # ── THE SEEDED FIXPOINT REFUSES BY NAMING THE CONCLUSIONS, NOT BY NAMING A CAUSE ──
+    #
+    # Unlike the cap, this refusal HAS observed its cause: it re-derived from the converged
+    # accumulator and the caller's own rules did not produce these facts. So it names them.
+    # A refusal that only said "not monotone" would leave the caller to find which of its
+    # conclusions the converged graph withdrew, on an accumulation the library has in hand.
+    flake.testsError.seeded-support-refusal = {
+      test-seeded-refusal-names-the-unsupported-conclusion = {
+        expr = genGraph.seededFixpoint {
+          seed = {
+            root = [ "a" ];
+          };
+          frontier = {
+            root = [ "a" ];
+          };
+          step = _dF: acc: if builtins.elem "y" (acc.root or [ ]) then { } else { root = [ "y" ]; };
+        };
+        expectedError = {
+          type = "ThrownError";
+          msg = "^gen-graph: seededFixpoint: the result holds 1 conclusion\\(s\\) the converged accumulator does not support: root → y\\. Re-deriving from the converged accumulator does not produce them, so they were drawn while a fact was absent and union-accumulation never retracted them\\. `step` must be monotone in both arguments\\.$";
+        };
+      };
+      # The count and the enumeration are asserted together, on a rule withdrawing TWO
+      # conclusions: a message that named one of them, or that ordered them by evaluation
+      # accident, fails here and passes the cell above.
+      test-seeded-refusal-enumerates-every-unsupported-conclusion = {
+        expr = genGraph.seededFixpoint {
+          seed = {
+            root = [ "a" ];
+          };
+          frontier = {
+            root = [ "a" ];
+          };
+          step =
+            _dF: acc:
+            if builtins.elem "y" (acc.root or [ ]) then
+              { }
+            else
+              {
+                root = [ "y" ];
+                extra = [ "z" ];
+              };
+        };
+        expectedError = {
+          type = "ThrownError";
+          msg = "^gen-graph: seededFixpoint: the result holds 2 conclusion\\(s\\) the converged accumulator does not support: extra → z, root → y\\..*";
+        };
+      };
+      # LIVE CONTROL, same run, same binding: a monotone step deriving new facts returns
+      # them. Without it the two cells above are consistent with a binding that refuses
+      # every seeded run.
+      test-seeded-support-check-monotone-control = {
+        expr =
+          let
+            mat = genGraph.materialize fork;
+            sn = genGraph.seededFixpoint {
+              seed = mat;
+              frontier = mat;
+              step = dF: _: genGraph.compose dF mat;
+            };
+            tc = genGraph.transitiveClosure fork;
+            sorted = m: n: builtins.sort builtins.lessThan (m.${n} or [ ]);
+          in
+          builtins.all (n: sorted sn n == sorted tc n) fork.nodes;
+        expected = true;
+      };
+    };
+
     # THE SECOND HOOK. A second output that nothing runs is a second output that rots, and
     # the wrapper `gen/ci/flakeModule.nix` builds bakes `./ci#tests` into its own text, so it
     # cannot be pointed at this one. This is its counterpart, built the same way, under a

@@ -83,7 +83,7 @@ Entry: `inputs.gen-graph.lib` (flake). Root `default.nix` is a FUNCTION `{ prelu
 | Export | Signature |
 |---|---|
 | `fixpoint` | `{ seed, step, maxIter ? 1000, refusal ? capReached } -> edgeMap` (monotonicity-guarded; `refusal` receives the exhausted cap) |
-| `seededFixpoint` | `{ seed, frontier, step, maxIter ? 1000 } -> edgeMap` (semi-naive; `step dF acc`) |
+| `seededFixpoint` | `{ seed, frontier, step, maxIter ? 1000 } -> edgeMap` (semi-naive; `step dF acc`; `step` must be monotone in BOTH arguments — at convergence every conclusion must be an axiom or be re-derived from the converged accumulator, and one that is not is refused by name) |
 | `compose` | `edgeMap -> edgeMap -> edgeMap` |
 | `closureClass` | `[ surfaceName ]` — the four surfaces sharing one closure call, one ceiling, one refusal |
 | `closureOf` | `surfaceName -> { edges, nodes, maxIter ? 1000 } -> edgeMap` (refuses a surface off `closureClass`) |
