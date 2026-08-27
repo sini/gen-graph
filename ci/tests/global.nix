@@ -10,6 +10,8 @@ let
     impactOf
     condensation
     coScc
+    select
+    ancestorsOf
     ;
   inherit (genGraph) fixtures mkGraph;
 in
@@ -366,6 +368,35 @@ in
         in
         builtins.sort builtins.lessThan (rev.edges "a");
       expected = [ "c" ];
+    };
+    # `transpose`'s output must satisfy the full accessor contract (`edges`, `nodes`, `parent`,
+    # `nodeData`) or a consumer needing `parent`/`nodeData` aborts uncatchably on a missing
+    # required argument rather than failing `false` — den-hoag-irr4. `nodeData` and `parent` are
+    # outside the `connect` algebra transpose reverses, so they carry through unchanged.
+    test-transpose-composes-with-select = {
+      expr = builtins.sort builtins.lessThan (
+        select (transpose fixtures.serviceGraph) (d: (d.type or "") == "datastore")
+      );
+      expected = [
+        "cache"
+        "db"
+        "queue"
+      ];
+    };
+    test-transpose-composes-with-ancestorsOf = {
+      expr = ancestorsOf (transpose fixtures.tree) "grandchild";
+      expected = [
+        "child1"
+        "root"
+      ];
+    };
+    test-transpose-composes-with-select-uncaught-control = {
+      # CONTROL: before the fix this call escaped tryEval (a missing-required-argument abort,
+      # not a `throw`) — pin that it is now a normal, catchable, SUCCEEDING evaluation.
+      expr =
+        (builtins.tryEval (builtins.deepSeq (select (transpose fixtures.serviceGraph) (_: true)) true))
+        .success;
+      expected = true;
     };
     test-cycles-self-loop-closure = {
       expr =

@@ -169,16 +169,28 @@ let
 
   # Reverse all edge directions, return new accessor set. Mokhov 2017 §5.2 Graph
   # Transpose: transpose flips the arguments of `connect` and leaves `overlay`
-  # unchanged — direction is reversed, not erased.
+  # unchanged — direction is reversed, not erased. The law is scoped to `edges`
+  # (the `connect` relation); `parent` is a separate containment dimension
+  # `registry.mkGraph` builds from its own edge list, and `nodeData` is per-node
+  # data — neither is part of the algebra transpose realises, so both carry
+  # through UNCHANGED, the same way `overlay`/`nodes` does. Defaulted rather than
+  # required: a caller composing transpose over a bare `{ edges; nodes; }`
+  # accessor (no containment/data dimension in play) keeps working.
   transpose =
-    { edges, nodes, ... }:
+    {
+      edges,
+      nodes,
+      parent ? (_id: null),
+      nodeData ? (_id: { }),
+      ...
+    }:
     let
       mat = edgeMaps.materialize { inherit edges nodes; };
       rev = _transposeMat mat;
     in
     {
       edges = id: rev.${id} or [ ];
-      inherit nodes;
+      inherit nodes parent nodeData;
     };
 
   # Co-SCC predicate: are u and v in the same strongly connected component? canReach-backed
