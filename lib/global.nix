@@ -283,6 +283,16 @@ let
   # enumerates simple paths and is worst-case exponential — runs only once the graph is
   # KNOWN cyclic, i.e. only on the branch a caller refuses on. Same discipline `order.nix` states
   # for its own cycle report: the expensive analysis is on the way out.
+  # ★ THE BACK-EDGE SEARCH SHORT-CIRCUITS (den-hoag-ckev). `repCycle` below needs only the FIRST
+  # in-SCC successor with a path home; it finds that successor with `prelude.findFirst` over the
+  # lazy `map` of `pathsBetween` calls, so a successor after the winner never pays its own
+  # (worst-case exponential) enumeration. The prior form was `builtins.filter (p: p != [ ]) …`
+  # then `head`: `filter` must evaluate its predicate on every element to decide membership, which
+  # forces EVERY successor's full `pathsBetween` result before the first one is read off — doing
+  # and discarding the work of every successor found after the answer. `findFirst` walks the same
+  # successor list (`findFirstIndex`'s countdown-foldl' scan has no early cutoff over the SPINE),
+  # but it stops applying the predicate — and so stops forcing `pathsBetween` — the moment a match
+  # is held, which is where the exponential term actually lives.
   cyclePaths =
     { edges, nodes, ... }:
     let
@@ -307,19 +317,18 @@ let
           let
             u = builtins.head (builtins.sort builtins.lessThan members);
             # u is self-reachable, so at least one in-component successor has a path home.
-            back = builtins.filter (p: p != [ ]) (
-              map (
-                v:
-                let
-                  ps = traverse.pathsBetween { inherit edges; } v u;
-                in
-                if ps == [ ] then [ ] else builtins.head ps
-              ) (builtins.filter (v: sccOf.${v} == sccOf.${u}) (edges u))
+            # `findFirst` short-circuits at the first non-empty `pathsBetween` result — see the
+            # COST note above the door — rather than forcing every successor's enumeration first.
+            firstPs = prelude.findFirst (ps: ps != [ ]) [ ] (
+              map (v: traverse.pathsBetween { inherit edges; } v u) (
+                builtins.filter (v: sccOf.${v} == sccOf.${u}) (edges u)
+              )
             );
+            back = if firstPs == [ ] then [ ] else builtins.head firstPs;
           in
-          # `back`'s paths end AT u; dropping that last element closes the walk without
-          # repeating the head. A self-loop leaves [ u ].
-          [ u ] ++ (if back == [ ] then [ ] else prelude.init (builtins.head back));
+          # `back` is the winning path, ending AT u; dropping that last element closes the walk
+          # without repeating the head. A self-loop leaves [ u ].
+          [ u ] ++ (if back == [ ] then [ ] else prelude.init back);
       in
       map repCycle (prelude.mapAttrsToList (_: g: g) (builtins.groupBy (k: sccOf.${k}) cyclic));
 
