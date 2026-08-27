@@ -31,6 +31,15 @@ let
   # Follow edges transitively from a start node (excludes startId).
   # C-level BFS via genericClosure. Θ( Σ_{u ∈ reach startId} (1 + outdeg u) ) — the operator
   # below re-reads `edges` at every visit, so this is O(reachable) only at bounded out-degree.
+  #
+  # THE RELATION, STATED EXACTLY: `reachableFrom startId` is `R*(startId) \ { startId }`, the
+  # reflexive-transitive closure less the start itself. The self-bit — whether `startId ∈
+  # R*(startId)`, i.e. whether it lies on a cycle — is `selfReachable`'s alone; the two are
+  # complementary projections of one closure, not disagreeing readings of it. (Tarjan 1972
+  # defines descendant INCLUSIVELY — "every vertex is an ancestor and a descendant of itself"
+  # — and its reachability idiom is reflexive, "zero or more arcs", so the strict set this
+  # operator returns is unnamed at that primary; this library names it and hands the
+  # reflexive bit to `selfReachable` by construction.)
   reachableFrom =
     { edges, ... }:
     startId:

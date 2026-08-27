@@ -30,7 +30,9 @@ let
       bKeys = builtins.filter (k: !(a ? ${k})) (builtins.attrNames b);
       allKeys = aKeys ++ bKeys;
     in
-    prelude.genAttrs allKeys (k: prelude.unique ((a.${k} or [ ]) ++ (b.${k} or [ ])));
+    prelude.filterAttrs (_: targets: targets != [ ]) (
+      prelude.genAttrs allKeys (k: prelude.unique ((a.${k} or [ ]) ++ (b.${k} or [ ])))
+    );
 
   intersectEdges =
     a: b:

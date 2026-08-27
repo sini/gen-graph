@@ -204,10 +204,18 @@ let
 
   # THE CLOSURE'S REFUSAL NAMES ITS CAUSE, AND THIS IS THE ONLY BINDING THAT MAY.
   #
-  # `step` below is not the caller's: it is built from `unionEdges`, which is
-  # `genAttrs allKeys (k: unique ((a.k or [ ]) ++ (b.k or [ ])))` (`edge-maps.nix`), so
-  # `current ⊆ step current` per key and the key set only grows. The step is monotone on the
-  # SUBSET order, not merely on cardinality, so the oscillating mode the generic message must
+  # `step` below is not the caller's: it is built from `unionEdges`, which since
+  # `den-hoag-6gqe` item 3 is `filterAttrs (targets != [ ]) (genAttrs allKeys (k: unique
+  # ((a.k or [ ]) ++ (b.k or [ ]))))` (`edge-maps.nix`) — RELATION-PURE, dropping a row that
+  # unions to empty rather than carrying it as bookkeeping. What is monotone is EDGE CONTENT,
+  # not the literal key set: `current.k ⊆ step(current).k` holds for every key under the `.k
+  # or [ ]` reading, and once a key is PRESENT its value can only grow — a union with a
+  # non-empty set is never empty, so a key present-nonempty never disappears again. The one
+  # place the literal key set can shrink is the seed itself: `materialize` still seeds every
+  # sink with an explicit `[ ]` row, and that row drops on the first round, once, since
+  # nothing ever unions into it — a one-time transition that carries no edge and does not
+  # recur. The step is monotone on the SUBSET order of edge content, not merely on
+  # cardinality, so the oscillating mode the generic message must
   # stay silent about cannot arise here. A monotone map on a finite lattice reaches the cap
   # only along an ascending chain that has not converged, and for reachability the height of
   # that chain IS the graph's diameter — leaving depth as the only remaining cause, which is
