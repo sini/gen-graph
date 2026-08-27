@@ -82,7 +82,11 @@ let
   # step (`step {a}` yields `p`, `step {a,r}` does not), is NOT refused, and returns `p` —
   # which the well-founded model makes FALSE. That is the supported-model / founded-model
   # gap. Closing it is ADR-0020's WELL-FOUNDED ENGINE, which that ADR puts in Phase-C den
-  # territory. The ceiling is INSTRUMENTED rather than merely described:
+  # territory — but NOTHING NEED WAIT ON PHASE C: `gen-scope` ships one today
+  # (`wellFoundedModel`, its `lib/engine.nix`), so a caller needing foundedness runs it ONE
+  # LAYER UP. It is unreachable from HERE by layering rather than by absence — gen-scope's
+  # flake takes `gen-graph` as an input, so consuming it would invert the dependency.
+  # The ceiling is INSTRUMENTED rather than merely described:
   # `test-seeded-circular-rederivation-is-supported-and-RETURNED` asserts the wrong answer
   # is RETURNED, so the day this starts refusing it, a cell says so.
   #
@@ -113,7 +117,7 @@ let
   # 45,307,630 → 45,637,203 thunks, **+0.73%**, with `cpuTime` over three runs a side
   # (25.3–29.2s against 28.2–30.2s) OVERLAPPING, so the thunk count is the instrument that
   # resolves it and the wall clock is not. ★ THAT FIGURE DOES NOT GENERALIZE. A diameter-2
-  # graph converges in 2 rounds and there is nothing to dilute against: **+31% to +36%**,
+  # graph converges in 2 rounds and there is nothing to dilute against: **+30% to +37%**,
   # and the ratio holds across a 4× size change (402 and 1,602 nodes), which is what
   # identifies the axis as rounds rather than nodes. Shallow dependency graphs — gen-graph's
   # own consumers — pay the high end.
