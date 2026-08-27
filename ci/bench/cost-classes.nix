@@ -928,22 +928,61 @@ let
   # The offsets are LEFT IN, so every `topoOrder` figure published against the previous pins is
   # off by more than a constant — it is off by whether the shape routes.
   #
-  # The pins below are read from the FROZEN bench at this revision, with the offsets LEFT IN.
+  # ★★★ RE-PINNED AFTER TWENTY-NINE UNGUARDED COMMITS, DECOMPOSED PER THE PROCEDURE ABOVE. This
+  # file was untouched across the whole span — no one ran the sentinel against a moving library
+  # for twenty-nine commits, which is exactly the gap this guard exists to close. Bisected
+  # commit-by-commit in a detached worktree against the frozen `85f2b0e` pins: every commit in
+  # the span that does not touch `lib/` is a zero by construction (it cannot reach the
+  # evaluation), and the fifteen that do were walked in order.
+  #   · `7185133` (labeled transpose / arrival carrier / boundary mark diagnostic) and `f71f94e`
+  #     (the endpoint projection — `lib/endpoints.nix`, wired into `lib/default.nix`) each move
+  #     `sets` UNIFORMLY on all three cells — +6 and +3 — with `list` and `nrLookups`
+  #     bit-identical on every one: the dispatch-attrset export-set offset this guard exists to
+  #     make visible, benign for the same reason every prior instance above is;
+  #   · `115a1e6` (coneRank refuses ill-typed cone entries and edge targets BY NAME) moves
+  #     `peerClosure` alone — `nrLookups` +2, `list`/`sets` untouched — with `sentinel` and
+  #     `peerOrder` untouched on every axis. It is a genuine subject move despite touching a
+  #     function no ordering cell calls: `condensationOf`'s finisher calls `order.coneRank` on
+  #     the partition (`lib/partition.nix:122`), so every partition arm — `condensationClosure`
+  #     included — pays coneRank's new total-membership guard. ★ CONFIRMED CONSTANT: re-measured
+  #     at n = 32 / 64 / 128 on `cycle`, the delta is exactly +2 at every size, so no exponent
+  #     moves;
+  #   · `5c1e15a` (`unionEdges` drops empty rows, matching its three siblings) moves `peerClosure`
+  #     alone, on all three axes — `list` +576, `sets` +576, `nrLookups` +198 — with `sentinel`
+  #     and `peerOrder` untouched: `closureOf`'s per-round step calls `edgeMaps.unionEdges`
+  #     directly, so the added `filterAttrs` empty-row check adds a small per-round constant even
+  #     on a sink-free shape. ★ CONFIRMED CONSTANT-FACTOR: re-measured at n = 32 / 64 / 128 / 256
+  #     on `cycle`, the total `list.elements` ratio between successive doublings is
+  #     ~6.96 / 7.40 / 7.68 on the unedited library and ~6.94 / 7.40 / 7.67 on the edited one —
+  #     the same ≈2.9 exponent on both (`log2 7.5 ≈ 2.9`, matching the arm's documented growth),
+  #     so the residue rides the existing curve rather than moving it;
+  #   · the remaining eleven `lib/`-touching commits in the span (`dafecb8`, `eca9412`,
+  #     `352a7f9`, `51d44b4`, `c8a7f9f`, `f4704f8`, `0a911dd`, `090ab2c`, `2ae93c1`, `62eb314`,
+  #     `32484a2`) read ZERO on all three cells and all three axes — none sits on any sentinel
+  #     cell's evaluation path (a query mode branch, `phaseOrder`, `cyclePaths`' back-edge
+  #     search, `seededFixpoint`, doc-only comment edits in `fixpoint.nix`/`global.nix`, and
+  #     `transpose`'s carried fields — none of them reached by `topoOrder` on `chain`/`wide` or
+  #     by `condensationClosure` on `cycle`).
+  # Summed: `sentinel`/`peerOrder` take `sets` +9 (6+3) with `list`/`nrLookups` unchanged;
+  # `peerClosure` takes `list` +576, `sets` +585 (576+6+3), `nrLookups` +200 (2+198) — three
+  # axes, one cell, non-uniform, which is why the verdict reads SHIFTED-STRUCTURAL even though
+  # two of the four contributors are individually benign. Neither contributor is legible in the
+  # sum; all four are obvious apart. The offsets are LEFT IN.
   sentinelPins = {
     sentinel = {
       list = 1151;
-      sets = 1677;
+      sets = 1686;
       nrLookups = 1962;
     };
     peerOrder = {
       list = 2588;
-      sets = 4279;
+      sets = 4288;
       nrLookups = 7909;
     };
     peerClosure = {
-      list = 117973;
-      sets = 150465;
-      nrLookups = 6560;
+      list = 118549;
+      sets = 151050;
+      nrLookups = 6760;
     };
   };
   sentinelCells = {
