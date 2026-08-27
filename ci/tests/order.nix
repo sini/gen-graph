@@ -611,6 +611,75 @@ in
       ];
     };
 
+    # den-hoag-1509's remaining oracle limb: `discrim` must not just be argued to
+    # discriminate a reordering, it must be DEMONSTRATED to — a deliberately-reordering
+    # construction disagreeing with `topoOrder`'s answer, in the same run the case above
+    # shows the real answer is correct. `tailAppend` is the construction the shape's own
+    # comment names: sort the initial ready set by key, then push every arrival onto the
+    # BACK of the queue and never re-sort against what is already waiting. On `discrim` that
+    # drains every `m` before any `a`, where greedy min-key interleaves them.
+    test-topo-discrim-shape-discriminates-a-reordering =
+      let
+        nodes = [
+          "m0"
+          "m1"
+          "m2"
+          "a0"
+          "a1"
+          "a2"
+        ];
+        deps = {
+          a0 = [ "m0" ];
+          a1 = [ "m1" ];
+          a2 = [ "m2" ];
+        };
+        edgesOf = id: deps.${id} or [ ];
+        tailAppend =
+          let
+            initial = builtins.sort (a: b: a < b) (builtins.filter (id: edgesOf id == [ ]) nodes);
+            step =
+              queue: emitted: satisfied:
+              if queue == [ ] then
+                emitted
+              else
+                let
+                  u = builtins.head queue;
+                  rest = builtins.tail queue;
+                  satisfied' = satisfied ++ [ u ];
+                  pending = builtins.filter (id: !(builtins.elem id satisfied') && !(builtins.elem id rest)) nodes;
+                  arrivals = builtins.filter (v: builtins.all (d: builtins.elem d satisfied') (edgesOf v)) pending;
+                in
+                step (rest ++ arrivals) (emitted ++ [ u ]) satisfied';
+          in
+          step initial [ ] [ ];
+      in
+      {
+        expr = {
+          inherit tailAppend;
+          real = (topoOrder (acc nodes deps)).order;
+          agrees = tailAppend == (topoOrder (acc nodes deps)).order;
+        };
+        expected = {
+          tailAppend = [
+            "m0"
+            "m1"
+            "m2"
+            "a0"
+            "a1"
+            "a2"
+          ];
+          real = [
+            "m0"
+            "a0"
+            "m1"
+            "a1"
+            "m2"
+            "a2"
+          ];
+          agrees = false;
+        };
+      };
+
     # ★ And this is why the case above asserts the WHOLE list. `first | last | length` is
     # the oracle a reordering passes: on this fixture the tail-append order `m0 m1 m2 a0 a1
     # a2` agrees with the true order on all three. An ordering assertion that reads only
