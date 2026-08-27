@@ -10,19 +10,28 @@
 #   fbNode   — the per-node forward–backward arm, the door's default;
 #   fbWork   — the worklist forward–backward arm;
 #   unforced — the worklist arm written the OTHER way: a `remaining` set read every round and
-#              a tag map written every round and read in none. It is a LIVE NEGATIVE CONTROL,
-#              not a historical curiosity. A run in which it returns is a run whose component
-#              count was too small to reach the chain, and it says nothing about the two arms
-#              beside it;
+#              a tag map written every round and read in none. It is CHARACTERIZATION of
+#              TODAY's practical limitation, not a control: informational, printed and never
+#              gated, useful for watching the boundary recede across evaluator versions (RULED
+#              2026-08-27 — infinite scale is the ideal; nothing here may assert this limit
+#              persists). A run in which it returns is a run whose component count was too
+#              small to reach the chain, and it says nothing about the two arms beside it;
 #   closure  — the closure arm, whose ceiling is a fixpoint iteration cap rather than a stack
 #              depth, and which therefore THROWS where the others would abort. It is here so
 #              the difference between the two failure modes is read on one instrument.
 #
-# THREE CONTROLS, so a green row is admissible at all:
+# FOUR CONTROLS, so a green row is admissible at all:
 #   okControl    — returns 1;
 #   catchControl — `tryEval (throw …)`, which says the catcher works in this evaluation;
 #   abortControl — a FIXED-DEPTH 50,000 per-atom recursion, so it fires at every cell
 #                  including the small ones. A sweep in which it does not fire is INVALID.
+#   canary       — THE CONSTRUCTED CANARY: a self-recursion with NO base case, ever — true
+#                  divergence, not an environmental limit the way `unforced`'s bisected
+#                  boundary is. It carries the liveness obligation `unforced`'s header used to
+#                  claim: it reds iff the bench stops forcing or stops observing aborts, and it
+#                  can NEVER red on evaluator improvement, because an unconditional recursion
+#                  has no faster path to a result — there isn't one. A sweep in which it does
+#                  not fire is INVALID, same as abortControl.
 #
 # The fixtures are `ci/bench/cost-classes.nix`'s, verbatim, so a ceiling read here and an
 # allocation figure read there are about the same graphs.
@@ -212,6 +221,17 @@ else if arm == "abortControl" then
       down = i: if i <= 0 then 0 else 1 + down (i - 1);
     in
     down 50000
+  )
+else if arm == "canary" then
+  # UNCONDITIONAL: no depth argument, no base case — unlike `abortControl`, which is a large
+  # but FINITE recursion that merely exceeds today's call-depth budget, this one has no budget
+  # at which it would return. Measured signature (this evaluator): CALLDEPTH, via the same
+  # `stack overflow; max-call-depth exceeded` reading `abortControl` produces.
+  (
+    let
+      down = i: down (i + 1);
+    in
+    down 0
   )
 else
   throw "unknown arm ${arm}"

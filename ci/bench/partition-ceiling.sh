@@ -7,8 +7,12 @@
 #
 # THREE ARMS PER CELL. `fbNode` and `fbWork` are the two published forward–backward arms;
 # `unforced` is the worklist arm written so that its tag map is written every round and read in
-# none, which is the construction whose accumulator chains. The third is a LIVE NEGATIVE
-# CONTROL for the forcing question, not a historical curiosity.
+# none, which is the construction whose accumulator chains. It is CHARACTERIZATION of TODAY's
+# practical limitation, not a control: informational, printed and never gated, useful for
+# watching the boundary recede across evaluator versions (RULED 2026-08-27 — infinite scale is
+# the ideal; nothing here may assert this limit persists). The liveness obligation this arm's
+# header used to claim is met instead by the CONSTRUCTED CANARY below, which diverges by
+# construction and is gated like `abortControl`.
 #
 # ★ THE UNFORCED CONTROL'S OWN BOUNDARY IS BISECTED AND IT IS NOT WHERE A READER WOULD EXPECT.
 # On this instrument it returns at 44,150 COMPONENTS and aborts at 44,160 — `stack overflow`, on
@@ -26,11 +30,11 @@
 # frame already open above the recursion — so a consumer's real boundary is strictly lower than
 # any figure quoted here. Both mechanisms are real and they are DIFFERENT axes, so a component
 # count alone does not say which one a construction is on. The cells below therefore state their
-# component counts, and the sweep's VALIDITY rests on `abortControl`, whose depth is fixed
-# rather than scaled to the cell.
+# component counts, and the sweep's VALIDITY rests on `abortControl` and `canary`, neither of
+# whose depth is scaled to the cell.
 #
-# A cell in which `abortControl` does not fire is INVALID, never a pass: it says the evaluation
-# could not have observed an abort at all, so a green row from it means nothing.
+# A cell in which `abortControl` or `canary` does not fire is INVALID, never a pass: it says
+# the evaluation could not have observed an abort at all, so a green row from it means nothing.
 #
 # `nix eval --file` is not usable: it does not auto-call a function-headed file. Every cell is
 # `nix-instantiate --eval --strict --json` with explicit `--arg`/`--argstr`, and every exit code
@@ -109,6 +113,26 @@ for spec in "chain 1000" "chain 4000" "cycle 1000" "cycle 4000" "fleet 16000" "f
   [ "$rc" -eq 0 ] || shown=$(anchor "$out")
   printf '%-9s %-6s %-6s exit=%d %-18s %s\n' abortControl "$shape" "$n" "$rc" "$verdict" "${shown:-<no value>}"
 done
+
+# THE CONSTRUCTED CANARY: diverges BY CONSTRUCTION (no base case, ever), so unlike `unforced`
+# it can never stop firing on evaluator improvement — run once, not per cell, because nothing
+# about it is cell-relative. Counted the same way as `abortControl`, off the same classifier.
+out=$(cell canary chain 1000)
+rc=$?
+controls_run=$((controls_run + 1))
+if [ "$rc" -eq 0 ]; then
+  verdict=returned
+else
+  verdict=$(label "$out")
+  if [ "$verdict" = CALLDEPTH ]; then
+    controls_fired=$((controls_fired + 1))
+  else
+    unclassified=$((unclassified + 1))
+  fi
+fi
+shown=$out
+[ "$rc" -eq 0 ] || shown=$(anchor "$out")
+printf '%-9s %-6s %-6s exit=%d %-18s %s\n' canary chain 1000 "$rc" "$verdict" "${shown:-<no value>}"
 
 # The catcher's own positive control, so an abort reading is not confused with a broken
 # evaluation: these two must return, or nothing above is readable.
