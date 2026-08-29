@@ -105,12 +105,40 @@ let
 
   # Walk parent chain upward (with cycle protection).
   # Silently terminates on cyclic parent chains.
+  #
+  # ── ITS DEPTH CEILING, NAMED RATHER THAN REMOVED ──
+  #
+  # `go` is SELF-RECURSIVE, so the evaluator's call depth is the length of the parent chain
+  # being walked; past the evaluator's own `max-call-depth` the failure is `stack overflow;
+  # max-call-depth exceeded` — an ABORT, not a throw, invisible to `builtins.tryEval`.
+  # Measured on a bare chain probe at `eb638eb`: returns at 9,988, aborts at 9,989 (≈1
+  # evaluator frame per ancestor against the 10,000 default — `go` neither forks over
+  # children nor folds an accumulator, so it costs the fewest frames per link of any surface
+  # in this file).
+  #
+  # ★ THE BOUNDARY IS A PROPERTY OF THE WHOLE MEASURING EXPRESSION, not of this surface, the
+  # same law `pathsBetween` and `foldPreorder` carry. Measured in one run, both arms: under
+  # 200 added caller frames the boundary moves 9,988 → 9,786, exactly 200/1 — the tightest
+  # coupling of the three, matching its ≈1-frame-per-link rate. That is why the cap is a
+  # parameter rather than a constant: a stated figure a nested consumer cannot lower is a
+  # bare-expression number sold as a consumer's ceiling.
+  #
+  # The cap rides on the caller's own accessor record, the shape `pathsBetween` and
+  # `fixpoint.closureOf` already use. One ceiling class, three self-recursive cores (ADR-0009's
+  # fourth amendment: refuse BY NAME at the ceiling; ADR-0032: owed where a real ceiling
+  # exists, and only there — this one is measured, so the fence is satisfied).
+  ancestorsMaxDepth = 8000;
+
   ancestorsOf =
-    { parent, ... }:
+    {
+      parent,
+      maxDepth ? ancestorsMaxDepth,
+      ...
+    }:
     startId:
     let
       go =
-        visited: id:
+        depth: visited: id:
         let
           p = parent id;
         in
@@ -118,10 +146,15 @@ let
           [ ]
         else if visited ? ${p} then
           [ ]
+        # After both terminating checks, for `pathsBetween`'s reason: neither descends, so
+        # neither can reach the evaluator's ceiling, and refusing on one would change the
+        # answer for chains that never approach the cap.
+        else if depth > maxDepth then
+          throw "gen-graph.ancestorsOf: ancestor chain depth exceeded the stated cap of ${toString maxDepth}. This walk is self-recursive, so the evaluator's call depth is the length of the parent chain being walked; past the evaluator's own max-call-depth the failure is an uncatchable abort, and this cap sits below it so the refusal arrives first and `builtins.tryEval` can observe it. Set `maxDepth` on the accessor to match the stack the caller is itself nested in."
         else
-          [ p ] ++ go (visited // { ${p} = true; }) p;
+          [ p ] ++ go (depth + 1) (visited // { ${p} = true; }) p;
     in
-    go { ${startId} = true; } startId;
+    go 1 { ${startId} = true; } startId;
 
   # All acyclic paths between two nodes (DFS with visited set).
   #

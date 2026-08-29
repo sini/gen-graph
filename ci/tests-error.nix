@@ -501,6 +501,29 @@ in
         c9 = chain 9;
         c10 = chain 10;
         c = c9;
+
+        # `ancestorsOf` walks a `parent` accessor, not `edges` — same numbering, reversed
+        # into a single-parent function. `ancestorsChain n`'s `top` has `n - 1` ancestors.
+        ancestorsChain =
+          n:
+          let
+            key = i: "n" + pad i;
+            m = builtins.listToAttrs (
+              map (i: {
+                name = key i;
+                value = if i == 0 then null else key (i - 1);
+              }) (builtins.genList (i: i) n)
+            );
+          in
+          {
+            top = key (n - 1);
+            parent = k: m.${k} or null;
+          };
+        # 8 ancestors sits exactly on the cap of 8 and returns; 9 (one more node) refuses —
+        # unlike `pathsBetween`, `ancestorsOf` has no terminating check exempting one extra
+        # frame, so the boundary is `maxDepth` ancestors exactly, not `maxDepth + 1`.
+        ac9 = ancestorsChain 9;
+        ac10 = ancestorsChain 10;
       in
       {
         test-expandpreorder-refusal-names-the-surface = {
@@ -569,9 +592,23 @@ in
             msg = "^gen-graph\\.pathsBetween: path depth exceeded the stated cap of 8\\..*";
           };
         };
-        # LIVE CONTROL, same run, same accessors: under the cap both cores return. Without it
-        # every cell above is consistent with a guard that refuses at any depth, which is the
-        # failure mode a refusal-only output cannot otherwise see.
+        # A fourth self-recursive core, its own recursion (`ancestorsOf.go`), its own cap.
+        # ★ Frame cost ≈1 per link — no fork over children, no fold accumulator — so it is
+        # the tightest of the four (measured boundary 9,988, against 4,993 for the shared
+        # preorder core and 2,497 for `pathsBetween`); one number could not have served all.
+        test-ancestorsof-refusal-names-the-surface = {
+          expr = genGraph.ancestorsOf {
+            inherit (ac10) parent;
+            maxDepth = 8;
+          } ac10.top;
+          expectedError = {
+            type = "ThrownError";
+            msg = "^gen-graph\\.ancestorsOf: ancestor chain depth exceeded the stated cap of 8\\..*";
+          };
+        };
+        # LIVE CONTROL, same run, same accessors: under the cap all three cores return.
+        # Without it every cell above is consistent with a guard that refuses at any depth,
+        # which is the failure mode a refusal-only output cannot otherwise see.
         test-depth-refusal-under-the-cap-control = {
           expr = {
             preorder =
@@ -590,10 +627,17 @@ in
                 } c9.top c9.bottom
               )
             );
+            ancestors = builtins.length (
+              genGraph.ancestorsOf {
+                inherit (ac9) parent;
+                maxDepth = 8;
+              } ac9.top
+            );
           };
           expected = {
             preorder = 8;
             paths = 9;
+            ancestors = 8;
           };
         };
       };

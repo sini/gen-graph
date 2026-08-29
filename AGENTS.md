@@ -37,7 +37,7 @@ Entry: `inputs.gen-graph.lib` (flake). Root `default.nix` is a FUNCTION `{ prelu
 | `reachableWhere` | `{ edges } -> id -> (id -> bool) -> [id]` |
 | `canReach` | `{ edges } -> from -> to -> bool` |
 | `selfReachable` | `{ edges } -> id -> bool` |
-| `ancestorsOf` | `{ parent } -> id -> [id]` |
+| `ancestorsOf` | `{ parent, maxDepth ? 8000 } -> id -> [id]` (refuses by name past the depth cap) |
 | `pathsBetween` | `{ edges, maxDepth ? 2000 } -> from -> to -> [[id]]` (acyclic paths; refuses by name past the depth cap) |
 
 **Global analysis** (materializes internally) — `lib/global.nix`

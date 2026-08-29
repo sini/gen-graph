@@ -36,6 +36,32 @@ let
       edges = k: m.${k} or [ ];
     };
 
+  # A `parent` accessor of n nodes, same numbering as `chain` above but reversed into a
+  # single-parent function rather than a children list — the shape `ancestorsOf` walks.
+  # `ancestorsChain n`'s `top` has `n - 1` ancestors (`key (n - 2)` down to `key 0`), one
+  # fewer than the node count, since `ancestorsOf` excludes the start.
+  ancestorsChain =
+    n:
+    let
+      pad =
+        i:
+        let
+          s = toString i;
+        in
+        builtins.substring 0 (6 - builtins.stringLength s) "000000" + s;
+      key = i: "n" + pad i;
+      m = builtins.listToAttrs (
+        map (i: {
+          name = key i;
+          value = if i == 0 then null else key (i - 1);
+        }) (builtins.genList (i: i) n)
+      );
+    in
+    {
+      top = key (n - 1);
+      parent = k: m.${k} or null;
+    };
+
   returns = v: (builtins.tryEval (builtins.deepSeq v v)).success;
 in
 {
@@ -369,6 +395,67 @@ in
       {
         expr = builtins.length (builtins.head (pathsBetween { inherit (c) edges; } c.top c.bottom));
         expected = 2001;
+      };
+
+    # ── ancestorsOf's DEPTH CAP AND ITS REFUSAL (ADR-0009 fourth amendment / ADR-0032) ──
+    #
+    # Same claim as `pathsBetween` above: CATCHABILITY. `success == false` is a reading the
+    # old, unguarded `go` could not produce at any depth. The message's own text is asserted
+    # in `ci/tests-error.nix`.
+    #
+    # ★ THE BOUNDARY IS EXACTLY `maxDepth` ANCESTORS, unlike `pathsBetween`'s `maxDepth + 1`:
+    # `ancestorsOf`'s guard checks the depth of the node CURRENTLY being walked, and there is
+    # no terminating check exempting one extra frame the way `current == endId` does there.
+    test-ancestorsof-refuses-past-maxdepth-catchably =
+      let
+        c = ancestorsChain 10;
+      in
+      {
+        expr = returns (
+          ancestorsOf {
+            inherit (c) parent;
+            maxDepth = 8;
+          } c.top
+        );
+        expected = false;
+      };
+
+    # LIVE CONTROL, same run: one ancestor fewer and the walk returns it whole. Without it
+    # the cell above is consistent with a guard that refuses every call.
+    test-control-ancestorsof-returns-at-the-cap-boundary =
+      let
+        c = ancestorsChain 9;
+      in
+      {
+        expr = builtins.length (
+          ancestorsOf {
+            inherit (c) parent;
+            maxDepth = 8;
+          } c.top
+        );
+        expected = 8;
+      };
+
+    # ★ THE CELL AT THE SHIPPED DEFAULT — the only one that says the default arrives before
+    # the evaluator's own ceiling rather than after it. Measured on this shape at `eb638eb`:
+    # returns at 9,988 ancestors, aborts at 9,989. Raise the default past that and this reads
+    # ☢️ rather than ❌, the abort killing the cell instead of failing it.
+    test-ancestorsof-default-cap-refuses-below-the-evaluator-ceiling =
+      let
+        c = ancestorsChain 8002;
+      in
+      {
+        expr = returns (ancestorsOf { inherit (c) parent; } c.top);
+        expected = false;
+      };
+
+    test-control-ancestorsof-default-cap-returns-just-below-it =
+      let
+        c = ancestorsChain 8001;
+      in
+      {
+        expr = builtins.length (ancestorsOf { inherit (c) parent; } c.top);
+        expected = 8000;
       };
   };
 }
