@@ -463,6 +463,141 @@ in
       };
     };
 
+    # ── THE DEPTH-CAP REFUSALS NAME THE SURFACE THE CALLER CALLED ──
+    #
+    # `preorder.nix`'s guard lives in ONE place — the shared `foldPreorder.go` — and
+    # `traverse.nix`'s in `pathsBetween`'s own `dfs`. That the guard FIRES, and that it fires
+    # catchably where the old construction aborted uncatchably, is a boolean asserted beside
+    # each surface's other halves in `ci/tests/{preorder,traverse}.nix`. What only this
+    # output can assert is the ADR-0009 amendment's actual demand: that the refusal names a
+    # surface BY NAME — and, for the shared core, that it names the caller rather than
+    # itself. Three specializations abort identically otherwise, and a caller handed one is
+    # sent back to bisect its own fixture.
+    #
+    # Anchored at the front and through the cap, for the reason the closure refusals are: an
+    # unanchored pattern goes green on a message that has grown a cause it cannot support.
+    flake.testsError.depth-refusal =
+      let
+        chain =
+          n:
+          let
+            key = i: "n" + pad i;
+            m = builtins.listToAttrs (
+              map (i: {
+                name = key i;
+                value = if i == 0 then [ ] else [ (key (i - 1)) ];
+              }) (builtins.genList (i: i) n)
+            );
+          in
+          {
+            top = key (n - 1);
+            bottom = key 0;
+            edges = k: m.${k} or [ ];
+          };
+        # `c9` is one node past the cap of 8 and refuses; `c8` sits exactly on it and
+        # returns. `pathsBetween`'s boundary is one node further out, its terminating check
+        # being consulted before the guard, so `c10` is what refuses there.
+        c8 = chain 8;
+        c9 = chain 9;
+        c10 = chain 10;
+        c = c9;
+      in
+      {
+        test-expandpreorder-refusal-names-the-surface = {
+          expr =
+            (genGraph.expandPreorder {
+              roots = [ c.top ];
+              key = f: f;
+              inherit (c) edges;
+              maxDepth = 8;
+            }).nodes;
+          expectedError = {
+            type = "ThrownError";
+            msg = "^gen-graph\\.expandPreorder: DFS depth exceeded the stated cap of 8\\..*";
+          };
+        };
+        # The other specialization of the same core. Two surfaces, two names, one guard: this
+        # is what a message hard-coding `foldPreorder` at the throw site fails.
+        test-foldreach-refusal-names-the-surface = {
+          expr =
+            (genGraph.foldReach {
+              roots = [ c.top ];
+              edges = t: c.edges t;
+              target = e: e;
+              project = e: [ e ];
+              itemKey = i: i;
+              maxDepth = 8;
+            }).nodes;
+          expectedError = {
+            type = "ThrownError";
+            msg = "^gen-graph\\.foldReach: DFS depth exceeded the stated cap of 8\\..*";
+          };
+        };
+        # ★ AND THE NAME IS READ OFF THE CALLER, not chosen from a fixed set of three. A
+        # specialization written OUTSIDE this library (den-hoag's `forwardExpand` is one) names
+        # itself the same way, which is why `surface` carries no membership assertion — the
+        # contrast with `fixpoint.closureOf`, whose class really is closed. Without this cell
+        # the two above are consistent with a `surface` the core ignores for anything but its
+        # own two callers.
+        test-foldpreorder-refusal-names-a-caller-outside-this-library = {
+          expr = genGraph.foldPreorder {
+            roots = [ c.top ];
+            key = f: f;
+            acc = 0;
+            expand = acc: frame: {
+              acc = acc + 1;
+              children = c.edges frame;
+            };
+            maxDepth = 8;
+            surface = "forwardExpand";
+          };
+          expectedError = {
+            type = "ThrownError";
+            msg = "^gen-graph\\.forwardExpand: DFS depth exceeded the stated cap of 8\\..*";
+          };
+        };
+        # `traverse.nix`'s own core. Same law, same shape, a separate recursion and a separate
+        # cap — its frames cost ≈4 per link against `foldPreorder`'s ≈2, so one number could
+        # not have served both.
+        test-pathsbetween-refusal-names-the-surface = {
+          expr = genGraph.pathsBetween {
+            inherit (c10) edges;
+            maxDepth = 8;
+          } c10.top c10.bottom;
+          expectedError = {
+            type = "ThrownError";
+            msg = "^gen-graph\\.pathsBetween: path depth exceeded the stated cap of 8\\..*";
+          };
+        };
+        # LIVE CONTROL, same run, same accessors: under the cap both cores return. Without it
+        # every cell above is consistent with a guard that refuses at any depth, which is the
+        # failure mode a refusal-only output cannot otherwise see.
+        test-depth-refusal-under-the-cap-control = {
+          expr = {
+            preorder =
+              builtins.length
+                (genGraph.expandPreorder {
+                  roots = [ c8.top ];
+                  key = f: f;
+                  inherit (c8) edges;
+                  maxDepth = 8;
+                }).nodes;
+            paths = builtins.length (
+              builtins.head (
+                genGraph.pathsBetween {
+                  inherit (c9) edges;
+                  maxDepth = 8;
+                } c9.top c9.bottom
+              )
+            );
+          };
+          expected = {
+            preorder = 8;
+            paths = 9;
+          };
+        };
+      };
+
     # THE SECOND HOOK. A second output that nothing runs is a second output that rots, and
     # the wrapper `gen/ci/flakeModule.nix` builds bakes `./ci#tests` into its own text, so it
     # cannot be pointed at this one. This is its counterpart, built the same way, under a

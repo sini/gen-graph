@@ -119,7 +119,7 @@ reachableWhere : { edges, ... } → id → (id → bool) → [id]
 canReach       : { edges, ... } → id → id → bool
 selfReachable  : { edges, ... } → id → bool
 ancestorsOf    : { parent, ... } → id → [id]
-pathsBetween   : { edges, ... } → id → id → [[id]]
+pathsBetween   : { edges, maxDepth ? 2000, ... } → id → id → [[id]]
 ```
 
 And their **amortized dual**, for a caller spending many traversals over one accessor. `hoistEdges`
@@ -179,7 +179,7 @@ in map (graph.reachableVia succ) g.nodes           # …spend it n times
 
 Inside this library `cycles` and `fbNode` bind it and `dependentsOf` and `fbWork` deliberately do not — see their cost rows for the measurement each decision rests on.
 
-**`pathsBetween g startId endId`** — all acyclic paths from `startId` to `endId`. Each path is a list of ids including both endpoints.
+**`pathsBetween g startId endId`** — all acyclic paths from `startId` to `endId`. Each path is a list of ids including both endpoints. `maxDepth` on the accessor caps the path depth it will extend to; see the ceiling row below.
 
 ```nix
 graph.pathsBetween g "a" "d"
@@ -196,9 +196,9 @@ occurrence wins) via a threaded visited attrset. They visit only what they reach
 frame's successors may be **demand-generated** (forced only when the frame is reached).
 
 ```
-foldPreorder   : { roots; key; expand; acc; visited? }                              → { acc; visited }
-expandPreorder : { roots; key; edges; resolve?; emit?; seen0?; nodes0? }            → { nodes; seen }
-foldReach      : { roots; edges; target; project; itemKey; visited0?; seen0?; nodes0? } → { nodes; seen; visited }
+foldPreorder   : { roots; key; expand; acc; visited?; maxDepth ? 4000; surface ? "foldPreorder" } → { acc; visited }
+expandPreorder : { roots; key; edges; resolve?; emit?; seen0?; nodes0?; maxDepth ? 4000 }          → { nodes; seen }
+foldReach      : { roots; edges; target; project; itemKey; visited0?; seen0?; nodes0?; maxDepth ? 4000 } → { nodes; seen; visited }
 ```
 
 **`foldPreorder`** — the primitive. A pre-order DFS fold with a caller-owned accumulator and a
@@ -206,6 +206,10 @@ first-occurrence visited set. `key frame` is the cycle-guard/dedup key (a `null`
 guarded); `expand acc frame → { acc; children? }` folds this frame in and yields its child
 frames; `visited` seeds the guard set (a pre-seeded key prunes that frame's subtree without
 forcing it). `expandPreorder` and `foldReach` are thin specializations of it.
+
+`maxDepth` is the stated DFS-depth cap all three share, and `surface` is the name the refusal
+carries — a specialization written outside this library names itself the same way. See the
+ceiling row below for why the cap is stated rather than the recursion removed.
 
 ```nix
 # classify a nested include tree into two buckets, cycle-guarded by .key
@@ -405,9 +409,10 @@ Read the two extremes together, because either alone is misleading. **On one lar
 | `topoOrder` / `topoOrderKahn` | none found to 64,000 | states no ceiling |
 | `phaseOrder` | none found to 16,000 | states no ceiling and its bound |
 | `coneRank` | none found to 32,000 on `chain` and `deepwide` | states no ceiling |
-| `pathsBetween` | **real** — ≈2,498 on `chain` as an UPPER BOUND in a bare expression: uncatchable, depth-driven, and **strictly lower under any open call stack** (three measuring expressions give 2,498 / 2,499 / 2,500 on one fixture, and eight extra evaluator frames above the call move it below 2,497) | a named refusal is **owed and not yet built** |
+| `pathsBetween` | **real** — ≈2,498 on `chain` as an UPPER BOUND in a bare expression: uncatchable, depth-driven, and **strictly lower under any open call stack** (three measuring expressions give 2,498 / 2,499 / 2,500 on one fixture, and eight extra evaluator frames above the call move it below 2,497; re-derived at `374b0ad`, 2,497 returns / 2,498 aborts bare and 2,447 / 2,448 under 200 added caller frames) | refuses **by name** past a STATED cap (`maxDepth`, 2,000 as shipped), which is what makes the refusal catchable at all: the evaluator's own abort is not. The cap is a parameter because the boundary belongs to the whole evaluation — a consumer nested deep lowers it |
+| `foldPreorder` / `expandPreorder` / `foldReach` | **real** — one shared self-recursive core, so one ceiling: 4,993 returns / 4,994 aborts on `chain` in a bare expression at `374b0ad` (≈2 evaluator frames per node), 4,893 / 4,894 under 200 added caller frames. `star` at 20,000 and depth 1 returns, so it is DEPTH and not n | refuses **by name** past a STATED cap (`maxDepth`, 4,000 as shipped), the message naming the SURFACE THE CALLER CALLED rather than the shared core. Not removed by an iterative rewrite: the fold has no materialized node list to bound a loop with (`edges` is demand-generated), and Nix has no tail-call elimination, so a worklist would trade a depth ceiling for a strictly worse iteration-count one |
 
-Two axes are excluded from every "none found" row above and are named once rather than per row. **Shape**: the readings are on `chain`, `fleet`, `cycle`, `star`, `bush` and `deepwide`; dense and complete shapes are not measured for ceilings. **Evaluation context**: a surface that spends an evaluator frame per link has a boundary belonging to the whole evaluation rather than to the surface, so a consumer's real ceiling is strictly lower than a bare-expression reading. Exactly one surface above is frame-per-link (`pathsBetween`), so that axis qualifies that row and leaves the others untouched.
+Two axes are excluded from every "none found" row above and are named once rather than per row. **Shape**: the readings are on `chain`, `fleet`, `cycle`, `star`, `bush` and `deepwide`; dense and complete shapes are not measured for ceilings. **Evaluation context**: a surface that spends an evaluator frame per link has a boundary belonging to the whole evaluation rather than to the surface, so a consumer's real ceiling is strictly lower than a bare-expression reading. Four surfaces above are frame-per-link (`pathsBetween`, and the three pre-order combinators sharing one core), so that axis qualifies those rows and leaves the others untouched. It is also why both of their caps are parameters rather than constants: a stated cap that a consumer cannot lower is a bare-expression figure sold as a consumer's ceiling.
 
 **Provenance, so no row is hand-carried.** The three arm rows and the plain-data property are re-derived in this repository: `./ci/bench/partition-ceiling.sh` (verdict `CEILING-FREE`, with a fixed-depth abort control firing at every cell and the unforced-accumulator construction as a live negative control) and `./ci/bench/partition-plaindata.sh` (verdict `CROSSES`, with the pre-map record shape and a bare function as armed controls that must fail). The `coneRank` row is `./ci/bench/cone-ceiling.sh`. **The remaining rows were measured outside this repository**, by the same instrument shape — the exit code of `nix-instantiate --eval --strict --json` on a separate evaluation, with `okControl` / `catchControl` / fixed-depth `abortControl` in every sweep — and this repository carries no cell that re-derives them. That is stated rather than left to be assumed.
 

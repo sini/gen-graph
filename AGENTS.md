@@ -38,7 +38,7 @@ Entry: `inputs.gen-graph.lib` (flake). Root `default.nix` is a FUNCTION `{ prelu
 | `canReach` | `{ edges } -> from -> to -> bool` |
 | `selfReachable` | `{ edges } -> id -> bool` |
 | `ancestorsOf` | `{ parent } -> id -> [id]` |
-| `pathsBetween` | `{ edges } -> from -> to -> [[id]]` (acyclic paths) |
+| `pathsBetween` | `{ edges, maxDepth ? 2000 } -> from -> to -> [[id]]` (acyclic paths; refuses by name past the depth cap) |
 
 **Global analysis** (materializes internally) — `lib/global.nix`
 
@@ -111,9 +111,9 @@ Entry: `inputs.gen-graph.lib` (flake). Root `default.nix` is a FUNCTION `{ prelu
 
 | Export | Signature |
 |---|---|
-| `foldPreorder` | `{ roots, key, expand, acc, visited ? {} } -> { acc; visited; }` — `expand acc frame -> { acc; children ? [] }` |
-| `expandPreorder` | `{ roots, key, edges, resolve ? id, emit ? (_: p: p), seen0 ? {}, nodes0 ? [] } -> { nodes; seen; }` |
-| `foldReach` | `{ roots, edges, target, project, itemKey, visited0 ? {}, seen0 ? {}, nodes0 ? [] } -> { nodes; seen; visited; }` |
+| `foldPreorder` | `{ roots, key, expand, acc, visited ? {}, maxDepth ? 4000, surface ? "foldPreorder" } -> { acc; visited; }` — `expand acc frame -> { acc; children ? [] }`; the shared self-recursive core, so `maxDepth`'s named refusal reaches all three |
+| `expandPreorder` | `{ roots, key, edges, resolve ? id, emit ? (_: p: p), seen0 ? {}, nodes0 ? [], maxDepth ? 4000 } -> { nodes; seen; }` |
+| `foldReach` | `{ roots, edges, target, project, itemKey, visited0 ? {}, seen0 ? {}, nodes0 ? [], maxDepth ? 4000 } -> { nodes; seen; visited; }` |
 
 **Construction and fixtures** — `lib/registry.nix`
 
@@ -247,7 +247,7 @@ Each row verified in this run against `g = import ./. { }` (root `default.nix`, 
 | Laziness is **derivative-driven**: an accessor is left unforced only when the label derivative goes empty on the edge that reaches it | `lib/query.nix:58-59`, `lib/registry.nix:292-313`; `query { graph = poisoned; follow = R.parse "safe*"; }` ⇒ `["a","b"]` (the `boom` accessor throws if forced), while `follow = R.parse "_*"` on the same graph ⇒ throws. Test: `test-laziness-poison-unreached` (`ci/tests/query.nix`) |
 | `regex.parse ""` is `eps`, not "match anything"; a lone `_` is the any-label wildcard but `_` inside a longer token is an ordinary label character | `lib/regex.nix:216,291-298`; `stateKey (parse "")` ⇒ `"e"`, `stateKey (parse "_")` ⇒ `"_"` (any), `stateKey (parse "a_b")` ⇒ `"'a_b"` (literal) |
 | `regex.parse` throws on any character outside `[A-Za-z0-9_-]` plus the operators, and on malformed operator placement — labels carrying `.` or `/` cannot be parsed | `lib/regex.nix:169,200,229,272`; `parse "a.b"`, `parse "*a"`, `parse "(a"`, `parse "()"` all ⇒ `tryEval success = false`. Positive control: `stateKey (parse "contains*")` ⇒ `"'contains*"`. Constructors (`lit`/`seq`/`alt`) bypass the parse alphabet; `lib/regex.nix:7-10` states the caller then owns the `stateKey` collision constraint |
-| `foldPreorder` never cycle-guards a frame whose `key` is `null` — the same frame is folded once per occurrence | `lib/preorder.nix:58-62`; `roots = [1 2 1]` with `key = _: null` ⇒ acc `[1,2,1]`; same roots with `key = toString` ⇒ `[1,2]`. Test: `test-foldpreorder-null-key-unguarded` (`ci/tests/preorder.nix`) |
+| `foldPreorder` never cycle-guards a frame whose `key` is `null` — the same frame is folded once per occurrence | `lib/preorder.nix:108-114`; `roots = [1 2 1]` with `key = _: null` ⇒ acc `[1,2,1]`; same roots with `key = toString` ⇒ `[1,2]`. Test: `test-foldpreorder-null-key-unguarded` (`ci/tests/preorder.nix`) |
 | `dependentsFrontier` **includes** a pruned node in the result but does not expand it | `lib/global.nix:dependentsFrontier`; `dependentsFrontier svc "db" (n: n != "api")` ⇒ `["api","worker"]` — `api` present, `web` (reachable only through `api`) cut. Positive control: `dependentsOf svc "db"` ⇒ `["api","web","worker"]`. Test: `test-frontier-pruned-boundary-present` (`ci/tests/global.nix`) |
 | `condensation.sccOf` is a MAP over `nodes`, so an unknown id is a MISSING ATTRIBUTE, not a value. It used to be a function answering an unknown id with the id itself | `lib/partition.nix`; `(condensation cyc).sccOf."nope"` ⇒ throws `attribute 'nope' missing`, while `(condensation cyc).sccOf."a"` ⇒ `"a"` and `(condensation cyc).sccs` ⇒ `[["a","b","c"]]`. A caller wanting the old total spelling writes `id: c.sccOf.${id} or id` |
 | `fixtures` and `labeledFixtures` are **public top-level exports**, not test-only helpers | drift output below lists both; `attrNames g.fixtures` ⇒ `["chain","cyclic","diamond","disconnected","serviceGraph","tree"]`, `attrNames g.labeledFixtures` ⇒ `["cyclic","poisoned","world"]` |

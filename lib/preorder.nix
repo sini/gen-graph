@@ -27,6 +27,45 @@
 #   visited key prunes that frame's whole subtree WITHOUT forcing it.
 { prelude }:
 let
+  # ── THE DEPTH CEILING, NAMED RATHER THAN REMOVED ──
+  #
+  # `foldPreorder.go` below is SELF-RECURSIVE — a frame's children are folded inside that
+  # frame's own call — so the evaluator's call depth is the traversal's DFS DEPTH, and past
+  # the evaluator's own `max-call-depth` the abort is `stack overflow; max-call-depth
+  # exceeded`: an ABORT, not a throw, which `builtins.tryEval` cannot observe. Measured on a
+  # bare chain probe at `374b0ad`, all three exported surfaces here: returns at depth 4,993,
+  # aborts at 4,994 (≈2 evaluator frames per node against the 10,000 default).
+  #
+  # ★ THE CEILING IS NOT REMOVABLE HERE, WHICH IS WHY THIS IS A REFUSAL. The iterative
+  # rewrite that removed `coneRank.order`'s ceiling bounded its loop by a materialized node
+  # list (`prelude.iterateBounded` over `keys`), and this fold HAS NO SUCH LIST: `edges` is
+  # demand-generated, a frame's successors need not exist until it is resolved (Kahn 1974,
+  # the header), so there is no length to fold over. The only unbounded loop Nix offers
+  # instead is self-recursion, and the evaluator has NO tail-call elimination — measured,
+  # same instrument: a tail-recursive counter at 200,000 aborts with the same signature while
+  # the same expression at 100 returns. A worklist rewrite would therefore trade a ceiling on
+  # DFS DEPTH for one on ITERATION COUNT, which is strictly worse: the `deepwide` shape
+  # returns today at every probed size precisely because its depth caps below the boundary
+  # while its node count does not.
+  #
+  # So the cap is STATED and sits below the evaluator's, which is what makes the refusal
+  # arrive first and be catchable (ADR-0009's fourth amendment: every exported ordering
+  # surface refuses BY NAME at its ceiling; ADR-0032: owed where a real ceiling exists, and
+  # only there). 4,000 leaves ~20% of the measured boundary as headroom for the CALLER's own
+  # frames — the boundary is a property of the whole measuring expression, not of this
+  # surface, so a caller nested deeper reaches it sooner and lowers `maxDepth` to match,
+  # while one calling from the top may raise it.
+  defaultMaxDepth = 4000;
+
+  # The refusal names the SURFACE THE CALLER CALLED, not this shared core — same discipline
+  # as `fixpoint.closureOf`, which takes its caller's name for exactly this reason. Unlike
+  # that one it is NOT asserted against an enumeration: `foldPreorder` is a general primitive
+  # whose specializations are written outside this library too (den-hoag's `forwardExpand`),
+  # and such a caller naming itself is the point rather than a hole.
+  depthRefusal =
+    surface: cap:
+    "gen-graph.${surface}: DFS depth exceeded the stated cap of ${toString cap}. This fold is self-recursive, so the evaluator's call depth IS the traversal's DFS depth; past the evaluator's own max-call-depth the failure is an uncatchable abort, and this cap sits below it so the refusal arrives first and `builtins.tryEval` can observe it. Raise `maxDepth` where the caller's own stack leaves room for it, or lower it where the caller is itself nested deep.";
+
   # ── foldPreorder: THE primitive. A pre-order DFS fold over an accessor-described
   #    graph, threading a caller-owned accumulator and a first-occurrence visited set.
   #
@@ -41,6 +80,10 @@ let
   #
   #    All three named traversals below are five-line specializations of this fold
   #    (the audit's "one combinator parameterized by projection + seen").
+  #
+  #    `maxDepth` is the stated depth ceiling above; `surface` is the name its refusal
+  #    carries. Roots sit at depth 1, so a chain of exactly `maxDepth` nodes traverses and
+  #    one node deeper refuses.
   foldPreorder =
     {
       roots,
@@ -48,26 +91,35 @@ let
       expand,
       acc,
       visited ? { },
+      maxDepth ? defaultMaxDepth,
+      surface ? "foldPreorder",
     }:
     let
       go =
-        state: frame:
+        depth: state: frame:
         let
           k = key frame;
         in
+        # ★ THE GUARD SITS AFTER THE VISITED CHECK, and that is load-bearing rather than
+        # incidental: an already-visited frame returns without descending, so it can never
+        # be what reaches the evaluator's ceiling, and refusing on one would change the
+        # answer for graphs that never approach the cap. Depth grows only through frames
+        # this fold actually expands, so the first such frame past the cap is the refusal.
         if k != null && state.visited ? ${k} then
           state
+        else if depth > maxDepth then
+          throw (depthRefusal surface maxDepth)
         else
           let
             marked = if k == null then state.visited else state.visited // { ${k} = true; };
             r = expand state.acc frame;
           in
-          prelude.foldl' go {
+          prelude.foldl' (go (depth + 1)) {
             acc = r.acc;
             visited = marked;
           } (r.children or [ ]);
     in
-    prelude.foldl' go { inherit acc visited; } roots;
+    prelude.foldl' (go 1) { inherit acc visited; } roots;
 
   # ── expandPreorder: payload-carrying DFS-preorder closure (den-hoag `forwardExpand`).
   #    Folds `emit frame (resolve frame)` in first-occurrence pre-order into an ordered
@@ -86,10 +138,12 @@ let
       emit ? (_frame: payload: payload),
       seen0 ? { },
       nodes0 ? [ ],
+      maxDepth ? defaultMaxDepth,
     }:
     let
       r = foldPreorder {
-        inherit roots key;
+        inherit roots key maxDepth;
+        surface = "expandPreorder";
         visited = seen0;
         acc = nodes0;
         expand =
@@ -130,6 +184,7 @@ let
       visited0 ? { },
       seen0 ? { },
       nodes0 ? [ ],
+      maxDepth ? defaultMaxDepth,
     }:
     let
       addItem =
@@ -145,7 +200,8 @@ let
             nodes = st.nodes ++ [ item ];
           };
       r = foldPreorder {
-        inherit roots;
+        inherit roots maxDepth;
+        surface = "foldReach";
         key = target;
         visited = visited0;
         acc = {

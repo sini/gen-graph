@@ -124,16 +124,50 @@ let
     go { ${startId} = true; } startId;
 
   # All acyclic paths between two nodes (DFS with visited set).
+  #
+  # ── ITS DEPTH CEILING, NAMED RATHER THAN REMOVED ──
+  #
+  # `dfs` is SELF-RECURSIVE, so the evaluator's call depth is the length of the path being
+  # extended, and past the evaluator's own `max-call-depth` the failure is `stack overflow;
+  # max-call-depth exceeded` — an ABORT, not a throw, invisible to `builtins.tryEval`.
+  # Measured on a bare chain probe at `374b0ad`: returns at 2,497, aborts at 2,498, ≈4
+  # evaluator frames per link against the 10,000 default. DEPTH-driven and not n-driven —
+  # `star` at 16,000 nodes and depth 1 returns.
+  #
+  # ★ THE BOUNDARY IS A PROPERTY OF THE WHOLE MEASURING EXPRESSION, not of this surface, so
+  # no figure quoted here is a ceiling a CALLER inherits. Measured in one run, both arms:
+  # under 200 added caller frames the boundary moves 2,497 → 2,447, exactly 200/4. That is
+  # why the cap is a parameter and why the default leaves ~20% of the bare-probe boundary as
+  # headroom: `gen-memo`'s `lib/{build,provenance,structural}.nix` call from inside build,
+  # provenance and structural stacks, so their real ceiling is strictly lower than any bare
+  # figure and they lower `maxDepth` rather than reading 2,000 as a promise.
+  #
+  # The cap rides on the caller's own accessor record, which is the shape `fixpoint.closureOf`
+  # already uses for `maxIter`. The same construction and the same reasoning are
+  # `preorder.nix`'s — one ceiling class, two self-recursive cores (ADR-0009's fourth
+  # amendment: refuse BY NAME at the ceiling; ADR-0032: owed where a real ceiling exists, and
+  # only there).
+  pathsMaxDepth = 2000;
+
   pathsBetween =
-    { edges, ... }:
+    {
+      edges,
+      maxDepth ? pathsMaxDepth,
+      ...
+    }:
     startId: endId:
     let
       dfs =
-        visited: current:
+        depth: visited: current:
         if current == endId then
           [ [ endId ] ]
         else if visited ? ${current} then
           [ ]
+        # After both terminating checks, for `preorder.nix`'s reason: neither descends, so
+        # neither can reach the evaluator's ceiling, and refusing on one would change the
+        # answer for graphs that never approach the cap.
+        else if depth > maxDepth then
+          throw "gen-graph.pathsBetween: path depth exceeded the stated cap of ${toString maxDepth}. This DFS is self-recursive, so the evaluator's call depth is the length of the path being extended; past the evaluator's own max-call-depth the failure is an uncatchable abort, and this cap sits below it so the refusal arrives first and `builtins.tryEval` can observe it. Set `maxDepth` on the accessor to match the stack the caller is itself nested in."
         else
           let
             newVisited = visited // {
@@ -141,9 +175,11 @@ let
             };
             targets = edges current;
           in
-          builtins.concatMap (next: map (path: [ current ] ++ path) (dfs newVisited next)) targets;
+          builtins.concatMap (
+            next: map (path: [ current ] ++ path) (dfs (depth + 1) newVisited next)
+          ) targets;
     in
-    dfs { } startId;
+    dfs 1 { } startId;
 
   # ── THE AMORTIZED DUAL: WRAP ONCE, TRAVERSE MANY ──
   #

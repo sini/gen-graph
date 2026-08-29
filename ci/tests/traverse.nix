@@ -9,6 +9,34 @@ let
     pathsBetween
     ;
   inherit (genGraph) fixtures mkGraph;
+
+  # A chain accessor of n nodes, (n-1) → (n-2) → … → 0. `pathsBetween`'s ceiling is DEPTH,
+  # not n (`star` at 16,000 nodes and depth 1 returns), so a chain is the shape that reaches
+  # it at the smallest node count. Same construction as `ci/tests/preorder.nix`'s.
+  chain =
+    n:
+    let
+      pad =
+        i:
+        let
+          s = toString i;
+        in
+        builtins.substring 0 (6 - builtins.stringLength s) "000000" + s;
+      key = i: "n" + pad i;
+      m = builtins.listToAttrs (
+        map (i: {
+          name = key i;
+          value = if i == 0 then [ ] else [ (key (i - 1)) ];
+        }) (builtins.genList (i: i) n)
+      );
+    in
+    {
+      top = key (n - 1);
+      bottom = key 0;
+      edges = k: m.${k} or [ ];
+    };
+
+  returns = v: (builtins.tryEval (builtins.deepSeq v v)).success;
 in
 {
   flake.tests.traverse = {
@@ -277,5 +305,70 @@ in
       }) "x";
       expected = true;
     };
+
+    # ── pathsBetween's DEPTH CAP AND ITS REFUSAL (ADR-0009 fourth amendment / ADR-0032) ──
+    #
+    # The claim is CATCHABILITY: what these replace is a `stack overflow; max-call-depth
+    # exceeded` ABORT, which `tryEval` cannot see, so `success == false` is a reading the old
+    # construction could not produce at any depth. The message's own text — that it names
+    # `pathsBetween` — is asserted in `ci/tests-error.nix`, the only output that can.
+    #
+    # ★ THE BOUNDARY IS `maxDepth + 1` NODES, NOT `maxDepth`, and the extra node is the
+    # terminating check rather than an off-by-one: `current == endId` is consulted BEFORE the
+    # guard, so the target frame never descends and never has to fit under the cap. A chain
+    # of `maxDepth + 1` therefore still yields its one path.
+    test-pathsbetween-refuses-past-maxdepth-catchably =
+      let
+        c = chain 10;
+      in
+      {
+        expr = returns (
+          pathsBetween {
+            inherit (c) edges;
+            maxDepth = 8;
+          } c.top c.bottom
+        );
+        expected = false;
+      };
+
+    # LIVE CONTROL, same run: one node shorter and the walk returns its path whole. Without
+    # it the cell above is consistent with a guard that refuses every call.
+    test-control-pathsbetween-returns-at-the-cap-boundary =
+      let
+        c = chain 9;
+      in
+      {
+        expr = builtins.length (
+          builtins.head (
+            pathsBetween {
+              inherit (c) edges;
+              maxDepth = 8;
+            } c.top c.bottom
+          )
+        );
+        expected = 9;
+      };
+
+    # ★ THE CELL AT THE SHIPPED DEFAULT — the only one that says the default arrives before
+    # the evaluator's own ceiling rather than after it. Measured on this shape at `374b0ad`:
+    # returns at depth 2,497, aborts at 2,498. Raise the default past that and this reads ☢️
+    # rather than ❌, the abort killing the cell instead of failing it.
+    test-pathsbetween-default-cap-refuses-below-the-evaluator-ceiling =
+      let
+        c = chain 2002;
+      in
+      {
+        expr = returns (pathsBetween { inherit (c) edges; } c.top c.bottom);
+        expected = false;
+      };
+
+    test-control-pathsbetween-default-cap-returns-just-below-it =
+      let
+        c = chain 2001;
+      in
+      {
+        expr = builtins.length (builtins.head (pathsBetween { inherit (c) edges; } c.top c.bottom));
+        expected = 2001;
+      };
   };
 }
