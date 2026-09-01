@@ -91,6 +91,40 @@ let
           a = [ "d" ];
         };
       };
+
+  pq = [
+    "p"
+    "q"
+  ];
+  # F5 · a BOTH-SIGNED edge inside a cycle. Apt, Blair & Walker 1988 Definition 4 says in
+  # consecutive sentences that "for any pair of relation symbols p, q there is at most one
+  # edge (p,q) in the dependency graph" and that "an edge may be both positive and
+  # negative" — so a sign is a PAIR OF PREDICATES on one edge, never a label, and the
+  # labeled contract renders `{+,−}` as two parallel labeled edges over the one pair.
+  # Three ordinary clauses produce it: `p ← q`, `p ← ¬q`, `q ← p`.
+  #
+  # WHY THE FIXTURE HAD TO BE ADDED. F1–F4 are every one of them SINGLE-SIGNED, so a
+  # caller that kept one sign per pair answers identically on all four: the cells above
+  # cannot tell the two encodings apart, and a suite holding only them is green over an
+  # encoding that reads this cycle as admissible while Lemma 1 forbids it. F5 is the input
+  # they disagree on.
+  f5 = lf pq {
+    pos = {
+      p = [ "q" ];
+      q = [ "p" ];
+    };
+    neg = {
+      p = [ "q" ];
+    };
+  };
+  # F5-ONE · the SAME three clauses under a one-sign-per-edge encoding, where recording
+  # `p ← q` leaves nowhere to put `p ← ¬q`. Its cell below is the control.
+  f5one = lf pq {
+    pos = {
+      p = [ "q" ];
+      q = [ "p" ];
+    };
+  };
 in
 {
   flake.tests.labeled-global = {
@@ -289,6 +323,30 @@ in
           to = "u";
         }
       ];
+    };
+    # BOTH SIGNS ON ONE PAIR, AND THAT PAIR ON A CYCLE. The parallel positive edge does not
+    # hide the negative one: `forgetLabels` collapses the pair for the partition, and the
+    # JOIN BACK is onto the retained labelled list, so the negative half is still on the
+    # cycle and is named. This is the case ABW Definition 4's second sentence exists for,
+    # and the only cell in this file whose answer changes when a sign stops being a set.
+    test-cyclic-edges-where-both-signed-edge-in-cycle = {
+      expr = cyclicEdgesWhere f5 isNeg;
+      expected = [
+        {
+          from = "p";
+          label = "neg";
+          to = "q";
+        }
+      ];
+    };
+    # ARMED CONTROL 3 — the same three clauses ONE-SIGN-PER-EDGE: no edge under the
+    # predicate, so the cycle reads ADMISSIBLE where Lemma 1 refuses it. The unsoundness is
+    # the CALLER's — this library never sees clauses and cannot make the choice — and the
+    # cell records what a caller gets for making it, which is what makes the cell above a
+    # measurement of the encoding rather than a restatement of F1.
+    test-control-cyclic-edges-where-one-sign-encoding-admits = {
+      expr = cyclicEdgesWhere f5one isNeg;
+      expected = [ ];
     };
     # The predicate is the caller's and the library is label-agnostic: the same graph
     # answers about whichever labels the caller asks about, including all of them.
