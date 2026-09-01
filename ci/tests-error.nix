@@ -18,9 +18,9 @@
 # filter predicate or on an ignore convention that a dependency bump could redefine. It
 # reaches the flake through `mkCi`'s `extraModules`.
 #
-# BOTH OUTPUTS NEED RUNNING, so both get a hook. `gen/ci/flakeModule.nix`'s `ci` hook
-# hard-codes `./ci#tests`; the `ci-error` hook below is its counterpart and is declared
-# through the same `pre-commit.settings.hooks` surface.
+# BOTH OUTPUTS NEED RUNNING, so both get a hook — and `gen-harness`'s shared flake module wires
+# both, beside each other, off the same read-roots guard. `ci` hard-codes `./ci#tests` and cannot
+# be pointed at this one; `ci-error` is its counterpart and this file supplies only its cells.
 #
 #   nix-unit --flake ./ci#tests        # the suite
 #   nix-unit --flake ./ci#testsError   # these cells
@@ -31,9 +31,7 @@
 # that kills the runner rather than failing a cell. It is an exit-code sweep,
 # `ci/bench/cone-consultation.sh`.
 {
-  lib,
   genGraph,
-  genInputs,
   ...
 }:
 let
@@ -194,14 +192,6 @@ let
   antitoneStep = cur: if (cur.a or [ ]) == [ "x" ] then { a = [ "y" ]; } else { a = [ "x" ]; };
 in
 {
-  # Same type as `flake.tests` (`gen/ci/flakeModule.nix`), because it is the same kind of
-  # thing read by the same runner — only the assertion the cells carry differs.
-  options.flake.testsError = lib.mkOption {
-    type = lib.types.lazyAttrsOf (lib.types.lazyAttrsOf lib.types.raw);
-    default = { };
-    description = "Test suites whose cells assert an ERROR: { suite.test = { expr; expectedError; }; }. Read by `nix-unit --flake ./ci#testsError`; deliberately outside `flake.tests`, which the batch asserter quantifies over.";
-  };
-
   config = {
     flake.testsError.cone-refusal = {
       # The message NAMES THE CYCLE. A refusal that only said "cyclic" would leave the caller
@@ -639,31 +629,6 @@ in
             paths = 9;
             ancestors = 8;
           };
-        };
-      };
-
-    # THE SECOND HOOK. A second output that nothing runs is a second output that rots, and
-    # the wrapper `gen/ci/flakeModule.nix` builds bakes `./ci#tests` into its own text, so it
-    # cannot be pointed at this one. This is its counterpart, built the same way, under a
-    # distinct hook id so the two merge rather than collide.
-    perSystem =
-      { pkgs, system, ... }:
-      {
-        pre-commit.settings.hooks.ci-error = {
-          enable = true;
-          name = "ci-error";
-          description = "Run nix-unit error-assertion tests";
-          entry = "${
-            pkgs.writeShellApplication {
-              name = "gen-graph-ci-nix-unit-error";
-              runtimeInputs = [ genInputs.nix-unit.packages.${system}.default ];
-              text = ''
-                exec nix-unit --flake ./ci#testsError "$@"
-              '';
-            }
-          }/bin/gen-graph-ci-nix-unit-error";
-          files = "\\.nix$";
-          pass_filenames = false;
         };
       };
   };

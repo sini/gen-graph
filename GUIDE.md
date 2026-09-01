@@ -54,10 +54,10 @@ This design comes from Radul's *Art of the Propagator* (2009) — the idea that 
 
 In the world of programming language semantics, Néron et al. (2015) introduced **scope graphs** — a model for how names resolve in programs. They identified two fundamental edge types:
 
-| Edge | Name | Direction | Meaning |
-|------|------|-----------|---------|
+| Edge  | Name   | Direction       | Meaning                              |
+| ----- | ------ | --------------- | ------------------------------------ |
 | **I** | Import | Forward/outward | "I depend on that" / "I import that" |
-| **P** | Parent | Upward/lexical | "I'm contained within that" |
+| **P** | Parent | Upward/lexical  | "I'm contained within that"          |
 
 In gen-graph's API, these map to the two accessor functions:
 
@@ -305,35 +305,35 @@ gen-scope uses gen-graph's accessor pattern: gen-scope memoizes attribute evalua
 
 ## Summary of operations
 
-| Function | Needs | Behavior |
-|----------|-------|----------|
-| `reachableFrom` | `edges` | C-level BFS from start node |
-| `reachableWhere` | `edges` | C-level BFS + filter by predicate |
-| `canReach` | `edges` | Point query: can A reach B? |
-| `selfReachable` | `edges` | Is node in a cycle? |
-| `ancestorsOf` | `parent` | Walk P-edge chain upward |
-| `pathsBetween` | `edges` | All acyclic paths (DFS) |
-| `hoistEdges` | `edges`, `nodes` | Read the accessor once, for a caller spending many traversals |
-| `reachableVia` | a hoisted accessor | `reachableFrom` with the per-visit wrapping lifted out |
-| `selfReachableVia` | a hoisted accessor | `selfReachable` with the per-visit wrapping lifted out |
-| `cycles` | `edges`, `nodes` | Nodes in any cycle (per-node C-level BFS) |
-| `dependents` | `edges`, `nodes` | Reverse reachability (full closure) |
-| `dependentsOf` | `edges`, `nodes` | Reverse reachability (single-target, efficient) |
-| `impactOf` | `edges`, `nodes` | Alias for `dependentsOf` |
-| `transpose` | `edges`, `nodes` | Reverse all edges |
-| `roots` | `edges`, `nodes` | No incoming edges |
-| `leaves` | `edges`, `nodes` | No outgoing edges |
-| `select` | `nodes`, `nodeData` | Filter by node data predicate |
-| `materialize` | `edges`, `nodes` | Build edge map |
-| `materializeParents` | `parent`, `nodes` | Build parent map |
-| `transitiveClosure` | `edges`, `nodes` | All transitive edges |
-| `transitiveReduction` | `edges`, `nodes` | Minimal equivalent graph |
-| `fixpoint` | (edge maps) | Iterate to convergence |
-| `compose` | (edge maps) | Relational composition |
-| `unionEdges` | (edge maps) | Merge with dedup |
-| `intersectEdges` | (edge maps) | Common edges |
-| `differenceEdges` | (edge maps) | Edges in A not in B |
-| `selectEdges` | (edge maps) | Filter by (from, to) predicate |
+| Function              | Needs               | Behavior                                                      |
+| --------------------- | ------------------- | ------------------------------------------------------------- |
+| `reachableFrom`       | `edges`             | C-level BFS from start node                                   |
+| `reachableWhere`      | `edges`             | C-level BFS + filter by predicate                             |
+| `canReach`            | `edges`             | Point query: can A reach B?                                   |
+| `selfReachable`       | `edges`             | Is node in a cycle?                                           |
+| `ancestorsOf`         | `parent`            | Walk P-edge chain upward                                      |
+| `pathsBetween`        | `edges`             | All acyclic paths (DFS)                                       |
+| `hoistEdges`          | `edges`, `nodes`    | Read the accessor once, for a caller spending many traversals |
+| `reachableVia`        | a hoisted accessor  | `reachableFrom` with the per-visit wrapping lifted out        |
+| `selfReachableVia`    | a hoisted accessor  | `selfReachable` with the per-visit wrapping lifted out        |
+| `cycles`              | `edges`, `nodes`    | Nodes in any cycle (per-node C-level BFS)                     |
+| `dependents`          | `edges`, `nodes`    | Reverse reachability (full closure)                           |
+| `dependentsOf`        | `edges`, `nodes`    | Reverse reachability (single-target, efficient)               |
+| `impactOf`            | `edges`, `nodes`    | Alias for `dependentsOf`                                      |
+| `transpose`           | `edges`, `nodes`    | Reverse all edges                                             |
+| `roots`               | `edges`, `nodes`    | No incoming edges                                             |
+| `leaves`              | `edges`, `nodes`    | No outgoing edges                                             |
+| `select`              | `nodes`, `nodeData` | Filter by node data predicate                                 |
+| `materialize`         | `edges`, `nodes`    | Build edge map                                                |
+| `materializeParents`  | `parent`, `nodes`   | Build parent map                                              |
+| `transitiveClosure`   | `edges`, `nodes`    | All transitive edges                                          |
+| `transitiveReduction` | `edges`, `nodes`    | Minimal equivalent graph                                      |
+| `fixpoint`            | (edge maps)         | Iterate to convergence                                        |
+| `compose`             | (edge maps)         | Relational composition                                        |
+| `unionEdges`          | (edge maps)         | Merge with dedup                                              |
+| `intersectEdges`      | (edge maps)         | Common edges                                                  |
+| `differenceEdges`     | (edge maps)         | Edges in A not in B                                           |
+| `selectEdges`         | (edge maps)         | Filter by (from, to) predicate                                |
 
 ## Fleet scale: graphs with thousands of nodes
 
@@ -397,17 +397,17 @@ g = {
 
 ### Performance summary by operation
 
-| If you need... | Use | Cost |
-|----------------|-----|------|
-| "Can A reach B?" | `canReach` | C-level; stops expanding at B, so O(reachable from A) **less what B dominates** — only at bounded out-degree, Θ(n²) on a dense graph |
-| "What depends on X?" (one X) | `dependentsOf` | reverse index Θ(n + E), then O(reachable) only at bounded in-degree, Θ(n²) on a dense graph |
-| "What depends on X, Y, Z?" | `dependents` × 1 | closure class, amortized over targets |
-| "Is this node in a cycle?" | `selfReachable` | C-level; O(reachable from node) only at bounded out-degree, Θ(n²) on a dense graph |
-| "List all cycles" | `cycles` | C-level; Θ(n + E) to read the accessor once, then O(n × reachable) — Θ(n²) on a dense graph, the out-degree factor being charged once rather than per visit |
-| "Many traversals over one graph" | `hoistEdges` + `reachableVia` | Θ(n + E) once, then Θ(reachable) per traversal — a loss for a single traversal |
-| "Entry points" | `roots` | O(n × degree) |
-| "Minimal diagram" | `transitiveReduction` | closure class unless every node has out-degree ≤ 1 — needs closure |
-| "All paths A→B" | `pathsBetween` | O(paths) — small subgraphs only |
+| If you need...                   | Use                           | Cost                                                                                                                                                        |
+| -------------------------------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "Can A reach B?"                 | `canReach`                    | C-level; stops expanding at B, so O(reachable from A) **less what B dominates** — only at bounded out-degree, Θ(n²) on a dense graph                        |
+| "What depends on X?" (one X)     | `dependentsOf`                | reverse index Θ(n + E), then O(reachable) only at bounded in-degree, Θ(n²) on a dense graph                                                                 |
+| "What depends on X, Y, Z?"       | `dependents` × 1              | closure class, amortized over targets                                                                                                                       |
+| "Is this node in a cycle?"       | `selfReachable`               | C-level; O(reachable from node) only at bounded out-degree, Θ(n²) on a dense graph                                                                          |
+| "List all cycles"                | `cycles`                      | C-level; Θ(n + E) to read the accessor once, then O(n × reachable) — Θ(n²) on a dense graph, the out-degree factor being charged once rather than per visit |
+| "Many traversals over one graph" | `hoistEdges` + `reachableVia` | Θ(n + E) once, then Θ(reachable) per traversal — a loss for a single traversal                                                                              |
+| "Entry points"                   | `roots`                       | O(n × degree)                                                                                                                                               |
+| "Minimal diagram"                | `transitiveReduction`         | closure class unless every node has out-degree ≤ 1 — needs closure                                                                                          |
+| "All paths A→B"                  | `pathsBetween`                | O(paths) — small subgraphs only                                                                                                                             |
 
 Everything labeled "C-level" uses `builtins.genericClosure` — Nix's native C implementation of BFS with built-in dedup. This is ~4-5x faster than equivalent Nix-level traversal on 5000+ node graphs.
 
