@@ -125,6 +125,29 @@ let
       q = [ "p" ];
     };
   };
+
+  u1 = [ "u" ];
+  # F6 · BOTH SIGNS ON A SELF-PAIR — the two hazards at once, from the two clauses `p ← p`
+  # and `p ← ¬p`. The cycle is a SELF-LOOP, so u's component is a singleton and a reading
+  # that asks whether a component has two members loses the cycle; and the pair is
+  # BOTH-SIGNED, so a reading that keeps one sign per pair loses the negative half. F5 is the
+  # second hazard on a two-node cycle and the self-loop cell is the first hazard
+  # single-signed. Neither of them is their intersection, and a reading that fails EITHER one
+  # answers `[ ]` on this fixture — reading as admissible a cycle Lemma 1 forbids.
+  f6 = lf u1 {
+    neg = {
+      u = [ "u" ];
+    };
+    pos = {
+      u = [ "u" ];
+    };
+  };
+  # F6-ONE · the SAME two clauses one-sign-per-edge. Its cell below is the control.
+  f6one = lf u1 {
+    pos = {
+      u = [ "u" ];
+    };
+  };
 in
 {
   flake.tests.labeled-global = {
@@ -346,6 +369,28 @@ in
     # measurement of the encoding rather than a restatement of F1.
     test-control-cyclic-edges-where-one-sign-encoding-admits = {
       expr = cyclicEdgesWhere f5one isNeg;
+      expected = [ ];
+    };
+    # THE TWO HAZARDS AT ONCE, which is the one shape neither cell above holds. The join has
+    # to read the component TAGS rather than a component SIZE — u's component is a singleton
+    # — AND it has to keep the negative half of a both-signed pair, with the parallel
+    # positive edge standing right beside it on the same self-pair. Each hazard alone has a
+    # cell; a reading that fails either one answers `[ ]` here.
+    test-cyclic-edges-where-both-signed-self-loop = {
+      expr = cyclicEdgesWhere f6 isNeg;
+      expected = [
+        {
+          from = "u";
+          label = "neg";
+          to = "u";
+        }
+      ];
+    };
+    # ARMED CONTROL 4 — the same two clauses ONE-SIGN-PER-EDGE. Recording `p ← p` leaves
+    # nowhere to put `p ← ¬p`, so the self-loop reads ADMISSIBLE: the caller-side unsoundness
+    # ARMED CONTROL 3 records, on the singleton-component regime instead of the two-node one.
+    test-control-cyclic-edges-where-one-sign-self-loop-admits = {
+      expr = cyclicEdgesWhere f6one isNeg;
       expected = [ ];
     };
     # The predicate is the caller's and the library is label-agnostic: the same graph
