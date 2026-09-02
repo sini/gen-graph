@@ -393,6 +393,54 @@ in
       expr = cyclicEdgesWhere f6one isNeg;
       expected = [ ];
     };
+    # BOTH SIGNS NAMED, NOT ONE PER PAIR. Every other cell in this file filters down to a
+    # single record per ordered pair, so a join that deduplicated its output by (from, to)
+    # — the same "a sign is a label" reading, one stage after the cycle test — would answer
+    # every one of them correctly. These two are where that shows: `{+,−}` on one pair is TWO
+    # witnesses, because a caller refusing a graph has to name the negative edge AND the
+    # positive one it travels with. The single-sign arm of each fixture is the control, and
+    # those are the two cells directly above.
+    #
+    # THE ORDER IS ASSERTED because the contract states it: (from, label, to) ascending, so
+    # the answer is a function of the graph rather than of accessor enumeration.
+    test-cyclic-edges-where-both-signs-are-named-on-a-cycle = {
+      expr = cyclicEdgesWhere f5 (_: true);
+      expected = [
+        {
+          from = "p";
+          label = "neg";
+          to = "q";
+        }
+        {
+          from = "p";
+          label = "pos";
+          to = "q";
+        }
+        {
+          from = "q";
+          label = "pos";
+          to = "p";
+        }
+      ];
+    };
+    # The same claim on the SINGLETON-COMPONENT regime, and a separate cell rather than a
+    # second half of the one above: a singleton component behaving like any other is the
+    # assumption this file keeps finding false.
+    test-cyclic-edges-where-both-signs-are-named-on-a-self-loop = {
+      expr = cyclicEdgesWhere f6 (_: true);
+      expected = [
+        {
+          from = "u";
+          label = "neg";
+          to = "u";
+        }
+        {
+          from = "u";
+          label = "pos";
+          to = "u";
+        }
+      ];
+    };
     # The predicate is the caller's and the library is label-agnostic: the same graph
     # answers about whichever labels the caller asks about, including all of them.
     test-cyclic-edges-where-predicate-is-the-callers = {
