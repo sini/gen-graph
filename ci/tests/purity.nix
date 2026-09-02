@@ -54,6 +54,41 @@ let
       map (line: lib.head (lib.splitString "#" line)) (lib.splitString "\n" text)
     );
 
+  # ★ THE STRIP'S PREMISE, asserted rather than assumed. `stripComments` cuts each line at a comment
+  # marker, and that cut is sound only while the `#` it cuts at stands OUTSIDE a string literal.
+  # Where it does not, live code is truncated to the end of that line and every cell below goes
+  # blind on what was removed, with no signal at all — a green suite over source nothing scanned.
+  #
+  # The predicate asks the strip ITSELF where it cut: `stripComments` of a single line is exactly
+  # the text before that line's cut. It then asks whether that text closed every double quote it
+  # opened, an odd count meaning the cut stands inside a string. Deriving it from `stripComments`
+  # rather than restating the cut rule is what keeps premise and strip from drifting apart when one
+  # of them is edited, and it is why one block serves both strip families in this ecosystem.
+  #
+  # It is LINE-LOCAL and so cannot conclude about string content that spans lines — an indented
+  # multi-line string block. Those files are declared as a list of their own by
+  # `test-strip-premise-multiline-strings` rather than trusted in silence.
+  countQuotes = s: (lib.length (lib.splitString "\"" s)) - 1;
+  cutIsInString =
+    line:
+    let
+      kept = stripComments line;
+    in
+    kept != line && lib.mod (countQuotes kept) 2 == 1;
+
+  # premiseBreaches : [ { name; text; } ] -> [ "file:line" ]. A breach is reported at its line as
+  # well as its file, because what it says is that one particular line's code was truncated.
+  premiseBreaches =
+    srcs:
+    lib.concatMap (
+      src:
+      lib.concatLists (
+        lib.imap1 (i: line: lib.optional (cutIsInString line) "${src.name}:${toString i}") (
+          lib.splitString "\n" src.text
+        )
+      )
+    ) srcs;
+
   # walk : string -> path -> [ { name; path; } ], `name` being `prefix` extended by the
   # entry's position in the tree — so a violation is reported at a repo-root-relative path a
   # reader can act on, rather than at the store path the sources happen to be evaluated from.
@@ -76,23 +111,37 @@ let
       ) (builtins.readDir dir)
     );
 
-  read =
+  # ★ THE READ AND THE STRIP ARE SEPARATE STAGES, one `readFile` per file feeding both. The premise
+  # cell has to speak about the RAW text, which is only a value once the strip stops happening inside
+  # the read; and `sources` is then a total per-element function of `rawSources` — the name passes
+  # through, the code is the strip of the text — so pinning either one pins the other, and the cells
+  # over each COMPOSE instead of hoping two independent reads of the same tree agree.
+  raw =
     entries:
     map (e: {
       inherit (e) name;
-      code = stripComments (builtins.readFile e.path);
+      text = builtins.readFile e.path;
     }) entries;
 
-  sources = read (walk "lib/" libDir) ++ [
+  strip =
+    entries:
+    map (e: {
+      inherit (e) name;
+      code = stripComments e.text;
+    }) entries;
+
+  rawSources = raw (walk "lib/" libDir) ++ [
     {
       name = "flake.nix";
-      code = stripComments (builtins.readFile ../../flake.nix);
+      text = builtins.readFile ../../flake.nix;
     }
     {
       name = "default.nix";
-      code = stripComments (builtins.readFile ../../default.nix);
+      text = builtins.readFile ../../default.nix;
     }
   ];
+
+  sources = strip rawSources;
 
   # Tokens that signal a nixpkgs-lib tether or the module-system (Korora-class) tier.
   forbidden = [
@@ -225,10 +274,52 @@ in
   # both halves of the naming rule: the prefix the walk is given is threaded through, and the
   # prefix it builds for a subdirectory extends that one rather than replacing it.
   flake.tests.purity.test-walk-descends-into-subdirectories = {
-    expr = scan (read (walk "ci/tests/_fixtures/purity-walk/" ./_fixtures/purity-walk));
+    expr = scan (strip (raw (walk "ci/tests/_fixtures/purity-walk/" ./_fixtures/purity-walk)));
     expected = [
       "ci/tests/_fixtures/purity-walk/nested/tethered.nix: 'lib.'"
       "ci/tests/_fixtures/purity-walk/surface.nix: 'mkOption'"
     ];
+  };
+
+  # ★ THE PREMISE HOLDS OF THE TEXT THAT WAS ACTUALLY SCANNED. This is an absence claim over text
+  # read from disk and it is NOT non-vacuous on its own: its expectation is `[ ]`, which an emptied
+  # or constant subject satisfies exactly as a sound corpus does — a scan of nothing breaches no
+  # premise. What arms it is the subject-pinning asserted over this same `rawSources` read, together
+  # with the live control below for the predicate itself; green here means the premise holds of the
+  # text those cells pin, and nothing more.
+  flake.tests.purity.test-strip-premise-holds = {
+    expr = premiseBreaches rawSources;
+    expected = [ ];
+  };
+
+  # And the predicate is capable of saying no. Its subject is a literal written inside this cell
+  # rather than anything on disk, so it is UNSEVERABLE from the tree and establishes exactly that the
+  # test discriminates an in-string `#` from an ordinary trailing comment — it says nothing whatever
+  # about what the cell above was pointed at, and it is NOT that cell's arming. Both directions ride
+  # in one expectation: line 1 must be caught and line 2 must not, so a predicate stuck at either
+  # constant reds here. The literal cuts under BOTH strip families in this ecosystem — its `#` is
+  # whitespace-preceded, so a comment-start strip cuts there too and the control cannot go dead by
+  # being pasted into a repository whose strip is the other one.
+  flake.tests.purity.test-strip-premise-scan-is-live = {
+    expr = premiseBreaches [
+      {
+        name = "<in-string-hash>";
+        text = ''
+          url = "a b # c";
+          x = 1; # an ordinary trailing comment
+        '';
+      }
+    ];
+    expected = [ "<in-string-hash>:1" ];
+  };
+
+  # The declared surface: the files the line-local predicate cannot conclude about. An indented
+  # multi-line string block carries string content across line boundaries, where a per-line quote
+  # count cannot follow it, so those files are written down rather than trusted in silence. The first
+  # file to grow one arrives as a red that has to be READ, exactly as a new library file arrives as a
+  # red on a membership manifest.
+  flake.tests.purity.test-strip-premise-multiline-strings = {
+    expr = map (s: s.name) (lib.filter (s: genPrelude.hasInfix "''" s.text) rawSources);
+    expected = [ ];
   };
 }
