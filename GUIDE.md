@@ -298,7 +298,6 @@ gen-aspects →  classifies and dispatches aspect types
 gen-select  →  selector algebra for targeting nodes
 gen-bind    →  injects args into NixOS modules
 gen-dispatch  →  relational rule dispatch STEP (stratified phases, conflict resolution)
-gen-resolve →  demand-driven RAG evaluator (attribute schedule + convergence loop)
 ```
 
 gen-scope uses gen-graph's accessor pattern: gen-scope memoizes attribute evaluation via `_eval` attrsets (Nix values are lazy), and gen-graph queries operate over those memoized accessors. The memoization IS the cache — gen-graph never caches, it relies on the accessor backend (gen-scope's lazy attrsets) for O(1) repeated calls.
