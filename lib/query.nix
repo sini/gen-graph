@@ -568,13 +568,20 @@ let
     in
     go { ${from} = true; } [ ] from follow;
 
-  # ── per-query label order (Néron et al. specificity; van Antwerpen et al.
-  # per-query ≤ with an end-of-path token): compare witness paths
-  # lexicographically on label ranks; when one word is exhausted, its
-  # end-of-path rank competes against the other word's next label rank —
-  # the default endOfPath = -1 makes stopping outrank everything (a proper
-  # prefix beats its extensions); a higher endOfPath lets continuation on
-  # lower-ranked labels beat stopping. ──
+  # ── per-query label order: compare witness paths lexicographically on label ranks;
+  # when one word is exhausted, its end-of-path rank competes against the other word's
+  # next label rank — the default endOfPath = -1 makes stopping outrank everything (a
+  # proper prefix beats its extensions); a higher endOfPath lets continuation on
+  # lower-ranked labels beat stopping.
+  #
+  # ★ THIS IS A SORT KEY ON RANK WORDS, NOT THE SPECIFICITY ORDER. Néron et al. 2015
+  # Fig. 2 recurses only where the head labels are `<`-comparable (Lex1) or EQUAL (Lex2),
+  # so two paths whose labels differ at EQUAL rank are incomparable in BOTH directions;
+  # `pathLess` decides them. At layers [["P" "I"] ["X"]]: pathLess [P·X] [I·P] and
+  # pathLess [I·P] [P·X] read false/true where the specificity order reads false/false.
+  # Ties are inexpressible in a flat `labels` list, which is why the two coincide inside
+  # this library today — and why a consumer that CAN express ties must never substitute
+  # one for the other. gen-view carries the same correction above its own `rankLess`. ──
   ranksOf =
     order:
     (builtins.foldl'
@@ -759,5 +766,10 @@ in
     query
     queryArrivals
     queryFold
+    ranksOf
+    rankOf
+    rankWordOf
+    wordLess
+    pathLess
     ;
 }

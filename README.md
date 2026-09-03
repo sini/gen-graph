@@ -1062,6 +1062,25 @@ query {
 # → { visible = [ … own answers … ]; shadowed = [ … include answers … ]; }
 ```
 
+**The rank-word calculus is exported raw**, beside the compositions built from it — a consumer that
+needs the order without `query`'s answer shape takes the piece rather than rebuilding it:
+
+| construct    | signature                              | reading                                                                                                                                                                                                                                 |
+| ------------ | -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ranksOf`    | `order → { <label> = int; }`           | the declaration read as ranks; earlier labels rank lower                                                                                                                                                                                |
+| `rankOf`     | `order → label → int`                  | an unlisted label is unranked and sorts last (`length order.labels`), so two *distinct* unlisted labels tie                                                                                                                             |
+| `rankWordOf` | `order → path → [ int ]`               | a witness path projected onto its label ranks                                                                                                                                                                                           |
+| `wordLess`   | `endOfPath → [ int ] → [ int ] → bool` | the strict word order; at exhaustion `endOfPath` competes against the other word's next rank. It takes the end-of-path rank as a plain `int` and is total on tied words, so it generalises past the flat `labels` list `pathLess` reads |
+| `pathLess`   | `order → path → path → bool`           | `wordLess (order.endOfPath or (-1))` lifted through `rankWordOf`                                                                                                                                                                        |
+
+> ★ **`pathLess` is a sort key on rank words, not the specificity order.** Néron et al. 2015 Fig. 2
+> recurses only where the head labels are `<`-comparable (Lex1) or *equal* (Lex2), so two paths whose
+> labels differ at equal rank are incomparable in **both** directions; `pathLess` decides them. At
+> `layers = [["P" "I"] ["X"]]`: `pathLess [P·X] [I·P]` and `pathLess [I·P] [P·X]` read `false`/`true`
+> where the specificity order reads `false`/`false`. Ties are inexpressible in a flat `labels` list,
+> which is why the two coincide inside this library — and why a consumer that *can* express ties must
+> never substitute one for the other.
+
 **`queryFold`** folds a caller-supplied combine over the `all`-mode answer set in canonical
 sorted order (the group-closure / acl shape):
 
