@@ -97,6 +97,7 @@
 # INTERFACE — `arm` × `shape` × `n`:
 #   arm   = cycles | condensation | dependents | transitiveClosure | topoOrderKahn
 #         | transitiveReduction | topoOrder | coneRank | coneRankShipped | floor
+#         | degreeProfile           (the carve-out ladder's degree witness)
 #         | fbNode | fbWork | condensationClosure | cyclePaths | dependentsOf
 #         | dependentsFrontier | dependentsFrontierPruned
 #         | cyclesUnhoisted | fbNodeUnhoisted | cyclePathsUnhoisted
@@ -109,7 +110,7 @@
 #         | uniqueStrings | uniqueInts   (the dedup at a fixed L; `n` is L, not a node count)
 #         | sentinel | sentinelPeerOrder | sentinelPeerClosure | sentinelVerdict
 #   shape = complete | cycle | cyclechord | chain | wide | fleet | discrim | total | totalrev
-#         | deepwide
+#         | deepwide | path | inStar | inTree
 #   n     = node count (use doublings, e.g. 50/100/200, so a ratio reads as 2^exp)
 #
 # The four `sentinel*` arms ignore `shape` and `n` — their cells are fixed in the file (see
@@ -162,6 +163,62 @@
 #     width are ADDITIVE rather than multiplicative. It REFUSES below n = 4002 rather than
 #     degrading to a shape that was never measured, so it does not run at this file's small
 #     default sizes; give it 8000/16000/32000.
+#
+# CARVE-OUT FIXTURES, for `transitiveReduction`'s SCOPE. ★ These are read as a LADDER and
+# never one at a time. `transitiveReduction` is linear iff EVERY node has out-degree <= 1,
+# and in-degree is IRRELEVANT — a claim about degrees, so the four rungs hold the accessor
+# construction identical (`ringNodes` + one `idxOf` lookup + one `pad` per call) and vary
+# only the degree profile. A ladder built partly on `fromPairs` would let a reader charge a
+# construction cost to in-degree.
+#   `path` — `cycle` MINUS the wrap edge: node i depends on i+1, the last node on nothing.
+#     Out-degree <= 1, in-degree <= 1, acyclic, `initialReady` 1. Keys ascend with index, so
+#     a dependency sorts BELOW its dependent. Refuses below n = 2.
+#   `inTree` — the binary in-tree: node i depends on node (i-1)/2. Out-degree <= 1, in-degree
+#     EXACTLY 2 at every internal node, depth log2 n. Refuses below n = 3.
+#   `inStar` — every node depends on node 0, which depends on nothing. Out-degree <= 1 and
+#     in-degree n-1: the MAXIMUM in-degree reachable while the carve-out still holds — 99 at
+#     n = 100. Refuses below n = 3.
+#   `cyclechord` (above) is the fourth rung and the ONLY one that breaks the carve-out: one
+#     node at out-degree 2, every other still at 1. There is no second fixture for that case.
+#   Each of the three REFUSES rather than degrading into a shape that was never measured under
+#   the name it degrades into: `inStar` and `inTree` are both `path` at n = 2.
+#
+# ★ THE DEGREES ARE READ AND NOT ASSERTED, `arm=degreeProfile` at n = 100, which reports
+#   maxOutDegree / maxInDegree / edgeCount for the selected shape IN ITS OWN INVOCATION:
+#     path 1 / 1 / 99   inTree 1 / 2 / 99   inStar 1 / 99 / 99   cyclechord 2 / 2 / 101
+#     cycle 1 / 1 / 100   chain 1 / 1 / 99   total 99 / 99 / 4,950
+#   Without that arm the ladder is a VACUOUS INSTRUMENT: the three linear rungs report the
+#   same `initialReady` and the same `len`, so nothing else on the run says they are different
+#   graphs, and an `inStar` mis-built as a second `path` would confirm the claim by reading
+#   identically to it. ★ `total` is the contrast that keeps `inStar` honest — in-degree 99
+#   with out-degree 99 rather than 1 — so high in-degree is demonstrably available on a shape
+#   the carve-out does NOT admit, and the ladder's reading is not an artefact of high in-degree
+#   being reachable only where out-degree is low.
+# ★ WHAT THE LADDER READS, `arm=transitiveReduction`, n = 100 -> 200, list / sets / nrLookups:
+#     path     899 / 1,648 / 1,531   ->   1,799 / 2,748 / 3,031
+#     inTree   899 / 1,648 / 1,531   ->   1,799 / 2,748 / 3,031
+#     inStar   899 / 1,648 / 1,531   ->   1,799 / 2,748 / 3,031
+#     cycle    903 / 1,651 / 1,437   ->   1,803 / 2,751 / 2,837
+#     cyclechord   3,853,568 / 5,469,052 / 34,668  ->  29,418,937 / 42,881,725 / 120,469
+#   The three in-degree rungs are BIT-IDENTICAL to each other on all three axes at both sizes,
+#   at in-degree 1, 2 and 99. Not "close" — identical, because under the carve-out the arm
+#   never reaches a closure at all, so the only thing it can count is the edge set, and all
+#   three have n-1 edges. Each axis is exactly affine in n: `list` = 9n - 1, `sets` = 11n + 548,
+#   `nrLookups` = 15n + 31. ★ Read the EXPONENT off `list` or `nrLookups`, not off `sets`: the
+#   `sets` intercept is the library's merged export set and it flattens the ratio to 1.67x on a
+#   doubling that is exactly linear.
+# ★ AND WHAT ONE OUT-DEGREE-2 NODE COSTS, on the shape that differs from `cycle` in that one
+#   edge and in nothing else — in-degree still 1 everywhere. `cyclechord` doubles by 7.63x on
+#   `list` (exponent 2.93) against the ladder's 2.00x, i.e. 4,267x `cycle` at n = 100 and
+#   16,317x at n = 200, so the multiple is not a constant either. It lands ON the closure
+#   curve: `arm=transitiveClosure` on the same shape and n reads 3,852,858 / 5,467,635 / 33,652
+#   and 29,417,527 / 42,878,908 / 118,453, so the reduction is 100.018% of the full closure at
+#   n = 100 and 100.005% at n = 200. One node at out-degree 2 anywhere forces the closure every
+#   node shares; no amount of in-degree does.
+# ★ A LADDER FIGURE IS NOT COMPARABLE TO `chain`'s, and this is the price of holding the
+#   accessor fixed. `chain` is the same abstract graph as `path` and reads `list` 1,000 against
+#   `path`'s 899 at n = 100 — 101 elements of `fromPairs` preamble and nothing about degrees.
+#   Compare within the ladder, or against `floor`.
 #
 #   `floor` deep-forces the caller's edge set alone — the fixture's own cost,
 #   containing no gen-graph work — so a library figure can be read against it.
@@ -571,6 +628,57 @@ let
               else
                 [ next ];
           };
+      # ── THE CARVE-OUT LADDER, three of whose four rungs are here ──
+      # `path`, `inStar` and `inTree` are the SAME construction as `cycle` and `cyclechord`
+      # above — `ringNodes` plus one `idxOf` lookup and one `pad` per accessor call — and they
+      # differ from it and from each other ONLY in the degree profile. That is deliberate and
+      # it is why they are not built on `fromPairs` like the acyclic shapes below: the
+      # carve-out is a claim about DEGREES, so the accessor preamble has to be held identical
+      # across the shapes the claim is read on, or a reader attributes a construction cost to
+      # in-degree. The price of that choice is that a figure here is NOT comparable to
+      # `chain`'s, which is the same abstract graph as `path` and reads higher for its
+      # accessor alone; the paragraph above these fixtures states the reading.
+      # Each REFUSES rather than degrading into a shape that was never measured under the
+      # name it degrades into — `inStar` and `inTree` both become `path` at n = 2.
+      path =
+        if n < 2 then
+          throw "shape path requires n >= 2 (a path needs one edge); got ${toString n}"
+        else
+          {
+            nodes = ringNodes;
+            edges =
+              id:
+              let
+                i = idxOf.${id};
+              in
+              if i + 1 < n then [ (pad (i + 1)) ] else [ ];
+          };
+      inStar =
+        if n < 3 then
+          throw "shape inStar requires n >= 3 (below that the hub's in-degree is <= 1 and this is `path`); got ${toString n}"
+        else
+          {
+            nodes = ringNodes;
+            edges =
+              id:
+              let
+                i = idxOf.${id};
+              in
+              if i == 0 then [ ] else [ (pad 0) ];
+          };
+      inTree =
+        if n < 3 then
+          throw "shape inTree requires n >= 3 (below that no node has two children and this is `path`); got ${toString n}"
+        else
+          {
+            nodes = ringNodes;
+            edges =
+              id:
+              let
+                i = idxOf.${id};
+              in
+              if i == 0 then [ ] else [ (pad ((i - 1) / 2)) ];
+          };
       chain = fromPairs (map (key "n") (ix n)) (
         map (i: {
           name = key "n" i;
@@ -968,20 +1076,33 @@ let
   # axes, one cell, non-uniform, which is why the verdict reads SHIFTED-STRUCTURAL even though
   # two of the four contributors are individually benign. Neither contributor is legible in the
   # sum; all four are obvious apart. The offsets are LEFT IN.
+  # ★ RE-PINNED FOR THE CARVE-OUT LADDER, and the delta carries TWO contributors, which is the
+  # case the ★★★ block above says to measure apart rather than read off the sum. Both were read
+  # on this file, one before the fixtures were added and one after, so neither is inferred:
+  #   · `sets` +10 UNIFORMLY on all three cells with `list` and `nrLookups` bit-identical, read
+  #     on the UNEDITED file — i.e. already outstanding before this change and none of it this
+  #     change's. Same signature as every export-set growth recorded above: names added to the
+  #     library's merged export set, which sits on every cell's evaluation path;
+  #   · `sets` +3 UNIFORMLY on all three, `list` and `nrLookups` again bit-identical — the three
+  #     shapes this change adds to `mkFixtures`, one per attribute. The dispatch-attrset offset
+  #     this guard was built to make visible, and the same +1-per-shape the block above records.
+  # Summed they are +13 on ONE axis and uniform, so the verdict stays SHIFTED-BENIGN and both
+  # parts stay legible — the case where two benign changes do NOT sum to a structural reading.
+  # The offsets are LEFT IN.
   sentinelPins = {
     sentinel = {
       list = 1151;
-      sets = 1686;
+      sets = 1699;
       nrLookups = 1962;
     };
     peerOrder = {
       list = 2588;
-      sets = 4288;
+      sets = 4301;
       nrLookups = 7909;
     };
     peerClosure = {
       list = 118549;
-      sets = 151050;
+      sets = 151063;
       nrLookups = 6760;
     };
   };
@@ -1155,6 +1276,30 @@ let
       builtins.deepSeq r.order r.depth
     else if arm == "floor" then
       builtins.deepSeq (map edges nodes) nodes
+    # THE CARVE-OUT LADDER'S WITNESS, AND IT IS AN ARM SO THAT IT RUNS IN ITS OWN INVOCATION.
+    # A ladder cell reporting "linear" says nothing until something says the IN-DEGREE it was
+    # linear at, and no control already on the run can: `initialReady` reads 1 and `len` reads
+    # n-1 on `path`, `inStar` and `inTree` ALIKE, so an `inStar` mis-built as a second copy of
+    # `path` would produce the same bit-identical figures and the scope claim would be vacuous
+    # while looking confirmed. This arm is what distinguishes them.
+    # ★ IT IS NOT A FOURTH SHAPE CONTROL, and the reason is the rule the ladder exists to
+    # respect: a control that shares a run with its subject is not a control. An in-degree
+    # histogram computed inside every cell would add a term to the very columns the ladder
+    # compares across shapes. Read it BESIDE a ladder cell, never in one — and read its own
+    # allocation as meaningless, because it is measuring the fixture and not the library.
+    # Θ(n + E) via `groupBy`, the same construction `lib/global.nix` builds its reverse index
+    # with, rather than O(E²) via `foldl'` + `//`.
+    else if arm == "degreeProfile" then
+      let
+        maxOf = builtins.foldl' (a: b: if b > a then b else a) 0;
+        outDeg = map (v: builtins.length (edges v)) nodes;
+        grouped = builtins.groupBy (t: t) (builtins.concatMap edges nodes);
+      in
+      {
+        maxOutDegree = maxOf outDeg;
+        maxInDegree = maxOf (map builtins.length (builtins.attrValues grouped));
+        edgeCount = builtins.foldl' builtins.add 0 outDeg;
+      }
     # The sentinel's own measurable body: `topoOrder` over a FIXED tiny graph, so the cell
     # is dispatched through this same table AND calls gen-graph. It ignores `n`/`shape` by
     # design — see sentinelCells.
@@ -1211,6 +1356,12 @@ else if sentinelCell then
       else
         builtins.length (builtins.attrNames result);
   }
+# ★ THE DEGREE WITNESS PRINTS ITS ANSWER, and it needs its own branch to do it. The general
+# block below reports `len`, the number of KEYS in the record, which for this arm is the
+# constant 3 on every shape — a reading that cannot distinguish the shapes the arm exists to
+# distinguish, and one that looks like a figure. Same reason the sentinel arms have a branch.
+else if arm == "degreeProfile" then
+  builtins.deepSeq result (result // { inherit arm shape n; })
 else
   builtins.deepSeq result {
     inherit arm shape n;
