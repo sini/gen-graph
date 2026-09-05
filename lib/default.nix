@@ -6,6 +6,7 @@ let
   edgeMaps = import ./edge-maps.nix { inherit prelude; };
   fixpoint = import ./fixpoint.nix { inherit prelude; };
   registry = import ./registry.nix { inherit prelude; };
+  declaredEdges = import ./declared-edges.nix;
   endpoints = import ./endpoints.nix { inherit prelude; };
   order = import ./order.nix { inherit prelude; };
   partition = import ./partition.nix { inherit prelude; };
@@ -19,6 +20,7 @@ traverse
 // edgeMaps
 // fixpoint
 // registry
+// declaredEdges
 // endpoints
 // order
 // partition

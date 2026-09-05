@@ -154,9 +154,11 @@ let
   ];
 
   # The live counterpart to `forbidden`: the name this library reaches for where a tether would
-  # reach for nixpkgs. Every gen-graph source but one carries it — `lib/traverse.nix` is the
-  # `genericClosure`-based BFS core, written in `builtins` alone and depending on nothing, so it
-  # names no prelude. That single exclusion is what gives the assertion its teeth: the expected
+  # reach for nixpkgs. Every gen-graph source but TWO carries it, and both exclusions are modules that
+  # depend on nothing: `lib/traverse.nix` is the `genericClosure`-based BFS core written in `builtins`
+  # alone, and `lib/declared-edges.nix` is the declared relation's vocabulary — its accept-list, force
+  # and tag are all `builtins`, so it takes no prelude parameter at all. Those exclusions are what give
+  # the assertion its teeth: the expected
   # list is a PROPER subset of the manifest, so a read returning one fixed text for every file
   # lands outside it either way — without the token the list collapses toward empty, with it the
   # list swells to every source.
@@ -185,6 +187,7 @@ in
   flake.tests.purity.test-scan-subject-is-the-library-tree = {
     expr = map (s: s.name) sources;
     expected = [
+      "lib/declared-edges.nix"
       "lib/default.nix"
       "lib/edge-maps.nix"
       "lib/endpoints.nix"

@@ -886,6 +886,96 @@ one broken structural equation anywhere refuses every projection read. That is t
 direction of failure: a projection that answered while its authority was unavailable would assert a
 membership it could not verify.
 
+### Declared Relation
+
+Where `fromScan` **derives** an edge set from values, some consumers **declare** theirs: they hand
+the substrate a dependency relation they wrote by hand. Three things about such a value are facts
+about the whole evaluation and cannot be recovered later — what it is (a relation, never a function
+of one), what its endpoints are (references the substrate minted, never strings a caller assembled),
+and when it is fixed (before the evaluation it orders exists). `mkDeclaredEdges` is where all three
+are settled, at construction, because a construct's contract belongs at its construction site.
+
+```nix
+ref = graph.mkNodeRef { isRegistered = id: builtins.elem id declaredNodeOrder; };
+
+declared = graph.mkDeclaredEdges {
+  child = [ (ref "parent") (ref "sibling") ];
+};
+
+declared.dependencies "child"    # => [ "parent" "sibling" ]
+builtins.attrNames declared.index # => [ "child" ]
+graph.isDeclaredEdges declared   # => true
+```
+
+| Export                  | Signature                             |
+| ----------------------- | ------------------------------------- |
+| `mkNodeRef`             | `{ isRegistered } -> id -> <nodeRef>` |
+| `mkSpawnedNodeRef`      | `id -> <nodeRef>`                     |
+| `isNodeRef`             | `a -> bool`                           |
+| `refName`               | `<nodeRef> -> string`                 |
+| `nodeRefFindings`       | `{ isRegistered } -> id -> [string]`  |
+| `mkDeclaredEdges`       | `relation -> <declaredEdges>`         |
+| `declaredEdgesFindings` | `relation -> [string]`                |
+| `isDeclaredEdges`       | `a -> bool`                           |
+
+**An endpoint is a tagged reference, and that is a convention rather than a capability.** A node
+reference is `{ _type = "gen-graph/node-ref"; id = <identifier>; }`, built only by the two
+constructors above; `isNodeRef` asks whether a value carries the tag. That refuses by name every
+**accidental** construction — a raw string endpoint, a typo, an id computed from something, a value
+carried in from another graph — which is the whole of the defect class that occurs in practice. It
+does **not** refuse **deliberate circumvention**: an author who writes the tagged record out by hand
+defeats it, and that is out of threat model rather than overlooked, since nothing here needs
+cryptographic integrity, only distinctness. This is the `mkOverride`-class convention, and the
+refusal names the **constructor** — *"was not built by mkNodeRef"* — rather than the shape.
+
+**`id` is an identifier, not necessarily an identity**, so nothing in this vocabulary depends on a
+mint. `refName` is the only route from a reference to a string; every attrset key, membership
+comparison and message fragment goes through it.
+
+**Two construction routes, disjoint and jointly total.** `mkNodeRef` is the **author-written** route
+and validates at construction against the **registration set** — the declared vertex order, which is
+fixed before any equation runs — so a reference it admits is a node the evaluator will have.
+`mkSpawnedNodeRef` is the **substrate-minted** route, for a node created after the registration set
+was fixed; no author writes it, so no membership check is owed or possible. Its stringness check is
+not a weakened membership check: it is what keeps `refName`'s codomain a string.
+
+**The entry is an accept-list, not a deny-list — one conjunct per declared form.** A **list**
+relation must have every element `{ from = <nodeRef>; to = <nodeRef>; }`; an **attrset** relation
+must have every value a list and every element of it a `<nodeRef>`; anything else is refused naming
+the conjunct that failed. Nothing is refused by enumerating what it is. That matters concretely: a
+`__functor` attrset **is** the edge set being a function while `builtins.isFunction` reads `false`
+for it, so a deny-list asking "is this a function?" admits it and awards every node the maximal
+claim silently. Fields beyond the pair are **admitted and ignored** — `fromScan` builds its own edge
+records with four fields, so an extended record is the normal case here.
+
+**The force is `builtins.deepSeq` and the depth is part of the contract.** It is applied to the
+relation, and to nothing else, before anything downstream exists. Under it a relation that reaches
+back into the evaluation it orders cannot be produced: the force demands the value and every
+sub-value transitively, the value demands the evaluation, the evaluation demands the force. That
+failure is `infinite recursion encountered` — a divergence `tryEval` does not contain — so what is
+assertable is the depth rather than the knot. A WHNF force satisfies every other word of this
+paragraph and leaves the knot writable; so does the interposed per-value force a reader cannot
+distinguish by reading the input type alone. The cost is an eager `O(|E|)` traversal of the declared
+relation at construction, paid once, unconditionally.
+
+**The normalization is part of the definition.** A list relation becomes the attrset index the
+published relation reads: `groupBy` on the source's **name**, each group mapped to its targets'
+**names**. Duplicate sources **accumulate** — a `listToAttrs`-based derivation keeps the first
+binding for a repeated key and drops the rest with no signal, which is under-declaration by another
+route. Repeated identical edges are **not** deduplicated; that is left to the consumer, which is the
+opposite of the choice `mkGraph` makes for its own index.
+
+**`isDeclaredEdges` is nominal, not structural, and that is the point.** A contract enforced only
+inside the fold that reads the relation is bypassed by any caller who hand-assembles the context,
+and callers do exactly that. So the contract lives at a constructor and the type is what an entry
+point accepts in place of a bare attrset: a hand-assembled value carrying an `index` and a
+`dependencies` has the right shape, no tag, and is precisely the bypass. A consumer states its own
+refusal, naming its own entry point.
+
+`declaredEdgesFindings` and `nodeRefFindings` run the same checks and **return** their messages as a
+list, `[ ]` when clean — the same dual-surface convention `mkProjectionFindings` follows next door.
+Assert on the returned message rather than on a caught throw.
+
 ### Labeled Queries
 
 The label-blind surface above (`edges : id → [id]`) is untouched; labeled queries are a
