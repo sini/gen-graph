@@ -81,7 +81,7 @@ let
   # supported, and is returned: `p :- not r. p :- p. r :- a` has a measurably non-monotone
   # step (`step {a}` yields `p`, `step {a,r}` does not), is NOT refused, and returns `p` —
   # which the well-founded model makes FALSE. That is the supported-model / founded-model
-  # gap. Closing it is ADR-0020's WELL-FOUNDED ENGINE, which that ADR puts in Phase-C den
+  # gap. Closing it is ADR-0020's WELL-FOUNDED ENGINE, which that ADR puts in Phase-C
   # territory — but NOTHING NEED WAIT ON PHASE C: `gen-scope` ships one today
   # (`wellFoundedModel`, its `lib/engine.nix`), so a caller needing foundedness runs it ONE
   # LAYER UP. It is unreachable from HERE by layering rather than by absence — gen-scope's
@@ -107,7 +107,7 @@ let
   # ★ AND SILENCE IS NOT AN OPTION FOR IT. ADR-0020 rules that a negative cycle's contested
   # atoms are UNDEFINED — a named third value, never silence — with stable-model existence
   # as the refusal oracle. An edge map has no third value to write and the well-founded
-  # engine is Phase-C den territory by that ADR's own text, so what is available here is the
+  # engine is Phase-C territory by that ADR's own text, so what is available here is the
   # refusal: the criterion is stated, and a result that fails it is refused by name rather
   # than returned as an admitted fact.
   #

@@ -60,7 +60,7 @@ let
   # The refusal names the SURFACE THE CALLER CALLED, not this shared core — same discipline
   # as `fixpoint.closureOf`, which takes its caller's name for exactly this reason. Unlike
   # that one it is NOT asserted against an enumeration: `foldPreorder` is a general primitive
-  # whose specializations are written outside this library too (den-hoag's `forwardExpand`),
+  # whose specializations are written outside this library too (a framework's `forwardExpand`),
   # and such a caller naming itself is the point rather than a hole.
   depthRefusal =
     surface: cap:
@@ -121,7 +121,8 @@ let
     in
     prelude.foldl' (go 1) { inherit acc visited; } roots;
 
-  # ── expandPreorder: payload-carrying DFS-preorder closure (den-hoag `forwardExpand`).
+  # ── expandPreorder: payload-carrying DFS-preorder closure (the attempt-1 framework's
+  #    `forwardExpand`, frozen per ADR-0002).
   #    Folds `emit frame (resolve frame)` in first-occurrence pre-order into an ordered
   #    witness list. `resolve` is the (possibly parametric) node force; `edges` reads
   #    the RESOLVED payload's successors, so `edges` may be demand-generated — a
@@ -162,7 +163,8 @@ let
       seen = r.visited;
     };
 
-  # ── foldReach: labeled, suppression-aware, transitive reach fold (den-hoag `reach`).
+  # ── foldReach: labeled, suppression-aware, transitive reach fold (the attempt-1
+  #    framework's `reach`, frozen per ADR-0002).
   #    Folds over labeled EDGES, each carrying a `target` vertex and a projection label
   #    (e.g. a class filter). `project edge -> [ item ]` is the per-edge content
   #    projection — the whole edge is EXPOSED, so the projection can slice the target's
