@@ -219,9 +219,9 @@ let
   # has no programs, no relation symbols and no clauses; and which labels count as negative
   # arrives from the caller, so the library does not even know that much. Naming this result
   # after the program-level property would have the library assert a theorem about objects
-  # it cannot observe. A caller that does have programs — the den engine, at its
-  # well-definedness gate — names it there, where the reading "this label MEANS negation"
-  # exists.
+  # it cannot observe. A caller that does have programs — the well-definedness gate,
+  # ruled to gen-view (boundedWellDefinedSchedule; den-hoag-6poeg) — names it there,
+  # where the reading "this label MEANS negation" exists.
   #
   # WITNESSES, not a boolean: a caller refusing a graph has to say which edges did it, and
   # the answer is exactly the material for that message. The order is (from, label, to)
