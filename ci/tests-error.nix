@@ -356,7 +356,7 @@ in
         # ★ THE DISCRIMINATOR. An antitone caller-supplied step through the exported
         # `fixpoint` gets the CAUSE-FREE message; the anchors are what make this an assertion
         # that the diameter text is ABSENT rather than an assertion that some text is present.
-        test-generic-fixpoint-antitone-step-names-no-cause = {
+        test-generic-fixpoint-antitone-step-is-refused-naming-the-withdrawn-edge = {
           expr = genGraph.fixpoint {
             seed = {
               a = [ "x" ];
