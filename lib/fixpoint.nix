@@ -8,12 +8,19 @@ let
   # ── THE REFUSAL A CAP-EXHAUSTED FIXPOINT RAISES, AND WHY THERE ARE TWO OF THEM ──
   #
   # Stopping at the cap, this binding has observed exactly two things: the cap was reached,
-  # and the step never shrank the accumulator. WHAT THAT MEANS IS NOT OBSERVABLE HERE, because
-  # `step` is the caller's. Two unrelated constructions land in this state — a monotone step
-  # whose ascending chain is longer than the cap, and a step that oscillates without changing
-  # cardinality, which the size guard below cannot see because cardinality is not the subset
-  # order. So the generic message states the observation and names neither cause; a message
-  # that picked one would tell every caller with an oscillating step that their graph is deep.
+  # and no step withdrew an edge the accumulator already held — the guard below refuses that at
+  # the step it happens, so arriving here means it never happened, and "neither converged nor
+  # shrank" is still exactly what was observed. WHAT THAT MEANS IS NOT OBSERVABLE HERE, because
+  # `step` is the caller's. Two unrelated constructions land in this state — a step whose ascent
+  # (monotone, or merely inflationary) is longer than the cap, and a step that is STATIONARY IN
+  # EDGE CONTENT yet never literally equal, which permuting a target list is enough to produce
+  # (`{ a = [ "x" "y" ]; }` ↔ `{ a = [ "y" "x" ]; }`): the subset test passes in BOTH directions
+  # so the guard never fires, and `next == current` is literal attrset equality so it never
+  # converges either. The guard sees neither, correctly — it tests the subset order and neither
+  # of them withdraws. So the generic message states the observation and names neither cause: a
+  # message that picked one would tell every caller with a permuting step that their graph is
+  # deep, and a message saying the step ASCENDED would be false of the permutation, which
+  # reaches the cap having ascended nowhere.
   #
   # A caller whose `step` is FIXED can read the cap for what it means and passes that reading
   # as `refusal`. `closureOf` is the one such caller here.
@@ -29,6 +36,40 @@ let
       refusal ? capReached,
     }:
     let
+      # ── THE TERMINATION GUARD TESTS THE SUBSET ORDER OVER EDGE CONTENT ──
+      #
+      # The semilattice this fixpoint is computed in orders edge maps by INCLUSION OF
+      # (from, to) PAIRS, joined by `unionEdges`; that is the poset Datafun's Lemma 4 takes its
+      # ascending chain over, so it is the order the guard must test. `differenceEdges` reads
+      # `b.${from} or [ ]` and drops rows that difference to empty, so `differenceEdges current
+      # next == { }` IS containment on edge content — not on the literal KEY SET, which
+      # `materialize`'s sink rows make shrink on round 0 of every closure over a graph with a
+      # sink, and not on CARDINALITY, which a step withdrawing one edge and adding another
+      # leaves untouched. Cardinality is SUBSUMED rather than dropped: `current ⊆ next` implies
+      # `|current| ≤ |next|`, so this catches every shrink the count caught AND the
+      # size-preserving oscillation it could not see, and it names the edge instead of an
+      # arithmetic difference.
+      #
+      # THE PRICE, MEASURED in `sets.elements` — O(E) per round, a full exponent below the
+      # computation it guards: over an N-node chain the whole closure reads 2.98 and the guard's
+      # own term 2.00, so relative overhead FALLS with size (8.4% at N=50 → 0.6% at N=800).
+      # `nrThunks` is BLIND to it (~1.15) because this is primop work allocating Values, not
+      # Exprs. On a shallow shape there is nothing to dilute against, and there the invariant is
+      # the ABSOLUTE delta — 5,362 elements at 421 nodes and 21,122 at 1,641, identical across
+      # three fixtures whose ratios span 29.5% to 41.2%. A cardinality pre-filter would buy some
+      # of that back and is UNSOUND: a step removing one edge and adding two grows the count and
+      # is still non-ascending.
+      #
+      # ★ A PRECONDITION THIS ADDS, INSTRUMENTED RATHER THAN CLOSED. `countEdges` was total over
+      # attrsets of lists; `differenceEdges` keys an attrset by the target list's ELEMENTS, so
+      # the accumulator narrows to attrset of lists of STRINGS, and a non-string target now gets
+      # Nix's raw `expected a string but found an integer` where it used to get a named refusal.
+      # A door — a per-iteration element-type check — is a second O(E) pass on the happy path
+      # for a domain `materialize`, `unionEdges` and `compose` cannot produce, and
+      # `builtins.tryEval` does not catch that type error, so the loss is pinned as a cell
+      # instead: `test-generic-fixpoint-non-string-edge-target-is-not-refused-by-name`, which
+      # says so the day a named refusal returns. Same move as
+      # `test-seeded-circular-rederivation-is-supported-and-RETURNED` below.
       go =
         iter: current:
         if iter >= maxIter then
@@ -36,11 +77,13 @@ let
         else
           let
             next = step current;
-            currentSize = countEdges current;
-            nextSize = countEdges next;
+            withdrawn = edgeMaps.differenceEdges current next;
+            withdrawnPairs = builtins.concatMap (
+              from: map (to: "${from} → ${to}") (builtins.sort builtins.lessThan withdrawn.${from})
+            ) (builtins.attrNames withdrawn);
           in
-          if nextSize < currentSize then
-            throw "gen-graph: fixpoint step is not monotonic (${toString currentSize} → ${toString nextSize})"
+          if withdrawnPairs != [ ] then
+            throw "gen-graph: fixpoint step is not ascending: it withdrew ${toString (builtins.length withdrawnPairs)} edge(s) the accumulator already held: ${builtins.concatStringsSep ", " withdrawnPairs}. The iterates of a step that retracts are a walk, not an ascending chain, and a walk in a finite carrier cycles rather than converging. `step` must not withdraw an edge the accumulator holds."
           else if next == current then
             current
           else
@@ -215,8 +258,11 @@ let
   # sink with an explicit `[ ]` row, and that row drops on the first round, once, since
   # nothing ever unions into it — a one-time transition that carries no edge and does not
   # recur. The step is monotone on the SUBSET order of edge content, not merely on
-  # cardinality, so the oscillating mode the generic message must
-  # stay silent about cannot arise here. A monotone map on a finite lattice reaches the cap
+  # cardinality, so a WITHDRAWING step cannot arise here. ★ THE REASON HAS NARROWED: `fixpoint`'s
+  # own guard now tests that same subset order, so a withdrawing step cannot arise past it
+  # ANYWHERE, and what the generic message must stay silent about is a step stationary in edge
+  # content yet never literally equal — likewise absent here, because this one converges.
+  # A monotone map on a finite lattice reaches the cap
   # only along an ascending chain that has not converged, and for reachability the height of
   # that chain IS the graph's diameter — leaving depth as the only remaining cause, which is
   # what makes naming it admissible. (Tarski 1955 for the least fixed point of a monotone map

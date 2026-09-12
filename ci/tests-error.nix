@@ -185,11 +185,44 @@ let
     surface: cap:
     "^gen-graph: ${surface}: the graph's reachability diameter exceeds 2\\^${toString (cap - 1)}, the depth reached by the closure fixpoint's iteration cap of ${toString cap} under repeated squaring\\. The closure step is monotone on the subset order by construction, so an unconverged closure at the cap is depth and nothing else\\.$";
 
-  # The antitone mode: removes one edge and adds another, so `countEdges` is constant and the
-  # cardinality guard never fires. Non-convergence surfaces `maxIter` rounds later — which is what
-  # makes this step the one worth pinning: a step that changed the count would be caught earlier,
-  # by the guard, and would say nothing about the iteration bound.
+  # The antitone mode: removes one edge and adds another, so the edge COUNT is constant and a
+  # cardinality test is blind to it — which is what made this step worth pinning, and what the
+  # carrier grieved: non-convergence used to surface `maxIter` rounds later, under a message that
+  # names no cause. The subset guard is not blind to it. It refuses at the FIRST step, naming the
+  # edge withdrawn, and the saving is linear in the cap: at the shipped default of 1,000 rounds
+  # this fixture goes 9,015 → 38 `nrFunctionCalls`.
   antitoneStep = cur: if (cur.a or [ ]) == [ "x" ] then { a = [ "y" ]; } else { a = [ "x" ]; };
+
+  # ASCENDS FOR THREE ROUNDS AND THEN WITHDRAWS, size-preserving across the withdrawal so a
+  # cardinality test is blind to that too. This is the step that discriminates the guard from one
+  # refusing too eagerly: naming `e0` proves the three ascending rounds were ADMITTED and only the
+  # first non-ascending one was refused. A guard that fired on round 1 would not reach it.
+  ascendThenWithdrawStep =
+    cur:
+    let
+      n = builtins.length cur.a;
+    in
+    if n < 4 then
+      { a = cur.a ++ [ "e${toString n}" ]; }
+    else
+      { a = builtins.filter (x: x != "e0") cur.a ++ [ "e9" ]; };
+
+  # INFLATIONARY BUT NOT MONOTONE: it only ever appends, so the subset guard never fires; it reads
+  # the ABSENCE of `b`, so it is not monotone. The second construction that genuinely reaches the
+  # cap once the guard lands, and the reason the cap's pair below is still ASSERTED rather than
+  # argued — the antitone half is now refused before the cap and can no longer stand in it.
+  inflationaryNonMonotoneStep = cur: {
+    a = cur.a ++ (if cur ? b then [ ] else [ "n${toString (builtins.length cur.a)}" ]);
+  };
+
+  # The WITHDRAWAL refusal, raised once at the generic `fixpoint` binding and inherited by the
+  # three cells that assert it. Anchored at both ends, for the same reason `closureRefusal` is:
+  # what the split is about is which causes may be named where, so a pattern that could absorb a
+  # grown message asserts nothing. ★ The count is DERIVED FROM THE PAIRS rather than written down
+  # beside them, so a fixture withdrawing a second edge cannot leave the two disagreeing.
+  notAscending =
+    pairs:
+    "^gen-graph: fixpoint step is not ascending: it withdrew ${toString (builtins.length pairs)} edge\\(s\\) the accumulator already held: ${builtins.concatStringsSep ", " pairs}\\. The iterates of a step that retracts are a walk, not an ascending chain, and a walk in a finite carrier cycles rather than converging\\. `step` must not withdraw an edge the accumulator holds\\.$";
 in
 {
   config = {
@@ -265,11 +298,14 @@ in
     #
     # The closure's step is fixed and monotone on the subset order, so a cap it did not reach
     # convergence within IS the graph's diameter and the refusal says so. The exported generic
-    # `fixpoint` takes the caller's step, where two unrelated causes — a monotone chain longer
-    # than the cap, and an oscillation the cardinality guard cannot see — produce the same
-    # state; there the message names no cause. The discriminator cells below are what keep the
-    # two apart: without them the suite is green for a construction that tells every caller
-    # with an oscillating step that their graph is deep.
+    # `fixpoint` takes the caller's step, where two unrelated causes still produce the same state
+    # — an ascent (monotone, or merely inflationary) longer than the cap, and a step stationary in
+    # edge content that is never literally equal — and there the message names no cause. The
+    # discriminator cells below are what keep the two apart: without them the suite is green for a
+    # construction that tells every caller with a non-converging step that their graph is deep.
+    # ★ THE THIRD CAUSE IS NO LONGER ONE OF THEM. A step that WITHDRAWS an edge used to arrive
+    # here indistinguishable from depth; it is now refused at the step it withdraws, by a binding
+    # that has observed the withdrawal and may therefore name it.
     flake.testsError.closure-refusal =
       builtins.listToAttrs (
         map (surface: {
@@ -330,13 +366,35 @@ in
           };
           expectedError = {
             type = "ThrownError";
-            msg = "^gen-graph: fixpoint exceeded 7 iterations: the step neither converged nor shrank\\. `step` is the caller's, so this binding reports what it observed and names no cause\\.$";
+            msg = notAscending [ "a → x" ];
+          };
+        };
+        # ★ AND IT FIRES AT THE FIRST NON-ASCENDING STEP, NOT AT THE CAP AND NOT ON EVERY STEP.
+        # The cell above admits one withdrawal at round 0, where the guard has nothing to be
+        # eager about; this one ascends for three rounds first and is size-preserving across the
+        # withdrawal, so the round the guard names is the one piece of evidence that the
+        # admitted rounds really were admitted. `maxIter` is the shipped default: reaching the
+        # cap here would take 1,000 rounds and a different message.
+        test-generic-fixpoint-refuses-at-the-first-non-ascending-step = {
+          expr = genGraph.fixpoint {
+            seed = {
+              a = [ "e0" ];
+            };
+            step = ascendThenWithdrawStep;
+          };
+          expectedError = {
+            type = "ThrownError";
+            msg = notAscending [ "a → e0" ];
           };
         };
         # The other cause, same binding, same message form: a MONOTONE step under its cap —
         # the closure's own construction, driven through the generic surface where the binding
         # cannot know that is what it is holding. The pair is the reason (ii) may not name a
         # cause, and it is asserted rather than argued.
+        #
+        # ★ THE SECOND HALF OF THE PAIR IS THE CELL BELOW IT, NOT THE ANTITONE ONE ANY MORE.
+        # The antitone step is now refused before the cap, so without a second construction that
+        # genuinely reaches it this comment would be arguing the pair instead of exhibiting it.
         test-generic-fixpoint-monotone-under-cap-names-no-cause = {
           expr = genGraph.fixpoint {
             seed = genGraph.materialize fork;
@@ -348,10 +406,56 @@ in
             msg = "^gen-graph: fixpoint exceeded 5 iterations: the step neither converged nor shrank\\. `step` is the caller's, so this binding reports what it observed and names no cause\\.$";
           };
         };
+        # The pair's second half: INFLATIONARY BUT NOT MONOTONE, so the subset guard passes it
+        # (nothing is ever withdrawn) and it reaches the cap on its own account rather than by
+        # being a monotone step in disguise. Byte-identical message to the cell above — which is
+        # the assertion: two unrelated constructions, one cause-free text.
+        test-generic-fixpoint-inflationary-non-monotone-under-cap-names-no-cause = {
+          expr = genGraph.fixpoint {
+            seed = {
+              a = [ "x" ];
+            };
+            step = inflationaryNonMonotoneStep;
+            maxIter = 5;
+          };
+          expectedError = {
+            type = "ThrownError";
+            msg = "^gen-graph: fixpoint exceeded 5 iterations: the step neither converged nor shrank\\. `step` is the caller's, so this binding reports what it observed and names no cause\\.$";
+          };
+        };
+        # ★ THE CEILING THE SUBSET GUARD ADDS, ASSERTED AS A LOSS. `differenceEdges` keys an
+        # attrset by the target list's ELEMENTS, so `fixpoint`'s accumulator is now attrset of
+        # lists of STRINGS where the cardinality test was total over attrsets of lists. At HEAD
+        # this fixture got a NAMED gen-graph refusal; it now gets Nix's own type error, which
+        # names neither this library nor `step`. A door was rejected on price (a second O(E) pass
+        # on the happy path, for a domain `materialize`/`unionEdges`/`compose` cannot produce),
+        # so the loss is instrumented instead — the day `fixpoint` regains a named refusal over
+        # this domain, this cell reds and says so. The `msg` is UNANCHORED on purpose: the text
+        # is Nix's, not this library's, and anchoring would pin a message gen-graph does not own.
+        test-generic-fixpoint-non-string-edge-target-is-not-refused-by-name = {
+          expr = genGraph.fixpoint {
+            seed = {
+              a = [
+                1
+                2
+              ];
+            };
+            step = cur: { a = cur.a ++ [ 3 ]; };
+            maxIter = 5;
+          };
+          expectedError = {
+            type = "TypeError";
+            msg = "expected a string but found an integer";
+          };
+        };
         # LIVE CONTROL on the claim the cause-free message makes: the step "never shrank" is an
-        # observation, not a tautology — a step that DOES shrink is refused by the size guard,
-        # by its own name, before the cap is reached.
-        test-generic-fixpoint-shrinking-step-still-hits-the-size-guard = {
+        # observation, not a tautology — a step that DOES shrink is refused by the subset guard,
+        # by its own name, before the cap is reached. ★ A SHRINK IS SUBSUMED rather than tested
+        # separately: `current ⊆ next` implies `|current| ≤ |next|`, so this fixture is caught by
+        # the same predicate that catches the size-preserving withdrawal above, and it is caught
+        # with a better answer — `a → y` names the edge where `(2 → 1)` named an arithmetic
+        # difference the caller then had to locate.
+        test-generic-fixpoint-shrinking-step-is-refused-by-the-subset-guard = {
           expr = genGraph.fixpoint {
             seed = {
               a = [
@@ -364,7 +468,7 @@ in
           };
           expectedError = {
             type = "ThrownError";
-            msg = "^gen-graph: fixpoint step is not monotonic \\(2 → 1\\)$";
+            msg = notAscending [ "a → y" ];
           };
         };
         # LIVE CONTROL, same run: the generic binding converges and returns. Without it the

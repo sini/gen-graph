@@ -183,13 +183,15 @@ The fixpoint iteration — the classical closure ascent, read here through *Data
 3. Union the result with what we had
 4. Repeat until nothing changes
 
-gen-graph enforces **monotonicity** — each iteration must add edges, never remove them. If a step shrinks the graph, something is wrong, and gen-graph throws.
+gen-graph enforces **monotonicity** — each iteration must add edges, never remove them. If a step withdraws an edge the accumulator already held, something is wrong with the step, and gen-graph throws, naming the edges withdrawn.
+
+★ **That sentence stood here while the shipped test was weaker than it.** What `fixpoint` checked was the edge COUNT, and a step that removes one edge and adds another keeps the count — so it passed, ran to the iteration cap, and was reported there under a message that names no cause. The guard now tests containment of edge content, which is what the sentence says and what the semilattice actually orders, so the count is subsumed and the sentence is true as written.
 
 ★ **That guard does not buy termination, and this guide used to say it did.** The sentence that stood here — "queries over monotone functions always converge" — is refuted by the very paper it credited. Datafun, pp. 11–12: requiring the body of a fixed point to be monotone "ensures that the recursive definition is well-defined, but is **not sufficient by itself to guarantee termination**."
 
 What terminates the ascent is **finiteness**. Datafun's Lemma 4, *Fixed points in finite-height pointed posets*: "Any monotone map `f : P → P` on a poset `P` of **finite height** with a least element `ε` has a least fixed point of the form `fⁿ(ε)`." Its proof turns on exactly that — the iterates `ε, f(ε), f²(ε), …` form an ascending chain, and "since `P` has finite height, this chain cannot be infinite." Datafun buys the finiteness with a type discipline; Datalog buys it by restricting terms to atoms so the lattice of sets of atomic predicates is finite; gen-graph gets it for free, because the edge set over a finite node set is finite and so the lattice the ascent climbs has finite height.
 
-So the two premises are both load-bearing and neither substitutes for the other: **monotonicity makes the chain ascending, finiteness makes it stop.** The guard here is worth keeping for what it actually catches — a step that is not monotone is a bug in the step, and the throw names it at the iteration where it happens rather than letting a wrong answer converge. `closureOf` states the same pair correctly in its own comment (`lib/fixpoint.nix`), citing Tarski 1955 for the least fixed point of a monotone map on a complete lattice and Kleene for the ascending-chain construction that reaches it.
+So the two premises are both load-bearing and neither substitutes for the other: **monotonicity makes the chain ascending, finiteness makes it stop.** The guard here is worth keeping for what it actually catches — a step that withdraws is a bug in the step, and the throw names the withdrawn edge at the iteration where it happens, rather than letting a wrong answer converge or letting the cap report it a thousand rounds later as though the graph were merely deep. `closureOf` states the same pair correctly in its own comment (`lib/fixpoint.nix`), citing Tarski 1955 for the least fixed point of a monotone map on a complete lattice and Kleene for the ascending-chain construction that reaches it.
 
 ## Edge map algebra: Mokhov's algebraic graphs
 

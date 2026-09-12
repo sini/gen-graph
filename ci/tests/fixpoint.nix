@@ -142,7 +142,11 @@ in
         "d"
       ];
     };
-    test-fixpoint-monotonicity-violation = {
+    # "Monotonicity" is not this guard's vocabulary: what it observes is one NON-ASCENDING step,
+    # and antitonicity is order-reversal, which a single withdrawal does not establish. `tryEval`
+    # sees only THAT it refused; which refusal fired is asserted on the error plane
+    # (`closure-refusal.test-generic-fixpoint-shrinking-step-is-refused-by-the-subset-guard`).
+    test-fixpoint-withdrawing-step-is-refused = {
       expr =
         !(builtins.tryEval (fixpoint {
           seed = {
@@ -154,6 +158,50 @@ in
           step = _: { a = [ "x" ]; };
         })).success;
       expected = true;
+    };
+    # ★ THE ORDER THE GUARD TESTS IS EDGE CONTENT, AND THIS CELL IS WHY THE CLOSURE CELLS ARE
+    # STILL GREEN. `materialize` seeds every SINK with an explicit `[ ]` row and `unionEdges`
+    # drops rows that union to empty, so round 0 of every closure over a graph with a sink REMOVES
+    # A KEY — `d`, here. Under the subset order on edge content that is not a withdrawal and the
+    # guard is silent; under the literal edge map it is, and the guard fires on the library's own
+    # happy path (measured on that arm: 17 ☢️ across four suites, and 11 ❌ 5 ☢️ on the error
+    # plane). The cell names the sink so the rejected arm is not re-derived from scratch.
+    test-fixpoint-guard-order-is-edge-content-not-the-literal-key-set = {
+      expr = {
+        seedHoldsTheSinkRow = (materialize fixtures.chain) ? d;
+        closureDropsTheSinkRow = (transitiveClosure fixtures.chain) ? d;
+        andStillReturns = builtins.sort builtins.lessThan ((transitiveClosure fixtures.chain)."a" or [ ]);
+      };
+      expected = {
+        seedHoldsTheSinkRow = true;
+        closureDropsTheSinkRow = false;
+        andStillReturns = [
+          "b"
+          "c"
+          "d"
+        ];
+      };
+    };
+    # LIVE CONTROL for the error plane's non-string-edge-target cell: the ceiling that cell
+    # asserts is the ELEMENT TYPE and nothing wider. Same shape, string targets, straight through
+    # `differenceEdges` — it returns.
+    test-fixpoint-string-edge-target-control = {
+      expr = fixpoint {
+        seed = {
+          a = [
+            "1"
+            "2"
+          ];
+        };
+        step = cur: cur;
+        maxIter = 5;
+      };
+      expected = {
+        a = [
+          "1"
+          "2"
+        ];
+      };
     };
     test-fixpoint-max-iter = {
       expr =
