@@ -1427,5 +1427,89 @@ in
         "a"
       ];
     };
+    # ── the LEFTIST INVARIANT, pinned as its own subject (den-hoag-zvcwd) ──
+    # `lib/order.nix`'s ready-set comment makes `rank l >= rank r` at every node the basis of the
+    # Θ(n log m) cost claim, and nothing asserted it: disabling the `rl >= rr` rank test in
+    # `mergeH` moved ZERO of the 619 cells the suite carried when that was measured.
+    # ★ `test-topo-heap-root-min-key-needs-total-lessThan` above DOES red on that seed, and that
+    # is exactly why this cell exists rather than resting on it. Its subject is the heap/sorted-
+    # array divergence; the leftist coverage is a SIDE EFFECT of that subject, so narrowing or
+    # retargeting it — ordinary maintenance — carries the coverage away with no signal.
+    #
+    # THE HEAP IS INTERNAL, so its invariant is reached by SLICING THE SHIPPED SOURCE rather than
+    # by re-implementing it: a re-implementation would assert the invariant about a copy, which
+    # is the one thing a pin must not do. The slice is anchored on whole-line TEXT and never on a
+    # line number, and `heapSourceExtracted` is what keeps a missed anchor a RED instead of an
+    # empty walk reading `[ ] == [ ]` clean.
+    test-topo-ready-set-heap-is-leftist =
+      let
+        srcLines = builtins.filter builtins.isString (
+          builtins.split "\n" (builtins.readFile ../../lib/order.nix)
+        );
+        indexOf =
+          anchor:
+          builtins.foldl' (
+            acc: i:
+            if acc != null then
+              acc
+            else if builtins.elemAt srcLines i == anchor then
+              i
+            else
+              null
+          ) null (builtins.genList (i: i) (builtins.length srcLines));
+        startIdx = indexOf "      rankOf = h: if h == null then 0 else h.rank;";
+        endIdx = indexOf "      insertAll = builtins.foldl' (h: k: mergeH h (singleton k));";
+        found = startIdx != null && endIdx != null && endIdx >= startIdx;
+        region =
+          if found then
+            builtins.concatStringsSep "\n" (
+              builtins.genList (i: builtins.elemAt srcLines (startIdx + i)) (endIdx - startIdx + 1)
+            )
+          else
+            "";
+        heap =
+          if !found then
+            null
+          else
+            import
+              (builtins.toFile "order-heap.nix" (
+                "{ lessThan }:\nlet\n" + region + "\nin\n{ inherit rankOf mergeH singleton insertAll; }\n"
+              ))
+              {
+                lessThan = builtins.lessThan;
+              };
+        # Five keys inserted ascending. The shipped merge already swaps children at the SECOND
+        # insert, so a fixture this small separates the arms; the ≤4-node width hazard belongs to
+        # the heap-versus-array comparison above, not to a structural walk that visits every node.
+        built =
+          if heap == null then
+            null
+          else
+            heap.insertAll null [
+              "n0"
+              "n1"
+              "n2"
+              "n3"
+              "n4"
+            ];
+        nodesOf = h: if h == null then [ ] else [ h ] ++ nodesOf h.l ++ nodesOf h.r;
+        walked = nodesOf built;
+      in
+      {
+        expr = {
+          heapSourceExtracted = found && heap != null;
+          nodesWalked = builtins.length walked;
+          leftistViolations = map (n: n.k) (builtins.filter (n: heap.rankOf n.l < heap.rankOf n.r) walked);
+          # `rank` is the length of the right spine: every node is built with the rank of the
+          # child it puts on the right, plus itself.
+          rankIsRightSpineLength = builtins.all (n: n.rank == heap.rankOf n.r + 1) walked;
+        };
+        expected = {
+          heapSourceExtracted = true;
+          nodesWalked = 5;
+          leftistViolations = [ ];
+          rankIsRightSpineLength = true;
+        };
+      };
   };
 }
