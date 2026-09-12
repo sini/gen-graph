@@ -1,5 +1,7 @@
 # gen-graph — agent capability sheet
 
+> **Library class: reference-grade.** Deletion requires a domain argument — wrong abstraction, subsumption by another construct, or theory-unsoundness; a usage count is inadmissible as a deletion ground (P7, 2026-08-17).
+
 ## Scope
 
 Accessor-based graph query combinators: the caller supplies `edges` / `nodes` / `parent` / `nodeData` (or `labeledEdges` + `nodes`) as plain functions, and gen-graph returns reachability, SCC condensation, phase order, edge-map algebra, pre-order folds, and label-regex queries over them — it never stores the graph. The labeled contract is TOTAL and `forgetLabels` is the one bridge to the node-set-total surfaces.
