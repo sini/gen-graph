@@ -99,8 +99,12 @@ let
   # admits node values that are not themselves strings — gen-edge ordered edge RECORDS by
   # a canonical sort key — and it is what makes the tie-break caller-supplied: ordering
   # incomparable nodes by a frozen key is what makes an ordering a pure function of the
-  # node SET rather than of the input permutation. `lessThan` orders those keys, so a
-  # caller wanting a different tie-break over the same identities supplies it there.
+  # node SET rather than of the input permutation — SCOPED to the precondition stated next:
+  # while `lessThan` is a strict total order on distinct keys. Off that precondition the
+  # claim is false, not merely weaker — the same node set and edges, differing only in the
+  # `nodes` list permutation, can emit different (both valid) orders; `lessThan` orders
+  # those keys, so a caller wanting a different tie-break over the same identities supplies
+  # it there.
   #
   # `lessThan` must be a STRICT TOTAL ORDER on distinct keys — a PRECONDITION, and the one
   # place this library documents a requirement instead of refusing by name. The ready set is

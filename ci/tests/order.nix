@@ -269,6 +269,86 @@ in
         };
       expected = true;
     };
+
+    # ── phaseOrder CHANGE DETECTOR — explicitly NON-NORMATIVE (den-hoag-uqc84 / O2) ──
+    # This is not a contract assertion: nz21 (2026-08-19) ruled the specific min-key
+    # permutation NOT NORMATIVE, and this cell re-baselines, deliberately, at the ADR-0009
+    # default flip — that is the cell working, not the cell breaking. Its only job is to go
+    # RED when `phaseOrder`'s emitted permutation moves, because no other cell in this file
+    # can see that: six of the seven order-asserting fixtures admit exactly one valid order,
+    # and the seventh (`test-order-independent-permutation` above) wraps its result in
+    # `builtins.sort`, discarding the very thing this cell pins.
+    # ★ The obvious fixture is DEAD BY CONSTRUCTION: on all-independent nodes `phaseOrder`
+    # and `coneRank.order` both emit ascending key, so a probe built that way would be a
+    # false green against the exact flip it exists to catch. The `control` field below is
+    # that probe, kept as the live demonstration of why `discrim` is shaped as it is — a
+    # probe whose two arms agree has measured nothing.
+    test-order-phaseOrder-permutation-change-detector = {
+      expr =
+        let
+          discrimEntries = {
+            d = entryAnywhere;
+            e = entryAnywhere;
+            b = entryAfter [ "d" ];
+            c = entryAfter [ "d" ];
+            a = entryAfter [ "e" ];
+          };
+          discrimAcc = {
+            nodes = [
+              "d"
+              "e"
+              "b"
+              "c"
+              "a"
+            ];
+            edges =
+              id:
+              {
+                b = [ "d" ];
+                c = [ "d" ];
+                a = [ "e" ];
+              }
+              .${id} or [ ];
+          };
+          controlEntries = {
+            p = entryAnywhere;
+            q = entryAnywhere;
+            r = entryAnywhere;
+          };
+          controlAcc = {
+            nodes = [
+              "p"
+              "q"
+              "r"
+            ];
+            edges = _: [ ];
+          };
+        in
+        {
+          discrim = phaseOrder discrimEntries;
+          discrimDiffersFromConeRank =
+            phaseOrder discrimEntries != (genGraph.coneRank discrimAcc discrimAcc.nodes).order;
+          control = phaseOrder controlEntries;
+          controlAgreesWithConeRank =
+            phaseOrder controlEntries == (genGraph.coneRank controlAcc controlAcc.nodes).order;
+        };
+      expected = {
+        discrim = [
+          "d"
+          "b"
+          "c"
+          "e"
+          "a"
+        ];
+        discrimDiffersFromConeRank = true;
+        control = [
+          "p"
+          "q"
+          "r"
+        ];
+        controlAgreesWithConeRank = true;
+      };
+    };
   };
 
   # ── the ordering front door ──
@@ -1203,6 +1283,58 @@ in
         ];
       };
     };
+    # ── permutation independence is SCOPED, not unconditional (den-hoag-uqc84 / O1) ──
+    # `lib/order.nix`'s theory sentence — a frozen tie-break key makes the ordering a pure
+    # function of the node SET rather than the input permutation — holds ONLY while
+    # `lessThan` is a strict total order on distinct keys, the precondition M1 points that
+    # sentence at. The cell above cannot see this: both its shapes admit exactly one valid
+    # order, so there is nothing to permute into. This is the positive control the scoped
+    # claim needs: same node set and edges, differing only in the `nodes` list permutation
+    # (one edge `x → y`, `edges u ∋ v` = "u depends on v") — INVARIANT under the default
+    # comparator, VARIANT under a degenerate one, on both the arm and the door.
+    test-topo-permutation-independence-needs-total-lessThan =
+      let
+        edges = id: if id == "x" then [ "y" ] else [ ];
+        perm1 = [
+          "x"
+          "y"
+          "z"
+          "w"
+        ];
+        perm2 = [
+          "w"
+          "z"
+          "y"
+          "x"
+        ];
+        degenerate = _: _: false;
+        kahn =
+          nodes: cmp:
+          (genGraph.topoOrderKahn {
+            inherit nodes edges;
+            lessThan = cmp;
+          }).order;
+        door =
+          nodes: cmp:
+          (topoOrder {
+            inherit nodes edges;
+            lessThan = cmp;
+          }).order;
+      in
+      {
+        expr = {
+          kahnDegenerateDiffers = kahn perm1 degenerate != kahn perm2 degenerate;
+          kahnDefaultAgrees = kahn perm1 builtins.lessThan == kahn perm2 builtins.lessThan;
+          doorDegenerateDiffers = door perm1 degenerate != door perm2 degenerate;
+          doorDefaultAgrees = door perm1 builtins.lessThan == door perm2 builtins.lessThan;
+        };
+        expected = {
+          kahnDegenerateDiffers = true;
+          kahnDefaultAgrees = true;
+          doorDegenerateDiffers = true;
+          doorDefaultAgrees = true;
+        };
+      };
     # The gate runs on KEYS, so a node value that is not its own identity routes exactly as a
     # string-keyed one does — the arm never touches the node values except to project them back.
     test-topo-certificate-routes-under-keyOf = {
