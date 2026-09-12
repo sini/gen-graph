@@ -402,9 +402,17 @@ let
       # bound holds here because the loop is a fold: `iterateBounded` threads one state, every
       # version is consumed exactly once, and no step reaches back to an earlier one.
       #
-      # The pick is the heap's root, which IS the minimum key under `lessThan`, so the emitted
-      # order is the same greedy min-key sequence a sorted array consumed by cursor produces —
-      # the keys are distinct, so that minimum is unique and the two agree element for element.
+      # The pick is the heap's root, which — WHILE `lessThan` IS A STRICT TOTAL ORDER ON
+      # DISTINCT KEYS, the precondition stated at the header above — IS the minimum key under
+      # `lessThan`, so the emitted order is the same greedy min-key sequence a sorted array
+      # consumed by cursor produces: distinct keys make that minimum unique, and the two agree
+      # element for element. Off that precondition BOTH steps fail, and distinctness rescues
+      # neither — a comparator that is never true leaves every key vacuously minimal, so the
+      # minimum is not unique, and a non-transitive one leaves no minimum at all and the root
+      # has a key strictly below it. The heap then emits an order the array does not: five
+      # independent nodes under `_: _: false` give `n0 n2 n3 n4 n1` against the array's
+      # `n0 n1 n2 n3 n4`, both valid. Pinned by
+      # `test-topo-heap-root-min-key-needs-total-lessThan` (den-hoag-panvb).
       step =
         st:
         if st.ready == null then

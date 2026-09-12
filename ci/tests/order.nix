@@ -1335,6 +1335,68 @@ in
           doorDefaultAgrees = true;
         };
       };
+    # ── the heap-root/sorted-array agreement is SCOPED too (den-hoag-panvb) ──
+    # The sibling of the claim above, in the same file: `lib/order.nix` derives the emitted
+    # order from "the pick is the heap's root, which IS the minimum key under `lessThan`",
+    # concluding that the heap and a sorted array consumed by cursor agree element for
+    # element. Both steps need the precondition. On nodes with NO edges the ready set is
+    # populated once and never added to, so "a sorted array consumed by cursor" is exactly
+    # `builtins.sort lessThan nodes` — no reference loop required.
+    # ★ The fixture has to be WIDE ENOUGH: at four independent nodes the leftist heap's
+    # restructuring happens to reproduce the array, so a narrower probe is a false green
+    # against the very claim it exists to test. Five is the first width that separates them.
+    test-topo-heap-root-min-key-needs-total-lessThan =
+      let
+        nodes = [
+          "n0"
+          "n1"
+          "n2"
+          "n3"
+          "n4"
+        ];
+        # Nothing is less than anything: every key is vacuously minimal, so "that minimum is
+        # unique" fails while each individual pick still looks defensible.
+        degenerate = _: _: false;
+        # Antisymmetric but NOT transitive — a 3-cycle n0 < n1 < n2 < n0. Here no minimum
+        # exists at all, and the heap's root has a key strictly below it.
+        cyclic =
+          a: b:
+          {
+            "n0" = b == "n1";
+            "n1" = b == "n2";
+            "n2" = b == "n0";
+          }
+          .${a} or false;
+        kahn =
+          ns: cmp:
+          (genGraph.topoOrderKahn {
+            nodes = ns;
+            edges = _: [ ];
+            lessThan = cmp;
+          }).order;
+        cyclicNodes = [
+          "n0"
+          "n1"
+          "n2"
+        ];
+        headOf = ns: cmp: builtins.head (kahn ns cmp);
+      in
+      {
+        expr = {
+          degenerateDiffersFromSorted = kahn nodes degenerate != builtins.sort degenerate nodes;
+          defaultAgreesWithSorted = kahn nodes builtins.lessThan == builtins.sort builtins.lessThan nodes;
+          # the root is not the minimum key: something is strictly below it
+          cyclicRootNotMinimal = builtins.any (k: cyclic k (headOf cyclicNodes cyclic)) cyclicNodes;
+          defaultRootIsMinimal =
+            !(builtins.any (k: builtins.lessThan k (headOf cyclicNodes builtins.lessThan)) cyclicNodes);
+        };
+        expected = {
+          degenerateDiffersFromSorted = true;
+          defaultAgreesWithSorted = true;
+          cyclicRootNotMinimal = true;
+          defaultRootIsMinimal = true;
+        };
+      };
     # The gate runs on KEYS, so a node value that is not its own identity routes exactly as a
     # string-keyed one does — the arm never touches the node values except to project them back.
     test-topo-certificate-routes-under-keyOf = {
