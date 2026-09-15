@@ -18,7 +18,12 @@
       # by design (gen-scope's `buildNodes`), so a deep force is red on a healthy tree.
       lib =
         let
-          surface = import ./lib { prelude = gen-prelude.lib; };
+          # ★ THE ROOT, NOT `./lib`. `./.` and `./lib` were two independent constructions of one
+          # value and so free to disagree; there is ONE construction site now, and the two entry
+          # paths differ only in who supplies the arguments. Here the flake supplies them, so
+          # `follows` governs every argument passed, while the standalone path falls back to
+          # `ci/flake.lock`.
+          surface = import ./. { prelude = gen-prelude.lib; };
         in
         builtins.deepSeq (builtins.mapAttrs (_: builtins.typeOf) surface) surface;
     };
