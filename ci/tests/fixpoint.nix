@@ -164,7 +164,7 @@ in
     # drops rows that union to empty, so round 0 of every closure over a graph with a sink REMOVES
     # A KEY — `d`, here. Under the subset order on edge content that is not a withdrawal and the
     # guard is silent; under the literal edge map it is, and the guard fires on the library's own
-    # happy path (measured on that arm: 17 ☢️ across four suites, and 11 ❌ 5 ☢️ on the error
+    # happy path (measured on that arm: 17 radioactive across four suites, and 11 failing 5 radioactive on the error
     # plane). The cell names the sink so the rejected arm is not re-derived from scratch.
     test-fixpoint-guard-order-is-edge-content-not-the-literal-key-set = {
       expr = {

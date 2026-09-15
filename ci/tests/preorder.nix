@@ -730,7 +730,7 @@ in
     # says nothing about whether the number a caller receives arrives before an abort no
     # assertion can see. Measured boundary on this shape at `374b0ad`: returns at depth 4,993
     # and aborts at 4,994. Raise the default past that and this cell stops reading `false` —
-    # as ☢️ rather than ❌, since the abort kills the cell instead of failing it, and a crash
+    # as radioactive rather than failing, since the abort kills the cell instead of failing it, and a crash
     # is the loudest reading available for a refusal that no longer beats the abort.
     test-expandpreorder-default-cap-refuses-below-the-evaluator-ceiling =
       let

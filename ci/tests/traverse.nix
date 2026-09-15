@@ -377,8 +377,8 @@ in
 
     # ★ THE CELL AT THE SHIPPED DEFAULT — the only one that says the default arrives before
     # the evaluator's own ceiling rather than after it. Measured on this shape at `374b0ad`:
-    # returns at depth 2,497, aborts at 2,498. Raise the default past that and this reads ☢️
-    # rather than ❌, the abort killing the cell instead of failing it.
+    # returns at depth 2,497, aborts at 2,498. Raise the default past that and this reads radioactive
+    # rather than failing, the abort killing the cell instead of failing it.
     test-pathsbetween-default-cap-refuses-below-the-evaluator-ceiling =
       let
         c = chain 2002;
@@ -439,7 +439,7 @@ in
     # ★ THE CELL AT THE SHIPPED DEFAULT — the only one that says the default arrives before
     # the evaluator's own ceiling rather than after it. Measured on this shape at `eb638eb`:
     # returns at 9,988 ancestors, aborts at 9,989. Raise the default past that and this reads
-    # ☢️ rather than ❌, the abort killing the cell instead of failing it.
+    # radioactive rather than failing, the abort killing the cell instead of failing it.
     test-ancestorsof-default-cap-refuses-below-the-evaluator-ceiling =
       let
         c = ancestorsChain 8002;
