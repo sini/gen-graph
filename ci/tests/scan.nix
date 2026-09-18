@@ -284,7 +284,8 @@ in
           items = [ (item addrA [ (refTo addrB "hop-1") ]) ];
           scan = _: throw "scan boom";
           inherit project;
-        }) ? nodes;
+        })
+          ? nodes;
       expected = true;
     };
     test-throwing-scan-propagates-on-force = {
