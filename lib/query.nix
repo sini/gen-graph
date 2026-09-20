@@ -579,9 +579,13 @@ let
   # so two paths whose labels differ at EQUAL rank are incomparable in BOTH directions;
   # `pathLess` decides them. At layers [["P" "I"] ["X"]]: pathLess [P·X] [I·P] and
   # pathLess [I·P] [P·X] read false/true where the specificity order reads false/false.
-  # Ties are inexpressible in a flat `labels` list, which is why the two coincide inside
-  # this library today — and why a consumer that CAN express ties must never substitute
-  # one for the other. gen-view carries the same correction above its own `rankLess`. ──
+  # A flat `labels` list cannot place two LISTED labels in one layer, so that divergence
+  # needs layers to exist at all — but it still ties every label ABSENT from the
+  # declaration at the same bottom rank (`length order.labels`), reachable but unoccupied
+  # by anything this library's own suite exercises. That is why the two still coincide
+  # in practice here — and why a consumer that CAN express or occupy that tie must never
+  # substitute one for the other. gen-view carries the same correction above its own
+  # `rankLess`. ──
   ranksOf =
     order:
     (builtins.foldl'
