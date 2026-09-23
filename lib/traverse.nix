@@ -28,7 +28,7 @@
 #
 # Pure builtins only — no dependencies, so this is a bare value (not a function).
 let
-  inherit (import ./key.nix) attrKey;
+  inherit (import ./key.nix) attrKey identifier nodeKey;
   # Follow edges transitively from a start node (excludes startId).
   # C-level BFS via genericClosure. Θ( Σ_{u ∈ reach startId} (1 + outdeg u) ) — the operator
   # below re-reads `edges` at every visit, so this is O(reachable) only at bounded out-degree.
@@ -44,17 +44,23 @@ let
   reachableFrom =
     { edges, ... }:
     startId:
-    let
-      result = builtins.genericClosure {
-        startSet = map (id: { key = id; }) (edges startId);
-        operator = item: map (id: { key = id; }) (edges item.key);
-      };
-    in
-    builtins.filter (id: id != startId) (map (r: r.key) result);
+    builtins.seq (nodeKey "reachableFrom" startId) (
+      let
+        result = builtins.genericClosure {
+          startSet = map (id: { key = id; }) (edges startId);
+          operator = item: map (id: { key = id; }) (edges item.key);
+        };
+      in
+      builtins.filter (id: id != startId) (map (r: r.key) result)
+    );
 
   # Follow edges transitively, filter results by predicate on id.
   reachableWhere =
-    { edges, ... }: startId: pred: builtins.filter pred (reachableFrom { inherit edges; } startId);
+    { edges, ... }:
+    startId: pred:
+    builtins.seq (nodeKey "reachableWhere" startId) (
+      builtins.filter pred (reachableFrom { inherit edges; } startId)
+    );
 
   # Point query: can fromId reach toId? The operator STOPS EXPANDING AT THE TARGET, so the
   # walk is Θ( Σ_{u ∈ visited} (1 + outdeg u) ) over a visited set that is `reach fromId`
@@ -85,11 +91,15 @@ let
   canReach =
     { edges, ... }:
     fromId: toId:
-    builtins.any (r: r.key == toId) (
-      builtins.genericClosure {
-        startSet = map (id: { key = id; }) (edges fromId);
-        operator = item: if item.key == toId then [ ] else map (id: { key = id; }) (edges item.key);
-      }
+    builtins.seq (nodeKey "canReach" fromId) (
+      builtins.seq (nodeKey "canReach" toId) (
+        builtins.any (r: r.key == toId) (
+          builtins.genericClosure {
+            startSet = map (id: { key = id; }) (edges fromId);
+            operator = item: if item.key == toId then [ ] else map (id: { key = id; }) (edges item.key);
+          }
+        )
+      )
     );
 
   # Is a node reachable from itself? (cycle detection for one node)
@@ -97,11 +107,13 @@ let
   selfReachable =
     { edges, ... }:
     id:
-    builtins.any (r: r.key == id) (
-      builtins.genericClosure {
-        startSet = map (t: { key = t; }) (edges id);
-        operator = item: map (t: { key = t; }) (edges item.key);
-      }
+    builtins.seq (nodeKey "selfReachable" id) (
+      builtins.any (r: r.key == id) (
+        builtins.genericClosure {
+          startSet = map (t: { key = t; }) (edges id);
+          operator = item: map (t: { key = t; }) (edges item.key);
+        }
+      )
     );
 
   # Walk parent chain upward (with cycle protection).
@@ -155,7 +167,7 @@ let
         else
           [ p ] ++ go (depth + 1) (visited // { ${attrKey p} = true; }) p;
     in
-    go 1 { ${attrKey startId} = true; } startId;
+    builtins.seq (identifier "ancestorsOf" startId) (go 1 { ${attrKey startId} = true; } startId);
 
   # All acyclic paths between two nodes (DFS with visited set).
   #
@@ -213,7 +225,9 @@ let
             next: map (path: [ current ] ++ path) (dfs (depth + 1) newVisited next)
           ) targets;
     in
-    dfs 1 { } startId;
+    builtins.seq (identifier "pathsBetween" startId) (
+      builtins.seq (identifier "pathsBetween" endId) (dfs 1 { } startId)
+    );
 
   # ── THE AMORTIZED DUAL: WRAP ONCE, TRAVERSE MANY ──
   #
@@ -279,9 +293,14 @@ let
   # The hoisted readings of `reachableFrom` and `selfReachable`: same closure, same exclusion
   # of the start, same self-reappearance test, with the wrapping lifted out of the operator.
   reachableVia =
-    succ: startId: builtins.filter (id: id != startId) (map (r: r.key) (closureVia succ startId));
+    succ: startId:
+    builtins.seq (nodeKey "reachableVia" startId) (
+      builtins.filter (id: id != startId) (map (r: r.key) (closureVia succ startId))
+    );
 
-  selfReachableVia = succ: id: builtins.any (r: r.key == id) (closureVia succ id);
+  selfReachableVia =
+    succ: id:
+    builtins.seq (nodeKey "selfReachableVia" id) (builtins.any (r: r.key == id) (closureVia succ id));
 in
 {
   inherit

@@ -72,11 +72,6 @@ let
   # the same tests. An assertion belongs on the RETURNED message rather than on a caught throw — a
   # caught throw proves only that something refused, never that it refused for the reason under test.
 
-  # Names the type and never the value: the value is not a string, and interpolating it is the
-  # coercion abort the staging above exists to avoid.
-  _notAnIdentifier =
-    who: v: "gen-graph.${who}: got ${builtins.typeOf v}, expected a node identifier (a string)";
-
   # The one node-reference refusal that may name an id, because by this stage one is known to exist.
   _notRegistered =
     id:
@@ -106,7 +101,7 @@ let
     name: i: v:
     "gen-graph.mkDeclaredEdges: key '${name}' element ${toString i}: got ${builtins.typeOf v}, which was not built by mkNodeRef";
 
-  inherit (import ./key.nix) attrKey;
+  inherit (import ./key.nix) attrKey notAnIdentifier;
 
   _indices = xs: builtins.genList (i: i) (builtins.length xs);
 
@@ -120,7 +115,7 @@ let
   _nodeRefFindings =
     isRegistered: id:
     if !(builtins.isString id) then
-      [ (_notAnIdentifier "mkNodeRef" id) ]
+      [ (notAnIdentifier "mkNodeRef" id) ]
     else if !(isRegistered id) then
       [ (_notRegistered id) ]
     else
@@ -247,7 +242,7 @@ in
         inherit id;
       }
     else
-      throw (_notAnIdentifier "mkSpawnedNodeRef" id);
+      throw (notAnIdentifier "mkSpawnedNodeRef" id);
 
   # mkDeclaredEdges : relation -> <declaredEdges>
   #

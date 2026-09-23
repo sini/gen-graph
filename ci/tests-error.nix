@@ -970,5 +970,71 @@ in
           };
         };
       };
+
+    # THE IDENTIFIER DOORS (den-hoag-bkdkg, ADR-0025 item 1): a node VALUE where a door takes a node
+    # id is refused under THAT door's name. A door whose body keys the id says "a string"; a door
+    # whose body only hands it to the accessor and `genericClosure` keeps every scalar and says so.
+    # What the refusal must not change, and its catchability, are `tests/identifier-doors.nix`.
+    flake.testsError.identifier-refusal =
+      let
+        es = {
+          a = [ "b" ];
+          b = [ ];
+        };
+        g = {
+          edges = id: es.${id} or [ ];
+          nodes = [
+            "a"
+            "b"
+          ];
+          parent = id: if id == "b" then "a" else null;
+        };
+        X = {
+          name = "a";
+        };
+        qa = from: {
+          graph = genGraph.labeledFrom {
+            inherit (g) nodes;
+            perLabel.l = g.edges;
+          };
+          inherit from;
+          follow = genGraph.regex.parse "l*";
+        };
+        str = who: "^gen-graph\\.${who}: got set, expected a node identifier \\(a string\\)$";
+        scalar =
+          who: "^gen-graph\\.${who}: got set, expected a node identifier \\(a string or another scalar\\)$";
+        cell = msg: expr: {
+          inherit expr;
+          expectedError = {
+            type = "ThrownError";
+            inherit msg;
+          };
+        };
+      in
+      {
+        test-reachableFrom = cell (scalar "reachableFrom") (genGraph.reachableFrom g X);
+        test-reachableWhere = cell (scalar "reachableWhere") (genGraph.reachableWhere g X (_: true));
+        test-canReach-from = cell (scalar "canReach") (genGraph.canReach g X "b");
+        test-canReach-to = cell (scalar "canReach") (genGraph.canReach g "a" X);
+        test-selfReachable = cell (scalar "selfReachable") (genGraph.selfReachable g X);
+        test-ancestorsOf = cell (str "ancestorsOf") (genGraph.ancestorsOf g X);
+        test-pathsBetween = cell (str "pathsBetween") (genGraph.pathsBetween g X "b");
+        test-dependents = cell (str "dependents") (genGraph.dependents g X);
+        test-dependentsOf = cell (str "dependentsOf") (genGraph.dependentsOf g X);
+        test-dependentsFrontier = cell (str "dependentsFrontier") (
+          genGraph.dependentsFrontier g X (_: false)
+        );
+        test-impactOf = cell (str "impactOf") (genGraph.impactOf g X);
+        test-directDependentsOf = cell (str "directDependentsOf") (genGraph.directDependentsOf g X);
+        test-coScc = cell (scalar "coScc") (genGraph.coScc g X "b");
+        test-reachableVia = cell (scalar "reachableVia") (genGraph.reachableVia (genGraph.hoistEdges g) X);
+        test-selfReachableVia = cell (scalar "selfReachableVia") (
+          genGraph.selfReachableVia (genGraph.hoistEdges g) X
+        );
+        test-query = cell (scalar "query") (genGraph.query (qa X));
+        test-queryArrivals = cell (scalar "queryArrivals") (
+          genGraph.queryArrivals (qa X // { advance = _: 1; })
+        );
+      };
   };
 }

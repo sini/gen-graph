@@ -13,7 +13,7 @@
 # witness-carrying modes live beside it.
 { prelude }:
 let
-  inherit (import ./key.nix) attrKey;
+  inherit (import ./key.nix) attrKey identifier nodeKey;
   regex = import ./regex.nix { inherit prelude; };
   global = import ./global.nix { inherit prelude; };
   partition = import ./partition.nix { inherit prelude; };
@@ -392,7 +392,7 @@ let
         }) (builtins.filter (item: regex.nullable item.st && where item.node) closure)
       );
     in
-    builtins.attrValues answers;
+    builtins.seq (identifier "query" from) (builtins.attrValues answers);
 
   # ── `series` MODE: THE ANSWERS AS A SEQUENCE, IN VISITATION ORDER ──
   # `queryAll` with the answer-set layer deleted — the same closure, the same
@@ -599,10 +599,12 @@ let
           ) (edgesAt "queryArrivals" graph item.node);
       };
     in
-    map (item: {
-      inherit (item) node distance via;
-      admission = regex.stateKey item.st;
-    }) (builtins.filter (item: regex.nullable item.st && where item.node) closure);
+    builtins.seq (nodeKey "queryArrivals" from) (
+      map (item: {
+        inherit (item) node distance via;
+        admission = regex.stateKey item.st;
+      }) (builtins.filter (item: regex.nullable item.st && where item.node) closure)
+    );
 
   # `paths` mode: witness-carrying DFS. Enumerates ACYCLIC paths only (the
   # pathsBetween precedent) with derivative pruning; enumeration-priced —
@@ -807,14 +809,16 @@ let
       valueOf ? (id: id),
       ...
     }:
-    builtins.foldl' (acc: id: combine acc (valueOf id)) empty (
-      queryAll (
-        builtins.removeAttrs args [
-          "empty"
-          "combine"
-          "valueOf"
-          "mode" # `query { mode = "fixpoint"; … }` dispatches here — strip the alias
-        ]
+    builtins.seq (if args ? from then identifier "queryFold" args.from else null) (
+      builtins.foldl' (acc: id: combine acc (valueOf id)) empty (
+        queryAll (
+          builtins.removeAttrs args [
+            "empty"
+            "combine"
+            "valueOf"
+            "mode" # `query { mode = "fixpoint"; … }` dispatches here — strip the alias
+          ]
+        )
       )
     );
 
@@ -831,22 +835,24 @@ let
         "groupBy"
       ];
     in
-    if mode == "all" then
-      queryAll core
-    else if mode == "series" then
-      querySeries core
-    else if mode == "paths" then
-      queryPaths core
-    else if mode == "visible" then
-      queryVisible (builtins.removeAttrs args [ "mode" ])
-    else if mode == "layers" then
-      queryLayers (builtins.removeAttrs args [ "mode" ])
-    else if mode == "fixpoint" then
-      # fixpoint consumption IS the ACI fold — the mode string dispatches to it;
-      # lawfulness (commutative-idempotent combine) is the caller's contract
-      queryFold (builtins.removeAttrs args [ "mode" ])
-    else
-      throw "gen-graph.query: unknown mode '${mode}'";
+    builtins.seq (if args ? from then nodeKey "query" args.from else null) (
+      if mode == "all" then
+        queryAll core
+      else if mode == "series" then
+        querySeries core
+      else if mode == "paths" then
+        queryPaths core
+      else if mode == "visible" then
+        queryVisible (builtins.removeAttrs args [ "mode" ])
+      else if mode == "layers" then
+        queryLayers (builtins.removeAttrs args [ "mode" ])
+      else if mode == "fixpoint" then
+        # fixpoint consumption IS the ACI fold — the mode string dispatches to it;
+        # lawfulness (commutative-idempotent combine) is the caller's contract
+        queryFold (builtins.removeAttrs args [ "mode" ])
+      else
+        throw "gen-graph.query: unknown mode '${mode}'"
+    );
 in
 {
   inherit

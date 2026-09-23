@@ -19,7 +19,12 @@
 #   REVERSED, not erased.
 { prelude }:
 let
-  inherit (import ./key.nix) attrKey keyedAttrs;
+  inherit (import ./key.nix)
+    attrKey
+    keyedAttrs
+    identifier
+    nodeKey
+    ;
   edgeMaps = import ./edge-maps.nix { inherit prelude; };
   fp = import ./fixpoint.nix { inherit prelude; };
   traverse = import ./traverse.nix;
@@ -103,8 +108,10 @@ let
       closure = fp.closureOf "dependents" args;
       reversed = _transposeMat closure;
     in
-    builtins.sort builtins.lessThan (
-      builtins.filter (id: id != targetId) (reversed.${attrKey targetId} or [ ])
+    builtins.seq (identifier "dependents" targetId) (
+      builtins.sort builtins.lessThan (
+        builtins.filter (id: id != targetId) (reversed.${attrKey targetId} or [ ])
+      )
     );
 
   # Single-target reverse reachability via reverse traversal (this library's own; the
@@ -129,14 +136,19 @@ let
   # every shape and independent of E, which is what says it is the spine. `complete` is the
   # discriminator: nothing there is outside the cone, so an unreached-edges account predicts no
   # margin at all, and the margin is still 2n + 2.
-  dependentsOf =
+  # Bound by the door's name, so `impactOf` below refuses a non-identifier under its own.
+  _dependentsOfAs =
+    who:
     { edges, nodes, ... }:
     targetId:
     let
       reverseIndex = _reverseIndex { inherit edges nodes; };
       revEdges = id: reverseIndex.${attrKey id} or [ ];
     in
-    builtins.sort builtins.lessThan (traverse.reachableFrom { edges = revEdges; } targetId);
+    builtins.seq (identifier who targetId) (
+      builtins.sort builtins.lessThan (traverse.reachableFrom { edges = revEdges; } targetId)
+    );
+  dependentsOf = _dependentsOfAs "dependentsOf";
 
   # Reverse-reachability cone of targetId with an early cutoff: a node's own dependents are
   # descended into only when `prune node` is true. A pruned node is still included (it was
@@ -167,8 +179,10 @@ let
         operator = item: if prune item.key then keyed (revOf item.key) else [ ];
       };
     in
-    builtins.sort builtins.lessThan (
-      builtins.filter (id: id != targetId) (map (item: item.key) reached)
+    builtins.seq (identifier "dependentsFrontier" targetId) (
+      builtins.sort builtins.lessThan (
+        builtins.filter (id: id != targetId) (map (item: item.key) reached)
+      )
     );
 
   # Reverse all edge directions, return new accessor set. Mokhov 2017 §5.2 Graph
@@ -221,7 +235,11 @@ let
   coScc =
     { edges, ... }:
     u: v:
-    (u == v) || (traverse.canReach { inherit edges; } u v && traverse.canReach { inherit edges; } v u);
+    builtins.seq (nodeKey "coScc" u) (
+      builtins.seq (nodeKey "coScc" v) (
+        (u == v) || (traverse.canReach { inherit edges; } u v && traverse.canReach { inherit edges; } v u)
+      )
+    );
 
   # ── PARTITION ARM: THE CLOSURE CONSTRUCTION, PUBLISHED BY NAME ──
   # An arm of the partition front door (`condensation`, `lib/partition.nix`), not the door:
@@ -353,7 +371,7 @@ let
       );
 
   # Impact analysis alias (uses efficient single-target path).
-  impactOf = dependentsOf;
+  impactOf = _dependentsOfAs "impactOf";
 
   # `coneRank` used to live here. It is an ORDERING surface — it emits an order, and it now
   # takes its warming order from the ordering arm by name — so it lives with the ordering
@@ -362,7 +380,11 @@ let
   # DIRECT reverse-adjacency (full map) — the public face of _reverseIndex.
   # DIRECT (immediate dependents), in contrast to dependentsOf's TRANSITIVE closure.
   directDependents = { edges, nodes, ... }: _reverseIndex { inherit edges nodes; };
-  directDependentsOf = accessor: id: (directDependents accessor).${attrKey id} or [ ];
+  directDependentsOf =
+    accessor: id:
+    builtins.seq (identifier "directDependentsOf" id) (
+      (directDependents accessor).${attrKey id} or [ ]
+    );
 in
 {
   inherit

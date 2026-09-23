@@ -27,9 +27,36 @@ let
   attrKey =
     k:
     if builtins.isString k && builtins.hasContext k then builtins.unsafeDiscardStringContext k else k;
+
+  # ── THE IDENTIFIER REFUSAL, WRITTEN ONCE FOR EVERY DOOR THAT TAKES A NODE ID ──
+  # Names the type and never the value: the value is not a string, and interpolating it is the
+  # coercion abort the refusal exists to replace. `typeOf` is total, so the message cannot itself
+  # abort. A door `seq`s its guard ahead of its body, because a body that only compares the id with
+  # `==` never forces it into a type error and would answer a plausible wrong value instead
+  # (ADR-0025 item 1: a value or a named refusal, never an interpreter error).
+  notAnIdentifier =
+    who: v: "gen-graph.${who}: got ${builtins.typeOf v}, expected a node identifier (a string)";
+
+  # For a door whose body keys, indexes or `attrKey`s the id: only a string is a node id there.
+  identifier = who: v: if builtins.isString v then v else throw (notAnIdentifier who v);
+
+  # For a door whose body only hands the id to the caller's accessor and to `genericClosure`/`==`:
+  # that body answers correctly on an integer id today, so the guard refuses only the shapes that
+  # are never a node id (den-hoag-bkdkg C1), and keeps every scalar the caller's accessor keys on.
+  nodeKey =
+    who: v:
+    if builtins.isAttrs v || builtins.isList v || builtins.isFunction v || v == null then
+      throw "gen-graph.${who}: got ${builtins.typeOf v}, expected a node identifier (a string or another scalar)"
+    else
+      v;
 in
 {
-  inherit attrKey;
+  inherit
+    attrKey
+    notAnIdentifier
+    identifier
+    nodeKey
+    ;
   # `genAttrs`, keyed by text: `f` receives the caller's ORIGINAL name, never the key. The guard is
   # written out rather than called: this body runs once per key formed, and a call costs an Env.
   keyedAttrs =
