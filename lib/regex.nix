@@ -31,6 +31,7 @@
 # rendering in stateKey — constructor callers own this constraint (see README).
 { prelude }:
 let
+  inherit (import ./key.nix) attrKey;
   # ── constructors normalize on the way in ─────────────────────────────────
   eps = {
     t = "eps";
@@ -92,7 +93,7 @@ let
       # dedup + sort by canonical key (ACI: assoc by flatten, comm by sort, idem by dedup)
       byKey = builtins.listToAttrs (
         map (r: {
-          name = stateKey r;
+          name = attrKey (stateKey r);
           value = r;
         }) noEmpty
       );

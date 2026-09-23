@@ -104,6 +104,7 @@ Pass `prelude` explicitly to override it: `import ./path/to/gen-graph { prelude 
 - **Global operations materialize internally.** `cycles`, `dependents`, `transpose`, `transitiveClosure`, and `transitiveReduction` call `materialize` once, then work on the resulting edge map.
 - **Edge maps are always deduplicated.** `materialize` calls `lib.unique` on each target list. `unionEdges` calls `lib.unique` on merged lists.
 - **Set operations use attrset membership.** Intersection and difference build a target attrset for O(1) per-edge lookups.
+- **A name carrying string context is accepted.** A node, scope or label named after a package (`baseNameOf pkgs.hello`) cannot be an attribute name, so every attrset this library builds is keyed by the name's TEXT, the same partition `==` draws, while the name itself is returned with its context. The exception is an answer read off an edge map's keys (`transpose`'s edges, `dependents`, `fbWork`'s representative), which comes back as text; `directDependents`, `dependentsOf` and `fbNode` keep the context.
 
 ## API Reference
 

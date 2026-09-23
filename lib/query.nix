@@ -13,6 +13,7 @@
 # witness-carrying modes live beside it.
 { prelude }:
 let
+  inherit (import ./key.nix) attrKey;
   regex = import ./regex.nix { inherit prelude; };
   global = import ./global.nix { inherit prelude; };
   partition = import ./partition.nix { inherit prelude; };
@@ -105,7 +106,7 @@ let
       ...
     }:
     let
-      incoming = builtins.groupBy (e: e.target) (
+      incoming = builtins.groupBy (e: attrKey e.target) (
         builtins.concatMap (
           from:
           map (e: {
@@ -122,7 +123,7 @@ let
         map (e: {
           inherit (e) label;
           target = e.from;
-        }) (incoming.${id} or [ ]);
+        }) (incoming.${attrKey id} or [ ]);
     };
 
   # ── THE BOUNDARY MARKS, AND THE DIAGNOSTIC THAT MAKES THEM VISIBLE ──
@@ -178,11 +179,11 @@ let
         };
       memo = builtins.listToAttrs (
         map (id: {
-          name = id;
+          name = attrKey id;
           value = classify id;
         }) graph.nodes
       );
-      at = id: memo.${id} or (classify id);
+      at = id: memo.${attrKey id} or (classify id);
     in
     {
       inherit (graph) nodes;
@@ -235,11 +236,17 @@ let
       inherit (partition.fbNode plain) sccOf;
       hits = builtins.concatMap (
         from:
-        map (e: {
-          inherit from;
-          inherit (e) label;
-          to = e.target;
-        }) (builtins.filter (e: p e.label && sccOf.${from} == sccOf.${e.target}) (graph.labeledEdges from))
+        map
+          (e: {
+            inherit from;
+            inherit (e) label;
+            to = e.target;
+          })
+          (
+            builtins.filter (e: p e.label && sccOf.${attrKey from} == sccOf.${attrKey e.target}) (
+              graph.labeledEdges from
+            )
+          )
       ) plain.nodes;
       less =
         a: b:
@@ -307,12 +314,12 @@ let
       # one entry, and attrNames stays sorted.
       answers = builtins.listToAttrs (
         map (item: {
-          name = item.node;
-          value = true;
+          name = attrKey item.node;
+          value = item.node;
         }) (builtins.filter (item: regex.nullable item.st && where item.node) closure)
       );
     in
-    builtins.attrNames answers;
+    builtins.attrValues answers;
 
   # ── `series` MODE: THE ANSWERS AS A SEQUENCE, IN VISITATION ORDER ──
   # `queryAll` with the answer-set layer deleted — the same closure, the same
@@ -548,10 +555,10 @@ let
             let
               st' = regex.deriv e.label st;
             in
-            if regex.stateKey st' == "0" || visited ? ${e.target} then
+            if regex.stateKey st' == "0" || visited ? ${attrKey e.target} then
               [ ]
             else
-              go (visited // { ${e.target} = true; }) (
+              go (visited // { ${attrKey e.target} = true; }) (
                 # witness step built in its final shape — no post-hoc strip
                 pathAcc
                 ++ [
@@ -566,7 +573,7 @@ let
         in
         here ++ steps;
     in
-    go { ${from} = true; } [ ] from follow;
+    go { ${attrKey from} = true; } [ ] from follow;
 
   # ── per-query label order: compare witness paths lexicographically on label ranks;
   # when one word is exhausted, its end-of-path rank competes against the other word's
@@ -592,7 +599,7 @@ let
       (acc: l: {
         i = acc.i + 1;
         m = acc.m // {
-          ${l} = acc.i;
+          ${attrKey l} = acc.i;
         };
       })
       {
@@ -602,7 +609,7 @@ let
       (order.labels or [ ])
     ).m;
 
-  rankOf = order: label: (ranksOf order).${label} or (builtins.length (order.labels or [ ]));
+  rankOf = order: label: (ranksOf order).${attrKey label} or (builtins.length (order.labels or [ ]));
 
   rankWordOf = order: path: map (p: rankOf order p.label) path;
 
@@ -669,7 +676,7 @@ let
           "groupBy"
         ]
       );
-      groups = builtins.groupBy groupBy answers;
+      groups = builtins.groupBy (a: attrKey (groupBy a)) answers;
       split =
         anss:
         let

@@ -28,6 +28,7 @@
 #
 # Pure builtins only — no dependencies, so this is a bare value (not a function).
 let
+  inherit (import ./key.nix) attrKey;
   # Follow edges transitively from a start node (excludes startId).
   # C-level BFS via genericClosure. Θ( Σ_{u ∈ reach startId} (1 + outdeg u) ) — the operator
   # below re-reads `edges` at every visit, so this is O(reachable) only at bounded out-degree.
@@ -144,7 +145,7 @@ let
         in
         if p == null then
           [ ]
-        else if visited ? ${p} then
+        else if visited ? ${attrKey p} then
           [ ]
         # After both terminating checks, for `pathsBetween`'s reason: neither descends, so
         # neither can reach the evaluator's ceiling, and refusing on one would change the
@@ -152,9 +153,9 @@ let
         else if depth > maxDepth then
           throw "gen-graph.ancestorsOf: ancestor chain depth exceeded the stated cap of ${toString maxDepth}. This walk is self-recursive, so the evaluator's call depth is the length of the parent chain being walked; past the evaluator's own max-call-depth the failure is an uncatchable abort, and this cap sits below it so the refusal arrives first and `builtins.tryEval` can observe it. Set `maxDepth` on the accessor to match the stack the caller is itself nested in."
         else
-          [ p ] ++ go (depth + 1) (visited // { ${p} = true; }) p;
+          [ p ] ++ go (depth + 1) (visited // { ${attrKey p} = true; }) p;
     in
-    go 1 { ${startId} = true; } startId;
+    go 1 { ${attrKey startId} = true; } startId;
 
   # All acyclic paths between two nodes (DFS with visited set).
   #
@@ -194,7 +195,7 @@ let
         depth: visited: current:
         if current == endId then
           [ [ endId ] ]
-        else if visited ? ${current} then
+        else if visited ? ${attrKey current} then
           [ ]
         # After both terminating checks, for `preorder.nix`'s reason: neither descends, so
         # neither can reach the evaluator's ceiling, and refusing on one would change the
@@ -204,7 +205,7 @@ let
         else
           let
             newVisited = visited // {
-              ${current} = true;
+              ${attrKey current} = true;
             };
             targets = edges current;
           in
@@ -252,12 +253,18 @@ let
       wrap = id: map (t: { key = t; }) (edges id);
       wrapped = builtins.listToAttrs (
         map (id: {
-          name = id;
+          name = attrKey id;
           value = wrap id;
         }) nodes
       );
     in
-    id: wrapped.${id} or (wrap id);
+    id:
+    wrapped.${
+      if builtins.isString id && builtins.hasContext id then
+        builtins.unsafeDiscardStringContext id
+      else
+        id
+    } or (wrap id);
 
   # `succ` is a hoisted successor function — `hoistEdges accessor`, or that composed with a
   # per-round restriction, which is how a caller whose accessor narrows between traversals

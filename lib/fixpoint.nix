@@ -1,5 +1,6 @@
 { prelude }:
 let
+  inherit (import ./key.nix) attrKey keyedAttrs;
   edgeMaps = import ./edge-maps.nix { inherit prelude; };
 
   countEdges =
@@ -227,7 +228,7 @@ let
   compose =
     e1: e2:
     prelude.mapAttrs (
-      _from: targets: prelude.unique (prelude.concatMap (mid: e2.${mid} or [ ]) targets)
+      _from: targets: prelude.unique (prelude.concatMap (mid: e2.${attrKey mid} or [ ]) targets)
     ) e1;
 
   # ── THE CLOSURE CLASS, ENUMERATED ──
@@ -317,18 +318,18 @@ let
         _from: targets:
         let
           # Pre-convert closure lists to attrsets for O(1) membership
-          closureSets = prelude.genAttrs targets (
+          closureSets = keyedAttrs targets (
             mid:
             builtins.listToAttrs (
               map (t: {
-                name = t;
+                name = attrKey t;
                 value = true;
-              }) (closure.${mid} or [ ])
+              }) (closure.${attrKey mid} or [ ])
             )
           );
         in
         builtins.filter (
-          to: builtins.any (mid: mid != to && (closureSets.${mid} or { }) ? ${to}) targets
+          to: builtins.any (mid: mid != to && (closureSets.${attrKey mid} or { }) ? ${attrKey to}) targets
         ) targets
       ) mat;
     in

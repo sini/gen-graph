@@ -1,13 +1,14 @@
 { prelude }:
 let
-  materialize = { edges, nodes, ... }: prelude.genAttrs nodes (id: prelude.unique (edges id));
+  inherit (import ./key.nix) attrKey keyedAttrs;
+  materialize = { edges, nodes, ... }: keyedAttrs nodes (id: prelude.unique (edges id));
 
   materializeParents =
     { parent, nodes, ... }:
     prelude.listToAttrs (
       builtins.filter (e: e.value != null) (
         map (id: {
-          name = id;
+          name = attrKey id;
           value = parent id;
         }) nodes
       )
@@ -18,7 +19,7 @@ let
     targets:
     builtins.listToAttrs (
       map (t: {
-        name = t;
+        name = attrKey t;
         value = true;
       }) targets
     );
@@ -42,7 +43,7 @@ let
         let
           bSet = _targetSet (b.${from} or [ ]);
         in
-        builtins.filter (to: bSet ? ${to}) aTargets
+        builtins.filter (to: bSet ? ${attrKey to}) aTargets
       ) (prelude.filterAttrs (from: _: b ? ${from}) a)
     );
 
@@ -54,7 +55,7 @@ let
         let
           bSet = _targetSet (b.${from} or [ ]);
         in
-        builtins.filter (to: !(bSet ? ${to})) aTargets
+        builtins.filter (to: !(bSet ? ${attrKey to})) aTargets
       ) a
     );
 

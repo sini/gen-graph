@@ -1,5 +1,6 @@
 { prelude }:
 let
+  inherit (import ./key.nix) attrKey;
   self = {
     fromRegistry =
       {
@@ -12,9 +13,9 @@ let
       in
       {
         inherit nodes;
-        edges = id: edges id (registry.${id} or { });
-        parent = id: parent id (registry.${id} or { });
-        nodeData = id: registry.${id} or { };
+        edges = id: edges id (registry.${attrKey id} or { });
+        parent = id: parent id (registry.${attrKey id} or { });
+        nodeData = id: registry.${attrKey id} or { };
       };
 
     field =
@@ -32,49 +33,49 @@ let
         nodeData ? { },
       }:
       let
-        allIds = builtins.attrNames (
+        allIds = builtins.attrValues (
           builtins.listToAttrs (
             (map (e: {
-              name = e.from;
-              value = true;
+              name = attrKey e.from;
+              value = e.from;
             }) edges)
             ++ (map (e: {
-              name = e.to;
-              value = true;
+              name = attrKey e.to;
+              value = e.to;
             }) edges)
             ++ (map (e: {
-              name = e.from;
-              value = true;
+              name = attrKey e.from;
+              value = e.from;
             }) parents)
             ++ (map (e: {
-              name = e.to;
-              value = true;
+              name = attrKey e.to;
+              value = e.to;
             }) parents)
             ++ (map (k: {
               name = k;
-              value = true;
+              value = k;
             }) (builtins.attrNames nodeData))
           )
         );
 
         edgeIndex =
           let
-            grouped = builtins.groupBy (e: e.from) edges;
+            grouped = builtins.groupBy (e: attrKey e.from) edges;
           in
           builtins.mapAttrs (_: es: map (e: e.to) es) grouped;
 
         parentIndex = builtins.listToAttrs (
           map (e: {
-            name = e.from;
+            name = attrKey e.from;
             value = e.to;
           }) parents
         );
       in
       {
-        edges = id: prelude.unique (edgeIndex.${id} or [ ]);
-        parent = id: parentIndex.${id} or null;
+        edges = id: prelude.unique (edgeIndex.${attrKey id} or [ ]);
+        parent = id: parentIndex.${attrKey id} or null;
         nodes = allIds;
-        nodeData = id: nodeData.${id} or { };
+        nodeData = id: nodeData.${attrKey id} or { };
       };
 
     # fromScan — the graph a REFERENCE SCAN derives. Given a collection of scannable items, a
@@ -340,7 +341,7 @@ let
               }
             ];
           }
-          .${id} or [ ];
+          .${attrKey id} or [ ];
       };
       # labeled cycle: a -contains-> b -contains-> a, plus a -member-> m
       cyclic = {
@@ -369,7 +370,7 @@ let
               }
             ];
           }
-          .${id} or [ ];
+          .${attrKey id} or [ ];
       };
       # poison: touching node "boom"'s edges throws — laziness witness. boom has
       # an incoming edge (label "other"), so only the derivative-empty prune (a
@@ -396,7 +397,7 @@ let
             b = [ ];
             boom = throw "poisoned accessor forced";
           }
-          .${id} or [ ];
+          .${attrKey id} or [ ];
       };
     };
   };

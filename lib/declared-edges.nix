@@ -106,6 +106,8 @@ let
     name: i: v:
     "gen-graph.mkDeclaredEdges: key '${name}' element ${toString i}: got ${builtins.typeOf v}, which was not built by mkNodeRef";
 
+  inherit (import ./key.nix) attrKey;
+
   _indices = xs: builtins.genList (i: i) (builtins.length xs);
 
   _isNodeRef = v: (v._type or null) == _refMarker;
@@ -193,7 +195,7 @@ let
     relation:
     if builtins.isList relation then
       builtins.mapAttrs (_: es: map (e: _refName e.to) es) (
-        builtins.groupBy (e: _refName e.from) relation
+        builtins.groupBy (e: attrKey (_refName e.from)) relation
       )
     else
       builtins.mapAttrs (_: refs: map _refName refs) relation;
@@ -287,7 +289,7 @@ in
         {
           _type = _edgeSetMarker;
           inherit index;
-          dependencies = id: index.${id} or [ ];
+          dependencies = id: index.${attrKey id} or [ ];
         }
     );
 

@@ -735,5 +735,27 @@ in
           };
         };
       };
+    # den-hoag-u9k7j: the key projection is GUARDED. `unsafeDiscardStringContext` coerces, so an
+    # unguarded key would admit a forged `outPath` set as the node "b" silently. It must keep the
+    # TypeError it met before the projection existed.
+    flake.testsError.context-node-names = {
+      test-a-forged-endpoint-is-not-coerced-into-a-node = {
+        expr =
+          (genGraph.mkGraph {
+            edges = [
+              {
+                from = "a";
+                to = {
+                  outPath = "b";
+                };
+              }
+            ];
+          }).nodes;
+        expectedError = {
+          type = "TypeError";
+          msg = "expected a string but found a set.*";
+        };
+      };
+    };
   };
 }

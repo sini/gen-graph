@@ -27,6 +27,7 @@
 #   visited key prunes that frame's whole subtree WITHOUT forcing it.
 { prelude }:
 let
+  inherit (import ./key.nix) attrKey;
   # ── THE DEPTH CEILING, NAMED RATHER THAN REMOVED ──
   #
   # `foldPreorder.go` below is SELF-RECURSIVE — a frame's children are folded inside that
@@ -105,13 +106,13 @@ let
         # be what reaches the evaluator's ceiling, and refusing on one would change the
         # answer for graphs that never approach the cap. Depth grows only through frames
         # this fold actually expands, so the first such frame past the cap is the refusal.
-        if k != null && state.visited ? ${k} then
+        if k != null && state.visited ? ${attrKey k} then
           state
         else if depth > maxDepth then
           throw (depthRefusal surface maxDepth)
         else
           let
-            marked = if k == null then state.visited else state.visited // { ${k} = true; };
+            marked = if k == null then state.visited else state.visited // { ${attrKey k} = true; };
             r = expand state.acc frame;
           in
           prelude.foldl' (go (depth + 1)) {
@@ -194,11 +195,11 @@ let
         let
           k = itemKey item;
         in
-        if k != null && st.seen ? ${k} then
+        if k != null && st.seen ? ${attrKey k} then
           st
         else
           {
-            seen = if k == null then st.seen else st.seen // { ${k} = true; };
+            seen = if k == null then st.seen else st.seen // { ${attrKey k} = true; };
             nodes = st.nodes ++ [ item ];
           };
       r = foldPreorder {

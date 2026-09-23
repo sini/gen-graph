@@ -44,6 +44,7 @@
 # other's meaning.
 { prelude }:
 let
+  inherit (import ./key.nix) attrKey keyedAttrs;
   traverse = import ./traverse.nix;
   global = import ./global.nix { inherit prelude; };
   order = import ./order.nix { inherit prelude; };
@@ -83,9 +84,9 @@ let
     tagOf:
     let
       membersOf = prelude.mapAttrs (_: es: builtins.sort builtins.lessThan (map (e: e.n) es)) (
-        builtins.groupBy (e: e.r) (
+        builtins.groupBy (e: attrKey e.r) (
           map (n: {
-            r = tagOf.${n};
+            r = tagOf.${attrKey n};
             n = n;
           }) nodes
         )
@@ -99,17 +100,17 @@ let
       # Tags are strings, so uniquing one tag per node would take the sorting path — a sort
       # over a set whose distinct members `membersOf` has already grouped, i.e. redundant work
       # rather than a quadratic. Same reading `coneRank` records for the same reason.
-      tags = builtins.attrNames membersOf;
+      tags = map (ms: tagOf.${attrKey (builtins.head ms)}) (builtins.attrValues membersOf);
       # Deduplicated the same way, and the targets come out SORTED rather than in accessor
       # order — so the condensation's edge lists are a function of the graph and not of the
       # order a caller's `edges` happens to enumerate.
-      condEdges = prelude.genAttrs tags (
+      condEdges = keyedAttrs tags (
         r:
         builtins.filter (t: t != r) (
-          builtins.attrNames (
-            prelude.genAttrs (map (m: tagOf.${m}) (prelude.concatMap (m: edges m) (membersOf.${r} or [ ]))) (
-              _: true
-            )
+          builtins.attrValues (
+            keyedAttrs (map (m: tagOf.${attrKey m}) (
+              prelude.concatMap (m: edges m) (membersOf.${attrKey r} or [ ])
+            )) (t: t)
           )
         )
       );
@@ -119,13 +120,13 @@ let
       # its emitted order IS a reverse-topological order: a class that points at another has
       # a strictly greater rank, so it sorts strictly later. The quotient is acyclic, so the
       # cyclic-cone refusal below it is unreachable from here.
-      ranked = order.coneRank { edges = r: condEdges.${r} or [ ]; } tags;
+      ranked = order.coneRank { edges = r: condEdges.${attrKey r} or [ ]; } tags;
     in
     {
       reps = ranked.order;
       bottomUp = ranked.order;
       members = membersOf;
-      sccs = map (r: membersOf.${r} or [ ]) ranked.order;
+      sccs = map (r: membersOf.${attrKey r} or [ ]) ranked.order;
       sccOf = tagOf;
       inherit condEdges;
       depth = builtins.foldl' prelude.max 0 (prelude.attrValues ranked.depth);
@@ -165,11 +166,24 @@ let
       rev = global.transpose accessor;
       succFwd = traverse.hoistEdges accessor;
       succBwd = traverse.hoistEdges rev;
-      forward = prelude.genAttrs nodes (v: traverse.reachableVia succFwd v);
-      backward = prelude.genAttrs nodes (v: prelude.genAttrs (traverse.reachableVia succBwd v) (_: true));
+      forward = keyedAttrs nodes (v: traverse.reachableVia succFwd v);
+      backward = keyedAttrs nodes (v: prelude.genAttrs (traverse.reachableVia succBwd v) (_: true));
     in
-    prelude.genAttrs nodes (
-      v: tagOfMembers ([ v ] ++ builtins.filter (u: backward.${v} ? ${u}) forward.${v})
+    keyedAttrs nodes (
+      v:
+      let
+        bv = backward.${attrKey v};
+      in
+      tagOfMembers (
+        [ v ]
+        ++ builtins.filter (
+          u:
+          bv
+            ? ${
+              if builtins.isString u && builtins.hasContext u then builtins.unsafeDiscardStringContext u else u
+            }
+        ) forward.${attrKey v}
+      )
     );
 
   # ── ARM: WORKLIST FORWARD–BACKWARD ──
@@ -217,12 +231,12 @@ let
       rev = global.transpose accessor;
       step =
         acc: v:
-        if acc.tags ? ${v} then
+        if acc.tags ? ${attrKey v} then
           acc
         else
           let
-            live = id: !(acc.tags ? ${id});
-            forward = prelude.genAttrs (traverse.reachableFrom {
+            live = id: !(acc.tags ? ${attrKey id});
+            forward = keyedAttrs (traverse.reachableFrom {
               edges = id: builtins.filter live (edges id);
             } v) (_: true);
             component = [
@@ -234,7 +248,7 @@ let
             tag = tagOfMembers component;
           in
           {
-            tags = acc.tags // prelude.genAttrs component (_: tag);
+            tags = acc.tags // keyedAttrs component (_: tag);
           };
     in
     (builtins.foldl' step { tags = { }; } nodes).tags;
@@ -244,6 +258,9 @@ let
   # found and in nothing else a caller can observe. That is what makes them complementary
   # rather than ranked: neither refuses input the other accepts, and a caller that must have
   # one of them can say so.
+  # `fbWork`'s tag is its component's smallest member as the BACKWARD pass returns it, and that
+  # pass reads `transpose`, whose sources are text: so a representative (and `sccOf`) carrying
+  # string context can come back as its text, depending on node order. `fbNode` keeps it.
   fbNode = accessor: condensationOf accessor (nodeTags accessor);
   fbWork = accessor: condensationOf accessor (workTags accessor);
 

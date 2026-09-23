@@ -19,6 +19,7 @@
 #   REVERSED, not erased.
 { prelude }:
 let
+  inherit (import ./key.nix) attrKey keyedAttrs;
   edgeMaps = import ./edge-maps.nix { inherit prelude; };
   fp = import ./fixpoint.nix { inherit prelude; };
   traverse = import ./traverse.nix;
@@ -38,7 +39,7 @@ let
           value = from;
         }) (edges from)
       ) nodes;
-      grouped = builtins.groupBy (e: e.name) allEdges;
+      grouped = builtins.groupBy (e: attrKey e.name) allEdges;
     in
     builtins.mapAttrs (_: es: map (e: e.value) es) grouped;
 
@@ -55,7 +56,7 @@ let
           value = from;
         }) (mat.${from} or [ ])
       ) (builtins.attrNames mat);
-      grouped = builtins.groupBy (e: e.name) allEdges;
+      grouped = builtins.groupBy (e: attrKey e.name) allEdges;
     in
     builtins.mapAttrs (_: es: map (e: e.value) es) grouped;
 
@@ -90,6 +91,9 @@ let
   # shape: see README's closure-class note for the graph-global carve-out.
   # Amortized: if querying multiple targets, compute once and reuse.
   # For single-target queries, prefer `dependentsOf`.
+  # The answer is read off the transposed closure's KEYS, so a dependent whose name carries string
+  # context comes back as its text; `dependentsOf` and `directDependents` read the reverse index,
+  # which carries the original, and keep it.
   dependents =
     args@{ edges, nodes, ... }:
     targetId:
@@ -100,7 +104,7 @@ let
       reversed = _transposeMat closure;
     in
     builtins.sort builtins.lessThan (
-      builtins.filter (id: id != targetId) (reversed.${targetId} or [ ])
+      builtins.filter (id: id != targetId) (reversed.${attrKey targetId} or [ ])
     );
 
   # Single-target reverse reachability via reverse traversal (this library's own; the
@@ -130,7 +134,7 @@ let
     targetId:
     let
       reverseIndex = _reverseIndex { inherit edges nodes; };
-      revEdges = id: reverseIndex.${id} or [ ];
+      revEdges = id: reverseIndex.${attrKey id} or [ ];
     in
     builtins.sort builtins.lessThan (traverse.reachableFrom { edges = revEdges; } targetId);
 
@@ -153,7 +157,7 @@ let
     targetId: prune:
     let
       reverseIndex = _reverseIndex { inherit edges nodes; };
-      revOf = id: reverseIndex.${id} or [ ];
+      revOf = id: reverseIndex.${attrKey id} or [ ];
       keyed = map (k: {
         key = k;
       });
@@ -176,6 +180,8 @@ let
   # through UNCHANGED, the same way `overlay`/`nodes` does. Defaulted rather than
   # required: a caller composing transpose over a bare `{ edges; nodes; }`
   # accessor (no containment/data dimension in play) keeps working.
+  # The reversed edges' TARGETS are the forward map's keys, so a name carrying string context
+  # comes back as its text; `directDependents` answers the same question with the original kept.
   transpose =
     {
       edges,
@@ -189,7 +195,7 @@ let
       rev = _transposeMat mat;
     in
     {
-      edges = id: rev.${id} or [ ];
+      edges = id: rev.${attrKey id} or [ ];
       inherit nodes parent nodeData;
     };
 
@@ -261,12 +267,12 @@ let
       # arm's, and its refusal says so.
       closure = fp.closureOf "condensationClosure" args;
       # O(1) membership (mirrors transitiveReduction's closureSets) → O(n²), not O(n³).
-      closSets = prelude.mapAttrs (_: ts: prelude.genAttrs ts (_: true)) closure;
-      reaches = u: v: (closSets.${u} or { }) ? ${v};
+      closSets = prelude.mapAttrs (_: ts: keyedAttrs ts (_: true)) closure;
+      reaches = u: v: (closSets.${attrKey u} or { }) ? ${attrKey v};
       # A cyclic node's closure includes itself; an acyclic node's does not, so the
       # u == v case is required to make every node co-SCC with itself.
       coSccPair = u: v: (u == v) || (reaches u v && reaches v u);
-      repOf = prelude.genAttrs nodes (
+      repOf = keyedAttrs nodes (
         n: builtins.head (builtins.sort builtins.lessThan (builtins.filter (m: coSccPair n m) nodes))
       );
     in
@@ -333,7 +339,7 @@ let
             # COST note above the door — rather than forcing every successor's enumeration first.
             firstPs = prelude.findFirst (ps: ps != [ ]) [ ] (
               map (v: traverse.pathsBetween { inherit edges; } v u) (
-                builtins.filter (v: sccOf.${v} == sccOf.${u}) (edges u)
+                builtins.filter (v: sccOf.${attrKey v} == sccOf.${attrKey u}) (edges u)
               )
             );
             back = if firstPs == [ ] then [ ] else builtins.head firstPs;
@@ -342,7 +348,9 @@ let
           # without repeating the head. A self-loop leaves [ u ].
           [ u ] ++ (if back == [ ] then [ ] else prelude.init back);
       in
-      map repCycle (prelude.mapAttrsToList (_: g: g) (builtins.groupBy (k: sccOf.${k}) cyclic));
+      map repCycle (
+        prelude.mapAttrsToList (_: g: g) (builtins.groupBy (k: attrKey sccOf.${attrKey k}) cyclic)
+      );
 
   # Impact analysis alias (uses efficient single-target path).
   impactOf = dependentsOf;
@@ -354,7 +362,7 @@ let
   # DIRECT reverse-adjacency (full map) — the public face of _reverseIndex.
   # DIRECT (immediate dependents), in contrast to dependentsOf's TRANSITIVE closure.
   directDependents = { edges, nodes, ... }: _reverseIndex { inherit edges nodes; };
-  directDependentsOf = accessor: id: (directDependents accessor).${id} or [ ];
+  directDependentsOf = accessor: id: (directDependents accessor).${attrKey id} or [ ];
 in
 {
   inherit
