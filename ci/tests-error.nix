@@ -971,6 +971,146 @@ in
         };
       };
 
+    # den-hoag-pqp4z: every other caller function's RESULT is refused by name where it is read,
+    # and a caller function that is not callable is refused at its surface's door. Catchability
+    # across every mode is `ci/tests/caller-results.nix`; these pin WHICH refusal, anchored.
+    flake.testsError.caller-results =
+      let
+        inherit (genGraph)
+          boundedBy
+          cyclicEdgesWhere
+          query
+          queryArrivals
+          regex
+          ;
+        x = regex.star (regex.lit "x");
+        graph = {
+          nodes = [
+            "a"
+            "b"
+          ];
+          labeledEdges =
+            id:
+            if id == "a" then
+              [
+                {
+                  label = "x";
+                  target = "b";
+                }
+              ]
+            else
+              [ ];
+        };
+        q =
+          extra:
+          query (
+            {
+              inherit graph;
+              from = "a";
+              follow = x;
+            }
+            // extra
+          );
+        bounded = marks: (boundedBy graph (_: marks)).withheld "a";
+        refusal = surface: tail: {
+          type = "ThrownError";
+          msg = "^gen-graph\\.${surface}: ${tail}$";
+        };
+      in
+      {
+        test-a-non-bool-where-is-refused-by-name = {
+          expr = q { where = _: 1; };
+          expectedError = refusal "query" "where \"a\" returned a int, not a bool";
+        };
+        test-a-non-function-where-is-refused-by-name = {
+          expr = q { where = 1; };
+          expectedError = refusal "query" "where is a int, not a function returning a bool";
+        };
+        # a set whose `__functor` is not a function is not callable (gen-view's `callable`)
+        test-a-non-function-functor-where-is-refused-by-name = {
+          expr = q {
+            where = {
+              __functor = 1;
+            };
+          };
+          expectedError = refusal "query" "where is a set, not a function returning a bool";
+        };
+        test-a-non-function-functor-labeledEdges-is-refused-by-name = {
+          expr = q {
+            graph = graph // {
+              labeledEdges = {
+                __functor = 1;
+              };
+            };
+          };
+          expectedError = refusal "query" "the graph's labeledEdges is a set, not a function from a node id to a list of \\{ label; target; \\}";
+        };
+        test-a-non-int-advance-is-refused-by-name-where-the-distance-is-read = {
+          expr = map (a: a.distance) (queryArrivals {
+            inherit graph;
+            from = "a";
+            follow = x;
+            advance = _: "far";
+          });
+          expectedError = refusal "queryArrivals" "advance on the step \"a\" -x-> \"b\" returned a string, not an int, the distance after the step";
+        };
+        test-a-non-string-groupBy-is-refused-by-name = {
+          expr = q {
+            mode = "visible";
+            groupBy = _: 1;
+          };
+          expectedError = refusal "queryVisible" "groupBy on the answer at \"a\" returned a int, not a string, the answer's competition key";
+        };
+        test-a-non-list-marksOf-is-refused-by-name = {
+          expr = (boundedBy graph (_: 1)).labeledEdges "a";
+          expectedError = refusal "boundedBy" "marksOf \"a\" returned a int, not a list of marks \\{ name; admits; \\}";
+        };
+        test-a-non-mark-is-refused-by-name = {
+          expr = bounded [ 1 ];
+          expectedError = refusal "boundedBy" "marksOf \"a\" returned a int, not a mark \\{ name; admits; \\}";
+        };
+        test-a-mark-with-no-admits-is-refused-by-name = {
+          expr = bounded [ { name = "m"; } ];
+          expectedError = refusal "boundedBy" "marksOf \"a\" returned a mark with no admits, not a mark \\{ name; admits; \\}";
+        };
+        test-a-non-function-admits-is-refused-by-name = {
+          expr = bounded [
+            {
+              name = "m";
+              admits = 1;
+            }
+          ];
+          expectedError = refusal "boundedBy" "a mark's admits is a int, not a function returning a bool";
+        };
+        test-a-non-bool-admits-is-refused-by-name = {
+          expr = bounded [
+            {
+              name = "m";
+              admits = _: 1;
+            }
+          ];
+          expectedError = refusal "boundedBy" "a mark's admits on the label \"x\" returned a int, not a bool";
+        };
+        test-a-mark-with-no-name-is-refused-by-name = {
+          expr = bounded [ { admits = _: false; } ];
+          expectedError = refusal "boundedBy" "marksOf \"a\" returned a mark with no name; `withheld` reports a mark by its name";
+        };
+        test-a-non-bool-p-is-refused-by-name = {
+          expr = cyclicEdgesWhere graph (_: 1);
+          expectedError = refusal "cyclicEdgesWhere" "p on the label \"x\" returned a int, not a bool";
+        };
+        # FALSIFIER, not a door: a pattern formal is a function, and what it does with a node id is
+        # not decidable before applying it. UNANCHORED, because the text is Nix's — the day a door
+        # covers this input, the cell reds and says so.
+        test-a-pattern-formal-where-still-aborts-on-a-node-id = {
+          expr = q { where = { x }: true; };
+          expectedError = {
+            type = "TypeError";
+            msg = "expected a set but found a string";
+          };
+        };
+      };
+
     # THE IDENTIFIER DOORS (den-hoag-bkdkg, ADR-0025 item 1): a node VALUE where a door takes a node
     # id is refused under THAT door's name. A door whose body keys the id says "a string"; a door
     # whose body only hands it to the accessor and `genericClosure` keeps every scalar and says so.

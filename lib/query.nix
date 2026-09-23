@@ -75,13 +75,20 @@ let
   # its own message would abort in the act of refusing.
   renderId = id: if builtins.isString id then builtins.toJSON id else "<a ${builtins.typeOf id}>";
 
+  # Callable is a function, or a set whose `__functor` is one: `f ? __functor` alone admits
+  # `{ __functor = 1; }`, which aborts when applied. gen-view's `callable` (`lib/relation.nix`).
+  # A per-node site tests `builtins.isFunction` inline first, so a plain function costs no call.
+  callable =
+    v:
+    builtins.isFunction v || (builtins.isAttrs v && v ? __functor && builtins.isFunction v.__functor);
+
   edgesAt =
     surface: graph: id:
     let
       f = graph.labeledEdges or null;
       es = f id;
     in
-    if !(builtins.isFunction f || f ? __functor) then
+    if !(builtins.isFunction f || callable f) then
       throw "gen-graph.${surface}: the graph's labeledEdges is ${
         if graph ? labeledEdges then "a ${builtins.typeOf f}" else "absent"
       }, not a function from a node id to a list of { label; target; }"
@@ -105,6 +112,27 @@ let
       e.${field};
   labelOf = fieldOf "label" "a label is a letter of the query alphabet, a string";
   targetOf = fieldOf "target" "a target is a node id, a string";
+
+  # ── EVERY OTHER CALLER FUNCTION'S RESULT IS A CLAIM TOO ──
+  # `where`, `groupBy`, `advance`, `marksOf`, a mark's `admits` and `cyclicEdgesWhere`'s `p` are
+  # applied by the surfaces below and their results read. Two checks, each where its failure
+  # used to abort. The function is tested for being callable at the surface's DOOR, `seq`ed
+  # ahead of the body the way `identifier` is — a value that is not a function satisfies no
+  # application of its contract, so refusing it before one is not early (gen-view's
+  # `nonAccessor` door, the same rule). The RESULT is tested at its application, for the one
+  # type the site reads, and nothing else is forced. Both tests are written out at the site and
+  # these bindings run only on the refusal path: a result check runs once per application, and
+  # a call costs an Env (`keyedAttrs`, `key.nix`). A pattern formal is callable and still aborts
+  # on its argument; that input is a falsifier cell, as `labeledEdges`'s is.
+  callableAt =
+    surface: name: want: f:
+    if callable f then
+      f
+    else
+      throw "gen-graph.${surface}: ${name} is a ${builtins.typeOf f}, not a function returning ${want}";
+  badResult =
+    surface: name: subject: want: v:
+    throw "gen-graph.${surface}: ${name} ${subject} returned a ${builtins.typeOf v}, not ${want}";
 
   # ── THE ONE PUBLISHED PROJECTION ──
   # `forgetLabels : labeledGraph → { edges; nodes; }` is the single sanctioned bridge from
@@ -215,10 +243,29 @@ let
   boundedBy =
     graph: marksOf:
     let
+      # A mark is read for `admits` wherever an edge is classified, so its shape is checked
+      # there; its `name` is read only by `withheld`, and is checked there, carried unforced.
+      markAt =
+        id: m:
+        if !(m ? admits) then
+          throw "gen-graph.boundedBy: marksOf ${renderId id} returned ${
+            if builtins.isAttrs m then "a mark with no admits" else "a ${builtins.typeOf m}"
+          }, not a mark { name; admits; }"
+        else if builtins.isFunction m.admits || callable m.admits then
+          m
+        else
+          callableAt "boundedBy" "a mark's admits" "a bool" m.admits;
       classify =
         id:
         let
-          marks = marksOf id;
+          marks =
+            let
+              ms = marksOf id;
+            in
+            if builtins.isList ms then
+              map (markAt id) ms
+            else
+              badResult "boundedBy" "marksOf" (renderId id) "a list of marks { name; admits; }" ms;
           verdicts = map (
             e:
             let
@@ -229,7 +276,16 @@ let
             in
             {
               inherit edge;
-              blockers = builtins.filter (m: !(m.admits edge.label)) marks;
+              blockers = builtins.filter (
+                m:
+                let
+                  a = m.admits edge.label;
+                in
+                if builtins.isBool a then
+                  !a
+                else
+                  badResult "boundedBy" "a mark's admits" "on the label ${builtins.toJSON edge.label}" "a bool" a
+              ) marks;
             }
           ) (edgesAt "boundedBy" graph id);
         in
@@ -239,7 +295,11 @@ let
             v:
             v.edge
             // {
-              marks = map (m: m.name) v.blockers;
+              marks = map (
+                m:
+                m.name
+                  or (throw "gen-graph.boundedBy: marksOf ${renderId id} returned a mark with no name; `withheld` reports a mark by its name")
+              ) v.blockers;
             }
           ) (builtins.filter (v: v.blockers != [ ]) verdicts);
         };
@@ -251,7 +311,7 @@ let
       );
       at = id: memo.${attrKey id} or (classify id);
     in
-    {
+    builtins.seq (callableAt "boundedBy" "marksOf" "a list of marks { name; admits; }" marksOf) {
       inherit (graph) nodes;
       labeledEdges = id: (at id).admitted;
       withheld = id: (at id).withheld;
@@ -311,7 +371,16 @@ let
           (
             builtins.filter (
               e:
-              p (labelOf "cyclicEdgesWhere" from e)
+              (
+                let
+                  l = labelOf "cyclicEdgesWhere" from e;
+                  b = p l;
+                in
+                if builtins.isBool b then
+                  b
+                else
+                  badResult "cyclicEdgesWhere" "p" "on the label ${builtins.toJSON l}" "a bool" b
+              )
               && sccOf.${attrKey from} == sccOf.${attrKey (targetOf "cyclicEdgesWhere" from e)}
             ) (edgesAt "cyclicEdgesWhere" graph from)
           )
@@ -325,7 +394,7 @@ let
         else
           a.to < b.to;
     in
-    builtins.sort less hits;
+    builtins.seq (callableAt "cyclicEdgesWhere" "p" "a bool" p) (builtins.sort less hits);
 
   # `all` mode: the (node × derivative-state) product automaton, closed via
   # genericClosure. A node answers when its state is nullable.
@@ -386,13 +455,28 @@ let
       # names, so distinct derivative states reaching the same node collapse to
       # one entry, and attrNames stays sorted.
       answers = builtins.listToAttrs (
-        map (item: {
-          name = attrKey item.node;
-          value = item.node;
-        }) (builtins.filter (item: regex.nullable item.st && where item.node) closure)
+        map
+          (item: {
+            name = attrKey item.node;
+            value = item.node;
+          })
+          (
+            builtins.filter (
+              item:
+              regex.nullable item.st
+              && (
+                let
+                  w = where item.node;
+                in
+                if builtins.isBool w then w else badResult "query" "where" (renderId item.node) "a bool" w
+              )
+            ) closure
+          )
       );
     in
-    builtins.seq (identifier "query" from) (builtins.attrValues answers);
+    builtins.seq (identifier "query" from) (
+      builtins.seq (callableAt "query" "where" "a bool" where) (builtins.attrValues answers)
+    );
 
   # ── `series` MODE: THE ANSWERS AS A SEQUENCE, IN VISITATION ORDER ──
   # `queryAll` with the answer-set layer deleted — the same closure, the same
@@ -475,9 +559,22 @@ let
               ]
           ) (edgesAt "query" args.graph item.node);
       };
-      where = args.where or (_: true);
+      where = callableAt "query" "where" "a bool" (args.where or (_: true));
     in
-    map (item: item.node) (builtins.filter (item: regex.nullable item.st && where item.node) closure);
+    builtins.seq where (
+      map (item: item.node) (
+        builtins.filter (
+          item:
+          regex.nullable item.st
+          && (
+            let
+              w = where item.node;
+            in
+            if builtins.isBool w then w else badResult "query" "where" (renderId item.node) "a bool" w
+          )
+        ) closure
+      )
+    );
 
   # ── THE ARRIVAL CARRIER: EDGE-KEYED, LINEAR, DISTANCE-CARRYING ──
   # `queryArrivals` walks the same (node × derivative-state) product automaton `queryAll`
@@ -588,11 +685,21 @@ let
                   ];
                   node = target;
                   st = st';
-                  distance = advance {
-                    inherit (item) distance label;
-                    from = item.node;
-                    to = target;
-                  };
+                  distance =
+                    let
+                      d = advance {
+                        inherit (item) distance label;
+                        from = item.node;
+                        to = target;
+                      };
+                    in
+                    if builtins.isInt d then
+                      d
+                    else
+                      badResult "queryArrivals" "advance"
+                        "on the step ${renderId item.node} -${label}-> ${renderId target}"
+                        "an int, the distance after the step"
+                        d;
                   inherit via;
                 }
               ]
@@ -600,10 +707,27 @@ let
       };
     in
     builtins.seq (nodeKey "queryArrivals" from) (
-      map (item: {
-        inherit (item) node distance via;
-        admission = regex.stateKey item.st;
-      }) (builtins.filter (item: regex.nullable item.st && where item.node) closure)
+      builtins.seq (callableAt "queryArrivals" "where" "a bool" where) (
+        builtins.seq (callableAt "queryArrivals" "advance" "an int" advance) (
+          map
+            (item: {
+              inherit (item) node distance via;
+              admission = regex.stateKey item.st;
+            })
+            (
+              builtins.filter (
+                item:
+                regex.nullable item.st
+                && (
+                  let
+                    w = where item.node;
+                  in
+                  if builtins.isBool w then w else badResult "queryArrivals" "where" (renderId item.node) "a bool" w
+                )
+              ) closure
+            )
+        )
+      )
     );
 
   # `paths` mode: witness-carrying DFS. Enumerates ACYCLIC paths only (the
@@ -622,7 +746,15 @@ let
         visited: pathAcc: node: st:
         let
           here =
-            if regex.nullable st && where node then
+            if
+              regex.nullable st
+              && (
+                let
+                  w = where node;
+                in
+                if builtins.isBool w then w else badResult "query" "where" (renderId node) "a bool" w
+              )
+            then
               [
                 {
                   inherit node;
@@ -656,7 +788,9 @@ let
         in
         here ++ steps;
     in
-    go { ${attrKey from} = true; } [ ] from follow;
+    builtins.seq (callableAt "query" "where" "a bool" where) (
+      go { ${attrKey from} = true; } [ ] from follow
+    );
 
   # ── per-query label order: compare witness paths lexicographically on label ranks;
   # when one word is exhausted, its end-of-path rank competes against the other word's
@@ -759,7 +893,18 @@ let
           "groupBy"
         ]
       );
-      groups = builtins.groupBy (a: attrKey (groupBy a)) answers;
+      groups = builtins.groupBy (
+        a:
+        let
+          k = groupBy a;
+        in
+        if builtins.isString k then
+          attrKey k
+        else
+          badResult "queryVisible" "groupBy" "on the answer at ${renderId a.node}"
+            "a string, the answer's competition key"
+            k
+      ) answers;
       split =
         anss:
         let
@@ -774,7 +919,7 @@ let
       parts = builtins.mapAttrs (_: split) groups;
       names = builtins.sort builtins.lessThan (builtins.attrNames parts);
     in
-    {
+    builtins.seq (callableAt "queryVisible" "groupBy" "a string" groupBy) {
       visible = builtins.concatMap (k: parts.${k}.visible) names;
       shadowed = builtins.concatMap (k: parts.${k}.shadowed) names;
     };
