@@ -48,6 +48,64 @@ let
         );
     };
 
+  # ── THE ACCESSOR'S RESULT IS A CLAIM, CHECKED WHERE IT IS READ ──
+  # `labeledEdges` is a caller-supplied function and a labeled graph is a structural record, so
+  # every surface that applies the accessor receives a value it did not construct. What a surface
+  # READS of that value has a type: the result is a list, an element is an attrset, a label is a
+  # letter of the query alphabet (`regex.nix`) and a target is a node id (`key.nix`) — both
+  # strings. Read unguarded, a violation aborted past `tryEval` at the read, or — a non-string
+  # label never equals a literal; `series` answers a non-string target as a node — was a silent
+  # wrong answer. So each read goes through a guard that refuses by the surface's name, which is
+  # the discipline `coneRank`'s edge-target guard (`lib/order.nix`) already follows: the accessor
+  # is read where it already was, never pre-scanned, and a field is checked where it is READ, so
+  # the guard refuses exactly what the unguarded read died on or misread, no earlier and no later.
+  # That last clause is load-bearing, not tidiness: a caller may hang an edge the walk never
+  # follows on a node (gen-view's `s —r→ d`, whose target is a datum), and a walk that prunes the
+  # edge on its label never reads that target, so it is not this surface's to refuse. The label
+  # is the other way round: every edge a walk considers contributes its label as a letter of
+  # the candidate word, so the walk operators force it before deriving. `regex.deriv` on `any`
+  # never inspects its letter, and without the force an edge with no label, or a non-string
+  # one, was followed silently — ∂ₐ(Σ) is ε only for a ∈ Σ.
+  #
+  # The accessor itself is the first thing read, so it is the first thing checked: a value that
+  # is not callable is refused by name, where applying it aborted. What a function does with
+  # its argument is not decidable here — a pattern formal `{ x }: …` is a function and still
+  # aborts on a node id — so that input has a falsifier cell (`ci/tests-error.nix`) instead.
+  # The id is rendered only when it is a string: a refusal that coerced a caller value into
+  # its own message would abort in the act of refusing.
+  renderId = id: if builtins.isString id then builtins.toJSON id else "<a ${builtins.typeOf id}>";
+
+  edgesAt =
+    surface: graph: id:
+    let
+      f = graph.labeledEdges or null;
+      es = f id;
+    in
+    if !(builtins.isFunction f || f ? __functor) then
+      throw "gen-graph.${surface}: the graph's labeledEdges is ${
+        if graph ? labeledEdges then "a ${builtins.typeOf f}" else "absent"
+      }, not a function from a node id to a list of { label; target; }"
+    else if builtins.isList es then
+      es
+    else
+      throw "gen-graph.${surface}: labeledEdges ${renderId id} returned a ${builtins.typeOf es}, not a list of { label; target; }";
+
+  fieldOf =
+    field: what: surface: id: e:
+    let
+      at = "gen-graph.${surface}: labeledEdges ${renderId id} returned";
+    in
+    if !builtins.isAttrs e then
+      throw "${at} an element of type ${builtins.typeOf e}, not an edge { label; target; }"
+    else if !(e ? ${field}) then
+      throw "${at} an edge with no ${field}"
+    else if !builtins.isString e.${field} then
+      throw "${at} an edge whose ${field} is of type ${builtins.typeOf e.${field}}; ${what}"
+    else
+      e.${field};
+  labelOf = fieldOf "label" "a label is a letter of the query alphabet, a string";
+  targetOf = fieldOf "target" "a target is a node id, a string";
+
   # ── THE ONE PUBLISHED PROJECTION ──
   # `forgetLabels : labeledGraph → { edges; nodes; }` is the single sanctioned bridge from
   # the labeled half to the global half. Every global surface composes with a labeled graph
@@ -60,14 +118,14 @@ let
   # fact, and a projection that leaked it would hand the global surfaces a number none of
   # them has a meaning for — `cycles` and `condensation` read reachability, not counts.
   forgetLabels =
-    {
+    graph@{
       labeledEdges,
       nodes,
       ...
     }:
     {
       inherit nodes;
-      edges = id: prelude.unique (map (e: e.target) (labeledEdges id));
+      edges = id: prelude.unique (map (targetOf "forgetLabels" id) (edgesAt "forgetLabels" graph id));
     };
 
   # ── THE LABELED TRANSPOSE ──
@@ -100,7 +158,7 @@ let
   # was asked, and `labeledTranspose (labeledTranspose g)` restores `g`'s edge relation
   # with each node's out-edges re-sorted into `nodes` order.
   labeledTranspose =
-    {
+    graph@{
       labeledEdges,
       nodes,
       ...
@@ -110,9 +168,10 @@ let
         builtins.concatMap (
           from:
           map (e: {
-            inherit (e) label target;
+            label = labelOf "labeledTranspose" from e;
+            target = targetOf "labeledTranspose" from e;
             inherit from;
-          }) (labeledEdges from)
+          }) (edgesAt "labeledTranspose" graph from)
         ) nodes
       );
     in
@@ -160,12 +219,19 @@ let
         id:
         let
           marks = marksOf id;
-          verdicts = map (e: {
-            edge = {
-              inherit (e) label target;
-            };
-            blockers = builtins.filter (m: !(m.admits e.label)) marks;
-          }) (graph.labeledEdges id);
+          verdicts = map (
+            e:
+            let
+              edge = {
+                label = labelOf "boundedBy" id e;
+                target = targetOf "boundedBy" id e;
+              };
+            in
+            {
+              inherit edge;
+              blockers = builtins.filter (m: !(m.admits edge.label)) marks;
+            }
+          ) (edgesAt "boundedBy" graph id);
         in
         {
           admitted = map (v: v.edge) (builtins.filter (v: v.blockers == [ ]) verdicts);
@@ -239,13 +305,15 @@ let
         map
           (e: {
             inherit from;
-            inherit (e) label;
-            to = e.target;
+            label = labelOf "cyclicEdgesWhere" from e;
+            to = targetOf "cyclicEdgesWhere" from e;
           })
           (
-            builtins.filter (e: p e.label && sccOf.${attrKey from} == sccOf.${attrKey e.target}) (
-              graph.labeledEdges from
-            )
+            builtins.filter (
+              e:
+              p (labelOf "cyclicEdgesWhere" from e)
+              && sccOf.${attrKey from} == sccOf.${attrKey (targetOf "cyclicEdgesWhere" from e)}
+            ) (edgesAt "cyclicEdgesWhere" graph from)
           )
       ) plain.nodes;
       less =
@@ -291,8 +359,13 @@ let
           builtins.concatMap (
             e:
             let
-              st' = regex.deriv e.label item.st;
+              st' =
+                let
+                  l = labelOf "query" item.node e;
+                in
+                builtins.seq l (regex.deriv l item.st);
               k = regex.stateKey st';
+              target = targetOf "query" item.node e;
             in
             if k == "0" then
               [ ]
@@ -300,14 +373,14 @@ let
               [
                 {
                   key = builtins.toJSON [
-                    e.target
+                    target
                     k
                   ];
-                  node = e.target;
+                  node = target;
                   st = st';
                 }
               ]
-          ) (graph.labeledEdges item.node);
+          ) (edgesAt "query" graph item.node);
       };
       # answers are a SET of node ids: listToAttrs is first-wins on duplicate
       # names, so distinct derivative states reaching the same node collapse to
@@ -379,8 +452,13 @@ let
           builtins.concatMap (
             e:
             let
-              st' = regex.deriv e.label item.st;
+              st' =
+                let
+                  l = labelOf "query" item.node e;
+                in
+                builtins.seq l (regex.deriv l item.st);
               k = regex.stateKey st';
+              target = targetOf "query" item.node e;
             in
             if k == "0" then
               [ ]
@@ -388,14 +466,14 @@ let
               [
                 {
                   key = builtins.toJSON [
-                    e.target
+                    target
                     k
                   ];
-                  node = e.target;
+                  node = target;
                   st = st';
                 }
               ]
-          ) (args.graph.labeledEdges item.node);
+          ) (edgesAt "query" args.graph item.node);
       };
       where = args.where or (_: true);
     in
@@ -489,11 +567,13 @@ let
           builtins.concatMap (
             e:
             let
-              st' = regex.deriv e.label item.st;
+              label = labelOf "queryArrivals" item.node e;
+              st' = builtins.seq label (regex.deriv label item.st);
               k = regex.stateKey st';
+              target = targetOf "queryArrivals" item.node e;
               via = {
                 from = item.node;
-                inherit (e) label;
+                inherit label;
               };
             in
             if k == "0" then
@@ -503,21 +583,20 @@ let
                 {
                   key = builtins.toJSON [
                     via
-                    e.target
+                    target
                     k
                   ];
-                  node = e.target;
+                  node = target;
                   st = st';
                   distance = advance {
-                    inherit (item) distance;
+                    inherit (item) distance label;
                     from = item.node;
-                    inherit (e) label;
-                    to = e.target;
+                    to = target;
                   };
                   inherit via;
                 }
               ]
-          ) (graph.labeledEdges item.node);
+          ) (edgesAt "queryArrivals" graph item.node);
       };
     in
     map (item: {
@@ -553,23 +632,25 @@ let
           steps = builtins.concatMap (
             e:
             let
-              st' = regex.deriv e.label st;
+              label = labelOf "query" node e;
+              st' = builtins.seq label (regex.deriv label st);
+              target = targetOf "query" node e;
             in
-            if regex.stateKey st' == "0" || visited ? ${attrKey e.target} then
+            if regex.stateKey st' == "0" || visited ? ${attrKey target} then
               [ ]
             else
-              go (visited // { ${attrKey e.target} = true; }) (
+              go (visited // { ${attrKey target} = true; }) (
                 # witness step built in its final shape — no post-hoc strip
                 pathAcc
                 ++ [
                   {
-                    inherit (e) label;
+                    inherit label;
                     from = node;
-                    to = e.target;
+                    to = target;
                   }
                 ]
-              ) e.target st'
-          ) (graph.labeledEdges node);
+              ) target st'
+          ) (edgesAt "query" graph node);
         in
         here ++ steps;
     in

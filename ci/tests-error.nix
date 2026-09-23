@@ -757,5 +757,218 @@ in
         };
       };
     };
+
+    # den-hoag-vq94z: a labeled graph's `labeledEdges` result is refused BY NAME where a surface
+    # reads it. Where these cells assert a message, the unguarded read met interpreter text
+    # (`expected a set but found a string`, `attribute 'label' missing`, …) or no error at all.
+    # Catchability across every mode and surface is `ci/tests/labeled-door.nix`; these pin WHICH
+    # refusal, anchored, because a refusal naming the wrong surface or field is the defect.
+    flake.testsError.labeled-door =
+      let
+        inherit (genGraph)
+          boundedBy
+          forgetLabels
+          labeledTranspose
+          query
+          queryArrivals
+          regex
+          ;
+        x = regex.star (regex.lit "x");
+        on = es: {
+          nodes = [
+            "a"
+            "b"
+          ];
+          labeledEdges = id: if id == "a" then es else [ ];
+        };
+        walk =
+          graph:
+          query {
+            inherit graph;
+            from = "a";
+            follow = x;
+          };
+        refusal = surface: tail: "^gen-graph\\.${surface}: labeledEdges \"a\" returned ${tail}$";
+        labelTail = "an edge whose label is of type int; a label is a letter of the query alphabet, a string";
+        datumTail = "an edge whose target is of type set; a target is a node id, a string";
+        datum = on [
+          {
+            label = "x";
+            target = "b";
+          }
+          {
+            label = "r";
+            target = {
+              x = 1;
+            };
+          }
+        ];
+      in
+      {
+        test-a-result-that-is-not-a-list-is-refused-by-name = {
+          expr = walk (on {
+            label = "x";
+            target = "b";
+          });
+          expectedError = {
+            type = "ThrownError";
+            msg = refusal "query" "a set, not a list of \\{ label; target; \\}";
+          };
+        };
+        test-an-element-that-is-not-an-edge-is-refused-by-name = {
+          expr = walk (on [ "b" ]);
+          expectedError = {
+            type = "ThrownError";
+            msg = refusal "query" "an element of type string, not an edge \\{ label; target; \\}";
+          };
+        };
+        test-an-edge-with-no-label-is-refused-by-name = {
+          expr = walk (on [ { target = "b"; } ]);
+          expectedError = {
+            type = "ThrownError";
+            msg = refusal "query" "an edge with no label";
+          };
+        };
+        test-an-edge-with-no-target-is-refused-by-name = {
+          expr = walk (on [ { label = "x"; } ]);
+          expectedError = {
+            type = "ThrownError";
+            msg = refusal "query" "an edge with no target";
+          };
+        };
+        test-a-non-string-label-is-refused-by-name = {
+          expr = walk (on [
+            {
+              label = 1;
+              target = "b";
+            }
+          ]);
+          expectedError = {
+            type = "ThrownError";
+            msg = refusal "query" labelTail;
+          };
+        };
+        test-a-non-string-target-is-refused-by-name-in-queryArrivals = {
+          expr = queryArrivals {
+            graph = on [
+              {
+                label = "x";
+                target = {
+                  n = "b";
+                };
+              }
+            ];
+            from = "a";
+            follow = x;
+            advance = s: s.distance + 1;
+          };
+          expectedError = {
+            type = "ThrownError";
+            msg = refusal "queryArrivals" "an edge whose target is of type set; a target is a node id, a string";
+          };
+        };
+        # The refusal names the surface that APPLIED the accessor, not the one that first forced
+        # the element: here `query` forces a label `boundedBy` read.
+        test-a-bounded-graph-refuses-as-boundedBy = {
+          expr = walk (
+            boundedBy
+              (on [
+                {
+                  label = 1;
+                  target = "b";
+                }
+              ])
+              (_: [
+                {
+                  name = "m";
+                  admits = _: true;
+                }
+              ])
+          );
+          expectedError = {
+            type = "ThrownError";
+            msg = refusal "boundedBy" labelTail;
+          };
+        };
+        # A surface that reads every target at a node refuses the datum a walk leaves unread.
+        # At base both aborted uncatchably (`expected a string but found a set`).
+        test-labeledTranspose-refuses-a-datum-target-by-name = {
+          expr = (labeledTranspose datum).labeledEdges "b";
+          expectedError = {
+            type = "ThrownError";
+            msg = refusal "labeledTranspose" datumTail;
+          };
+        };
+        test-forgetLabels-refuses-a-datum-target-by-name = {
+          expr = (forgetLabels datum).edges "a";
+          expectedError = {
+            type = "ThrownError";
+            msg = refusal "forgetLabels" datumTail;
+          };
+        };
+        # A non-string id is rendered by its type: coercing it into the message would abort
+        # in the act of refusing.
+        test-a-refusal-renders-a-non-string-id-by-type = {
+          expr =
+            (forgetLabels {
+              nodes = [ ];
+              labeledEdges = _: "b";
+            }).edges
+              { f = _: 1; };
+          expectedError = {
+            type = "ThrownError";
+            msg = "^gen-graph\\.forgetLabels: labeledEdges <a set> returned a string, not a list of \\{ label; target; \\}$";
+          };
+        };
+
+        # ── THE ACCESSOR ITSELF (den-hoag-g8lo's table: a door or a falsifier per input) ──
+        test-an-accessor-that-is-not-a-function-is-refused-by-name = {
+          expr = walk {
+            nodes = [ "a" ];
+            labeledEdges = [ ];
+          };
+          expectedError = {
+            type = "ThrownError";
+            msg = "^gen-graph\\.query: the graph's labeledEdges is a list, not a function from a node id to a list of \\{ label; target; \\}$";
+          };
+        };
+        test-an-absent-accessor-is-refused-by-name-where-no-formal-requires-it = {
+          expr = walk { nodes = [ "a" ]; };
+          expectedError = {
+            type = "ThrownError";
+            msg = "^gen-graph\\.query: the graph's labeledEdges is absent, not a function from a node id to a list of \\{ label; target; \\}$";
+          };
+        };
+        # FALSIFIER, not a door: a pattern formal is a function, and what a function does with a
+        # node id is not decidable before applying it. This pins the interpreter's abort — UNANCHORED,
+        # because the text is Nix's — so the day a door covers this input, the cell reds and says so.
+        test-a-pattern-formal-accessor-still-aborts-on-a-node-id = {
+          expr = walk {
+            nodes = [ "a" ];
+            labeledEdges = { x }: [ x ];
+          };
+          expectedError = {
+            type = "TypeError";
+            msg = "expected a set but found a string";
+          };
+        };
+        # ABSENCE IS A DECISION (`lib/query.nix`, THE LABELED CONTRACT IS TOTAL): at the two
+        # surfaces taking the record by pattern, `labeledEdges` stays a required formal, so its
+        # omission reports itself at the call rather than answering from `nodes` alone.
+        test-forgetLabels-keeps-labeledEdges-a-required-formal = {
+          expr = (forgetLabels { nodes = [ "a" ]; }).nodes;
+          expectedError = {
+            type = "TypeError";
+            msg = "called without required argument 'labeledEdges'";
+          };
+        };
+        test-labeledTranspose-keeps-labeledEdges-a-required-formal = {
+          expr = (labeledTranspose { nodes = [ "a" ]; }).nodes;
+          expectedError = {
+            type = "TypeError";
+            msg = "called without required argument 'labeledEdges'";
+          };
+        };
+      };
   };
 }
