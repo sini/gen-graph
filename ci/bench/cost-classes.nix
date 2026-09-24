@@ -10,22 +10,24 @@
 #
 # The two classes measured here:
 #
-#   1. the two terms `topoOrder`'s CYCLE PATH pays — a `global.cycles` call and a partition
-#      call (`lib/order.nix`, the `ok = false` branch);
+#   1. the two terms `topoOrder`'s CYCLE PATH pays — a `partition.cycles` call and a partition
+#      call (`lib/order.nix`, the `ok = false` branch). Both are the `lowlink` arm now, so the
+#      two terms are one construction run twice; the arms `cycles` / `lowlink` / `topoOrderKahn`
+#      still separate them;
 #   2. the `fp.closureOf`-INHERITING class — every surface whose cost is a
 #      closure call: `dependents` (`global.nix`), `condensationClosure` (`global.nix`), and
 #      `transitiveReduction` (`fixpoint.nix`). These share one cost and must be documented
 #      from one measurement, or a reader comparing two rows infers a distinction that does
 #      not exist. ★ `condensation` LEFT THIS CLASS: it is the partition front door and is now
-#      an unconditional alias for the forward–backward arm, which reaches no closure at all. It also used to
+#      an unconditional alias for the `lowlink` arm, which reaches no closure at all. It also used to
 #      contribute TWO closure calls (the graph closure and a second one over the quotient);
 #      the quotient closure is gone from every arm, so `condensationClosure` carries one.
-#   2a. the PARTITION arms — `fbNode` (the door's default, two `genericClosure` calls per
+#   2a. the PARTITION arms — `fbNode` (two `genericClosure` calls per
 #      node) and `fbWork` (one forward–backward pass per component over a `foldl'`
 #      accumulator). They are complementary rather than ranked, so the pair is the
 #      measurement: neither figure means anything without the other's on the same shape.
-#      `lowlink` (Tarjan's single DFS, iterated over a persistent 8-ary trie) is the third
-#      arm, Θ((n + m) · log₈ n) on every shape; read it on calls AND `nrOpUpdateValuesCopied`
+#      `lowlink` (Tarjan's single DFS, iterated over a persistent 8-ary trie; the door's
+#      default) is the third arm, Θ((n + m) · log₈ n) on every shape; read it on calls AND `nrOpUpdateValuesCopied`
 #      as well as the three heap axes, because calls cannot see a `//` copy.
 #   2b. the PARTITION CELL'S TWO TERMS — every arm above spends one cost FINDING the
 #      partition and a second one FINISHING it into the record they all return, and a single
@@ -85,9 +87,11 @@
 #      frontier's own column is monotone in n whichever construction is underneath it.
 #
 #   5. the ACCESSOR HOIST, which is not a class of surfaces but a PAIRING over five of them.
-#      `cycles` and `fbNode` re-cover the same edges once per node, so they read the accessor
-#      ONCE (`traverse.hoistEdges`) instead of at every visit, and `cyclePaths` inherits that
-#      from both. `dependentsOf` makes one closure and `fbWork` restricts its accessor every
+#      `fbNode` re-covers the same edges once per node, so it reads the accessor ONCE
+#      (`traverse.hoistEdges`) instead of at every visit. `cycles` and `cyclePaths` did the same
+#      until they were read off the `lowlink` partition, which walks each edge once and hoists
+#      nothing; their `*Unhoisted` arms are now the pre-hoist baseline of a construction no
+#      shipped surface uses, kept so the hoist's recorded figures can be re-run. `dependentsOf` makes one closure and `fbWork` restricts its accessor every
 #      round, so NEITHER hoists. Each of the five is paired with the construction it is not:
 #      `cycles`/`fbNode` against their `*Unhoisted` arms, `fbWork`/`dependentsOf` against their
 #      `*Hoisted` ones — two pairs that run each way, so the scope is read rather than asserted.
@@ -228,10 +232,10 @@
 #   containing no gen-graph work — so a library figure can be read against it.
 #
 # The partition arms all force `.sccs`, so the four are read on one axis. `lib/order.nix`
-# instead reads `.sccOf`, which forces the same partition, so `fbNode`'s figure is the one
+# instead reads `.sccOf`, which forces the same partition, so `lowlink`'s figure is the one
 # the cycle path actually pays — it binds that arm by name.
 #
-# ★ `condensation` AND `fbNode` MEASURE THE SAME CONSTRUCTION TODAY, and the pair is kept
+# ★ `condensation` AND `lowlink` MEASURE THE SAME CONSTRUCTION TODAY, and the pair is kept
 # anyway: the door's default is a separate decision from the arm's identity, and a single
 # arm named for the door would stop measuring the default the moment the default moved.
 #

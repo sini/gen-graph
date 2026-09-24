@@ -52,19 +52,15 @@
 # the interpreter's call depth with an abort no caller can catch. Cost is the only bound on
 # the ordering surface; there is no size at which it declines.
 # The CYCLE path is deliberately not derived from the Kahn residual — a residual knows
-# only THAT nodes went unemitted, not which cycles they form — so it costs a `global.cycles`
-# call PLUS a PARTITION call, and it runs only on a CYCLIC graph. The partition it spends is
-# `partition.lowlink`, Tarjan's DFS iterated, bound by name below: it is NOT the closure
-# construction, and the difference is the whole cost story here. Measured at n = 200
-# (`ci/bench/cost-classes.nix`, arms `cycles` / `lowlink` / `topoOrder`): on `cycle` the guard
-# is 41,403 `list.elements` against the partition's 20,855, and on `complete` 160,003 against
-# 377,055 — which term is larger FLIPS with the shape, because the guard is Θ(Σ_v |reach⁺ v|)
-# and the partition Θ((n + m) · log₈ n) with m = n² on `complete`. Do not quote either term as
-# the cost alone. The guard is the quadratic one, so the report as a whole is superlinear and
-# climbing towards it: `list` exponents 1.28 / 1.65 / 1.55 and `nrLookups` 1.32 / 1.58 / 1.63
-# over k = 25/50/100/200 on `cycle`. Bound to `fbNode`, the partition term was itself
-# Θ(Σ_v (|reach⁺ v| + |reach⁻ v|)) and the report read 2.00 on both. Re-deriving the guard from
-# the partition is a separate change.
+# only THAT nodes went unemitted, not which cycles they form — so it costs a `partition.cycles`
+# call PLUS a PARTITION call, and it runs only on a CYCLIC graph. Both terms are
+# `partition.lowlink`, Tarjan's DFS iterated, bound by name below: `cycles` is read off that
+# arm's tag map, and the report reads the tag map again for `sccOf`. So the report runs the arm
+# twice — a 2× constant on the `ok = false` path only, kept so the cyclic predicate has one
+# definition — and is Θ((n + m) · log₈ n) as a whole. It is NOT the closure construction, and
+# the difference is the whole cost story here. The guard used to be per-node self-reachability,
+# Θ(Σ_v |reach⁺ v|), quadratic in the size of one large component; README's `topoOrderKahn`
+# cost row carries the figures (`ci/bench/cost-classes.nix`, arm `topoOrderKahn`).
 # ★ THE SURFACE THAT IS SUPER-QUADRATIC IS THE CLOSURE, AND IT IS NOT ON THIS PATH: reaching
 # the same partition through `condensationClosure` instead is exponent 2.93 on `list` over the
 # same k and 2.97 on `sets`, while `nrLookups` sits a full exponent below both at 1.88. The
@@ -601,7 +597,7 @@ let
         nodes = keys;
         edges = k: depsOf.${attrKey k} or [ ];
       };
-      cyclicKeys = global.cycles keyAccessor;
+      cyclicKeys = partition.cycles keyAccessor;
       sccOf = (partition.lowlink keyAccessor).sccOf;
       cycles = prelude.mapAttrsToList (_: g: map (k: nodeOf.${attrKey k}) g) (
         builtins.groupBy (k: attrKey sccOf.${attrKey k}) cyclicKeys

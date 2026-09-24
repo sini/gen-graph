@@ -60,6 +60,72 @@ let
   global = import ./global.nix { inherit prelude; };
   order = import ./order.nix { inherit prelude; };
 
+  # THE PERSISTENT MAP the iterated DFSs below carry: a B-ary trie of ints over ORDINALS 0..n-1,
+  # every cell 0 until set. `get` folds over the digits and `set` path-copies the spine, so each
+  # costs Θ(log_B n); `set` forces every node it builds (ADR-0022). B = 8 was measured against 4,
+  # 16 and 32 on calls, `list.elements` and wall time, and won at 20k and 100k. Shared by
+  # `lowlink` (its index map) and `cyclePaths` (its witness walk's visited set).
+  trieOf =
+    n:
+    let
+      B = 8;
+      digit = k: d: builtins.bitAnd (k / d) (B - 1);
+      levels = builtins.length divs;
+      divs = builtins.genericClosure {
+        startSet = [ { key = 1; } ];
+        operator = x: if x.key * B >= n then [ ] else [ { key = x.key * B; } ];
+      };
+      divsDown = builtins.genList (l: (builtins.elemAt divs (levels - 1 - l)).key) levels;
+      force = l: builtins.foldl' (a: x: builtins.seq x a) l l;
+    in
+    {
+      empty = builtins.foldl' (sub: _: builtins.genList (_: sub) B) 0 divsDown;
+      get = t: k: builtins.foldl' (node: d: builtins.elemAt node (digit k d)) t divsDown;
+      set =
+        t: k: x:
+        let
+          spine = builtins.foldl' (
+            acc: l: acc ++ [ (builtins.elemAt (builtins.elemAt acc l) (digit k (builtins.elemAt divsDown l))) ]
+          ) [ t ] (builtins.genList (l: l) (levels - 1));
+        in
+        builtins.foldl' (
+          child: l:
+          let
+            node = builtins.elemAt spine l;
+            d = digit k (builtins.elemAt divsDown l);
+          in
+          force (builtins.genList (j: if j == d then child else builtins.elemAt node j) B)
+        ) x (builtins.genList (l: levels - 1 - l) levels);
+    };
+
+  # A strict cons cell, and the walk that reads a cons list out as a list of cells, head first.
+  cell = h: t: builtins.seq h (builtins.seq t { inherit h t; });
+  conses =
+    l:
+    builtins.genericClosure {
+      startSet =
+        if l == null then
+          [ ]
+        else
+          [
+            {
+              key = 0;
+              c = l;
+            }
+          ];
+      operator =
+        x:
+        if x.c.t == null then
+          [ ]
+        else
+          [
+            {
+              key = x.key + 1;
+              c = x.c.t;
+            }
+          ];
+    };
+
   # ── THE ARM-NEUTRAL FINISHER, AND IT IS PUBLISHED ──
   # Everything the door publishes beyond the tag map is a function of the tag map, so it is
   # computed HERE, from the partition, and never inside an arm. EVERY arm calls this one
@@ -90,11 +156,35 @@ let
   # fitted over — and names its own domain at the point it derives it. Publishing one of
   # them here would decide that for every consumer; publishing the partition decides nothing
   # and loses nothing, because both arms must produce it to be partitioners at all.
-  condensationOf =
+  #
+  # ★ THE DOMAIN IS CHECKED HERE, ONCE, FOR EVERY ARM: a CLOSED accessor, every target `edges`
+  # returns a member of `nodes`. An edge to x ∉ `nodes` means `(nodes, edges)` is not a graph
+  # (Tarjan 1972 §2: E is a set of pairs of V), so it has no SCC partition, and every field below
+  # indexes `tagOf` by a target. The check is seq'd onto the record, so reading ANY field — `sccOf`
+  # included — refuses by name under the arm's own name rather than answering for one arm and
+  # aborting on another. Same refusal the ordering family gives a dangling target (`topoOrderCore`).
+  condensationOf = finish "condensationOf";
+  finish =
+    who:
     { edges, nodes, ... }:
     tagOf:
     let
-      e = edgesAccessor "condensationOf" edges;
+      e = edgesAccessor who edges;
+      memberSet = keyedAttrs (map (identifier who) nodes) (_: true);
+      # `nodes` is validated BEFORE any target is read: the scan below short-circuits on a
+      # non-string target without forcing `memberSet`, so a non-string NODE with an edge would
+      # otherwise be reported as a target outside `nodes`.
+      closed = builtins.seq memberSet builtins.all (
+        v:
+        let
+          es = e v;
+        in
+        if !builtins.isList es then
+          throw (notEdgeList who v es)
+        else
+          builtins.all (d: builtins.isString d && memberSet ? ${attrKey d}) es
+          || throw "gen-graph.${who}: edges ${renderId v} names a target outside `nodes`"
+      ) nodes;
       membersOf = prelude.mapAttrs (_: es: builtins.sort builtins.lessThan (map (e: e.n) es)) (
         builtins.groupBy (e: attrKey e.r) (
           map (n: {
@@ -142,7 +232,7 @@ let
       # cyclic-cone refusal below it is unreachable from here.
       ranked = order.coneRank { edges = r: condEdges.${attrKey r} or [ ]; } tags;
     in
-    {
+    builtins.seq closed {
       reps = ranked.order;
       bottomUp = ranked.order;
       members = membersOf;
@@ -345,34 +435,7 @@ let
         in
         if builtins.isList es then map (ordinal id) es else throw (notEdgeList "lowlink" id es);
 
-      B = 8;
-      digit = k: d: builtins.bitAnd (k / d) (B - 1);
-      levels = builtins.length divs;
-      divs = builtins.genericClosure {
-        startSet = [ { key = 1; } ];
-        operator = x: if x.key * B >= n then [ ] else [ { key = x.key * B; } ];
-      };
-      divsDown = builtins.genList (l: (builtins.elemAt divs (levels - 1 - l)).key) levels;
-      force = l: builtins.foldl' (a: x: builtins.seq x a) l l;
-      empty = builtins.foldl' (sub: _: builtins.genList (_: sub) B) 0 divsDown;
-      get = t: k: builtins.foldl' (node: d: builtins.elemAt node (digit k d)) t divsDown;
-      set =
-        t: k: x:
-        let
-          spine = builtins.foldl' (
-            acc: l: acc ++ [ (builtins.elemAt (builtins.elemAt acc l) (digit k (builtins.elemAt divsDown l))) ]
-          ) [ t ] (builtins.genList (l: l) (levels - 1));
-        in
-        builtins.foldl' (
-          child: l:
-          let
-            node = builtins.elemAt spine l;
-            d = digit k (builtins.elemAt divsDown l);
-          in
-          force (builtins.genList (j: if j == d then child else builtins.elemAt node j) B)
-        ) x (builtins.genList (l: levels - 1 - l) levels);
-
-      cell = h: t: builtins.seq h (builtins.seq t { inherit h t; });
+      inherit (trieOf n) empty get set;
       frame =
         v: es: i: low:
         builtins.seq v (
@@ -484,31 +547,6 @@ let
           if s' == null then [ ] else [ s' ];
       };
       last = builtins.elemAt run (builtins.length run - 1);
-      conses =
-        l:
-        builtins.genericClosure {
-          startSet =
-            if l == null then
-              [ ]
-            else
-              [
-                {
-                  key = 0;
-                  c = l;
-                }
-              ];
-          operator =
-            x:
-            if x.c.t == null then
-              [ ]
-            else
-              [
-                {
-                  key = x.key + 1;
-                  c = x.c.t;
-                }
-              ];
-        };
     in
     builtins.listToAttrs (
       builtins.concatMap (
@@ -523,30 +561,153 @@ let
   # ── THE ARMS, PUBLISHED BY NAME ──
   # Each is the finisher over one arm's tag map, so on a closed accessor the three differ in HOW
   # the partition is found and in nothing else a caller can observe. That is what makes them
-  # complementary rather than ranked, and a caller that must have one of them can say so. The
-  # two forward–backward arms accept the same input; `lowlink` refuses a target outside `nodes`,
-  # which they accept.
+  # complementary rather than ranked, and a caller that must have one of them can say so. All
+  # three take the same input — a closed accessor, checked once in the finisher — and refuse
+  # anything else under their own name.
   # `fbWork`'s tag is its component's smallest member as the BACKWARD pass returns it, and that
   # pass reads `transpose`, whose sources are text: so a representative (and `sccOf`) carrying
   # string context can come back as its text, depending on node order. `fbNode` keeps it.
-  fbNode = accessor: condensationOf accessor (nodeTags accessor);
-  fbWork = accessor: condensationOf accessor (workTags accessor);
-  lowlink = accessor: condensationOf accessor (lowlinkTags accessor);
+  fbNode = accessor: finish "fbNode" accessor (nodeTags accessor);
+  fbWork = accessor: finish "fbWork" accessor (workTags accessor);
+  lowlink = accessor: finish "lowlink" accessor (lowlinkTags accessor);
+
+  # ── THE PARTITION'S CONSUMERS: WHICH NODES LIE ON A CYCLE, AND ONE WALK PER CYCLIC COMPONENT ──
+  # A node lies on a cycle iff its strongly connected component has two or more members, or it
+  # has an edge to itself (Tarjan 1972, Lemma 9: the SCCs are the classes of mutual reachability,
+  # and a singleton class is cyclic exactly when it carries a self-loop). So membership is read
+  # off the partition, and the partition is the `lowlink` ARM by name, never the door — these
+  # consumers read the tag map and nothing else. Cost is the arm's, Θ((n + m) · log₈ n), plus one
+  # accessor read per node for the self-loop test. They moved here from `lib/global.nix` because
+  # they are partition consumers now, as `coneRank` moved to the ordering family; the export set
+  # is unchanged. Their DOMAIN is the arm's: a closed accessor, refused by name otherwise.
+  cyclicOf =
+    accessor@{ edges, nodes, ... }:
+    let
+      inherit (lowlink accessor) sccOf;
+      e = edgesAccessor "cycles" edges;
+      size = builtins.mapAttrs (_: builtins.length) (
+        builtins.groupBy (k: attrKey sccOf.${k}) (builtins.attrNames sccOf)
+      );
+      onCycle = v: size.${attrKey sccOf.${attrKey v}} > 1 || builtins.elem v (e v);
+    in
+    {
+      inherit sccOf;
+      cyclic = builtins.sort builtins.lessThan (builtins.filter onCycle nodes);
+    };
+  cycles = accessor: (cyclicOf accessor).cyclic;
+
+  # One representative simple cycle per cyclic component, as an ORDERED node list rotated to
+  # begin at the component's smallest key; every consecutive pair is an edge, closing back on the
+  # head. Acyclic input => [ ]. ONE per component, not all: enumerating every simple cycle is
+  # Johnson 1975, exponential in its output, and deliberately not provided.
+  #
+  # THE WITNESS is the walk a depth-first search from the component's smallest member `u` finds:
+  # take `u`'s first successor inside the component, `v`, then search from `v` for `u`, visiting
+  # successors in `edges` order and never a node twice, restricted to the component. It is the
+  # FIRST simple path from `v` to `u` in that order — the one `pathsBetween`'s enumeration yields
+  # first, which this surface used to read off it — because a node a depth-first search has
+  # finished without reaching `u` reaches `u` only through the search's current stack, so
+  # re-entering it along another simple path cannot find `u` either. Leaving the component
+  # cannot change the answer: a node outside it does not reach `u`. So the walk is the one this
+  # surface always returned, found in one pass over the component rather than by enumerating
+  # simple paths — which was exponential on a strongly connected random graph and refused any
+  # cycle longer than `pathsBetween`'s depth cap.
+  #
+  # ITERATED, as `lowlink` is: the search's stack is a cons list of frames and its visited set a
+  # persistent trie over the component's ordinals, stepped by one `genericClosure` loop whose every
+  # record is built by a strict constructor (ADR-0022). Θ((|C| + m_C) · log₈ |C|) per component.
+  cyclePaths =
+    accessor@{ edges, nodes, ... }:
+    let
+      c = cyclicOf accessor;
+      e = edgesAccessor "cyclePaths" edges;
+      witness =
+        members:
+        let
+          u = builtins.head (builtins.sort builtins.lessThan members);
+          inC = keyedAttrs members (_: true);
+          ks = builtins.attrNames inC;
+          ordOf = builtins.listToAttrs (
+            builtins.genList (i: {
+              name = builtins.elemAt ks i;
+              value = i;
+            }) (builtins.length ks)
+          );
+          inherit (trieOf (builtins.length ks)) empty get set;
+          succ = v: builtins.filter (w: inC ? ${attrKey w}) (e v);
+          v0 = builtins.head (succ u);
+          frame =
+            v: es: i:
+            builtins.seq v (builtins.seq es (builtins.seq i { inherit v es i; }));
+          state =
+            key: vis: cs: done:
+            builtins.seq key (
+              builtins.seq vis (
+                builtins.seq cs (
+                  builtins.seq done {
+                    inherit
+                      key
+                      vis
+                      cs
+                      done
+                      ;
+                  }
+                )
+              )
+            );
+          step =
+            s:
+            let
+              f = s.cs.h;
+            in
+            if f.i < builtins.length f.es then
+              let
+                w = builtins.elemAt f.es f.i;
+                rest = cell (frame f.v f.es (f.i + 1)) s.cs.t;
+              in
+              if w == u then
+                state (s.key + 1) s.vis rest true
+              else if get s.vis ordOf.${attrKey w} != 0 then
+                state (s.key + 1) s.vis rest false
+              else
+                state (s.key + 1) (set s.vis ordOf.${attrKey w} 1) (cell (frame w (succ w) 0) rest) false
+            else
+              state (s.key + 1) s.vis s.cs.t false;
+          run = builtins.genericClosure {
+            startSet = [ (state 0 (set empty ordOf.${attrKey v0} 1) (cell (frame v0 (succ v0) 0) null) false) ];
+            operator = s: if s.done then [ ] else [ (step s) ];
+          };
+          stack = conses (builtins.elemAt run (builtins.length run - 1)).cs;
+          depth = builtins.length stack;
+        in
+        if v0 == u then
+          [ u ]
+        else
+          [ u ] ++ builtins.genList (i: (builtins.elemAt stack (depth - 1 - i)).c.h.v) depth;
+    in
+    map witness (
+      prelude.mapAttrsToList (_: g: g) (builtins.groupBy (k: attrKey c.sccOf.${attrKey k}) c.cyclic)
+    );
 
   # ── THE FRONT DOOR ──
-  # The default is the per-node arm, and the delegation is an IDENTITY rather than a wrapper,
+  # The default is the `lowlink` arm, and the delegation is an IDENTITY rather than a wrapper,
   # which is the only spelling that cannot drift from what it delegates to. Changing the
-  # default changes this line and nothing a caller of `fbNode` or `fbWork` depends on.
+  # default changes this line and nothing a caller of an arm by name depends on.
   #
-  # The default sits on the arm with no accumulator and no recursion, and neither forward–
-  # backward arm reaches a capped fixpoint, so the default path has no iteration cap to
-  # inherit and no refusal that names something other than the caller's graph.
-  condensation = fbNode;
+  # The default sits on an arm with no accumulator whose forcing is deferred, no recursion and
+  # no capped fixpoint, so the default path has no iteration cap to inherit and no refusal that
+  # names something other than the caller's graph. Of the three arms it is the one whose cost
+  # is Θ((n + m) · log₈ n) on every shape; the per-node arm it replaced is quadratic in the size
+  # of one large component (README, *When each arm wins*). The door refuses an open accessor
+  # under `lowlink`'s name, which is the one observable that says which arm it is bound to.
+  condensation = lowlink;
 in
 {
   inherit
     condensation
     condensationOf
+    cycles
+    cyclePaths
     fbNode
     fbWork
     lowlink

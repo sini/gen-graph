@@ -185,11 +185,11 @@ let
     chainRing = chainRing small;
     fleetRings = fleetRings small;
   };
-  # `cyclePaths`' reconstruction branch runs `pathsBetween`, which enumerates every simple path
-  # between two nodes and is worst-case exponential — a separate, filed defect on a separate
-  # branch. On one SCC of 40 mutually-adjacent nodes that enumeration does not terminate in any
-  # useful time, so `complete` is EXCLUDED here rather than reduced to a size that would hide
-  # why. Nothing below asserts anything about `cyclePaths` on a dense component.
+  # The REFERENCE arm `cyclePathsUnhoisted` reconstructs through `pathsBetween`, which enumerates
+  # every simple path between two nodes and is worst-case exponential. On one SCC of 40
+  # mutually-adjacent nodes that enumeration does not terminate in any useful time, so `complete`
+  # is EXCLUDED here rather than reduced to a size that would hide why. The shipped surface no
+  # longer enumerates; nothing below asserts its parity on a dense component.
   cyclePathsShapes = builtins.removeAttrs cyclicShapes [ "complete" ];
 
   # ── THE PRE-HOIST REFERENCE ARMS, VERBATIM AT `2962e22` ──
@@ -338,7 +338,8 @@ let
 in
 {
   flake.tests.hoist = {
-    # ── cycles: the hoisted front door against the construction it replaced ──
+    # ── cycles: the shipped surface (now read off the `lowlink` partition) against the per-node ──
+    # ── construction the hoist replaced, so these cells also pin the re-derivation's parity   ──
     test-cycles-agrees-element-wise = {
       expr = over cyclicShapes (agrees cyclesArms);
       expected = allTrue cyclicShapes;
@@ -404,10 +405,9 @@ in
       expected = allTrue shapes;
     };
 
-    # ── cyclePaths: inherits the hoist through `cycles` and the per-node arm ──
-    # COST ONLY is what the hoist claims here — this surface builds no closure of its own — so
-    # these cells say the inherited change did not move the walk, and say nothing about the
-    # reconstruction branch's own behaviour.
+    # ── cyclePaths: the shipped witness search against the `pathsBetween` reconstruction ──
+    # The walk is the first simple path in `edges` order either way, so these cells say the
+    # iterated search returns the walk `pathsBetween`'s enumeration yields first.
     test-cyclepaths-agrees-element-wise = {
       expr = over cyclePathsShapes (agrees cyclePathsArms);
       expected = allTrue cyclePathsShapes;

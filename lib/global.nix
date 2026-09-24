@@ -1,10 +1,6 @@
 # Global graph analysis — operations requiring full graph knowledge.
 #
-# cycles: standard cycle detection (a node is in a cycle iff reachable from
-#   itself). Uses genericClosure per-node for C-level BFS.
-# cyclePaths: one representative simple cycle per cyclic component, ORDERED, so
-#   consecutive pairs are real edges. SCC partition is Tarjan 1972, Lemma 9;
-#   full simple-cycle enumeration (Johnson 1975) is deliberately not provided.
+# cycles / cyclePaths: read off the SCC partition, so they live with it in `lib/partition.nix`.
 # dependents/dependentsOf: gen-graph's own, claimed from no paper. These cited
 #   "Arntzenius 2016 (Datafun reverse reachability)" and no longer do — `reverse`
 #   occurs 0 times in Datafun, and `reachability` once, in a motivating aside (live
@@ -78,26 +74,6 @@ let
       grouped = builtins.groupBy (e: attrKey e.name) allEdges;
     in
     builtins.mapAttrs (_: es: map (e: e.value) es) grouped;
-
-  # Nodes in any cycle (self-reachable): a node is in a cycle iff it is
-  # reachable from itself. Standard cycle detection. genericClosure per-node (C-level BFS)
-  # materializes each node's closure in full; only the whole-graph transitive closure is avoided.
-  #
-  # ONE CLOSURE PER NODE OVER ONE ACCESSOR, so the accessor is read ONCE and not at every visit
-  # of every closure (`traverse.hoistEdges`). The unhoisted reading costs
-  #   Θ( Σ_v Σ_{u ∈ reach v} (1 + outdeg u) )
-  # because the operator re-reads `edges` at each visit, which is Θ(n³) on a complete DAG. The
-  # hoist pays the out-degree factor ONCE, as Θ(n + E) for the wrap, leaving
-  #   Θ( n + E + Σ_v |reach v| )
-  # attrsets — still O(n × reachable) at bounded out-degree, where the wrap is Θ(n) and the two
-  # readings agree to a constant, and Θ(n²) rather than Θ(n³) on a complete DAG. The n closures
-  # are what makes the wrap worth its price here; a caller making one does not hoist.
-  cycles =
-    accessor@{ edges, nodes, ... }:
-    let
-      succ = traverse.hoistEdges accessor;
-    in
-    builtins.sort builtins.lessThan (builtins.filter (traverse.selfReachableVia succ) nodes);
 
   # Reverse reachability: who can reach targetId?
   # Uses full transitive closure + transpose, so it carries the CLOSURE-CLASS cost
@@ -331,94 +307,6 @@ let
     in
     partition.condensationOf { inherit edges nodes; } repOf;
 
-  # One representative simple cycle per cyclic component, as an ORDERED node list rotated to
-  # begin at the component's smallest key. Acyclic input => [ ].
-  #
-  # `cycles` above answers WHICH nodes lie on a cycle; it is a membership set, and a caller that
-  # renders it as a traversal states edges the graph does not contain. `cyclePaths` answers the
-  # ordered question: it returns a walk in which every consecutive pair IS an edge, closing back
-  # on its head.
-  #
-  # ONE per component, not all: the strongly connected component is the canonical object (Tarjan
-  # 1972, Lemma 9 — the partition `condensation` above already anchors), while the cycle through
-  # it is existential. Enumerating every simple cycle is Johnson 1975, whose output is itself
-  # exponential in the graph; it is deliberately not provided here.
-  #
-  # COST: `cycles` short-circuits an acyclic graph before any path work, so the ordinary case pays
-  # the self-reachability pass and nothing more — but that pass IS `cycles`, so it carries `cycles`'
-  # shape dependence: Θ(n + E) to read the accessor once, then O(n × reachable) where out-degree is
-  # bounded and Θ(n²) on a complete DAG. This surface builds no closure of its own, so the accessor
-  # hoist reaches it only through `cycles` and the partition arm; it neither makes that decision nor
-  # can it observe one they did not make.
-  # Reconstruction — the `lowlink` partition arm plus `pathsBetween`, which enumerates simple
-  # paths and is worst-case exponential — runs only once the graph is KNOWN cyclic, i.e. only on
-  # the branch a caller refuses on. Same discipline `order.nix` states for its own cycle report:
-  # the expensive analysis is on the way out.
-  # The partition arm is `lowlink`, Θ((n + m) · log₈ n) for the whole partition (the log is its
-  # persistent map's), paid once when the first tag is forced. That does NOT make this surface
-  # linear: the `cycles` guard above is a second term, Θ(Σ_v |reach⁺ v|), and it stays QUADRATIC
-  # in the size of one large component. Measured in `nrFunctionCalls` on `cycle`
-  # (`ci/bench/cost-classes.nix`, arms `cyclePaths` / `cycles`), n = 1000 → 2000: the surface
-  # reads 3,442,112 → 12,884,112 (×3.74), of which `cycles` is 3,017,018 → 12,034,018; bound to
-  # `fbNode` it read 13,066,056 → 52,132,056. Re-deriving `cycles` from the partition is a
-  # separate change. The DOMAIN is the arm's: a target outside `nodes` is refused by name under
-  # `lowlink`'s name, where `cycles` alone would answer.
-  # ★ THE BACK-EDGE SEARCH SHORT-CIRCUITS (den-hoag-ckev). `repCycle` below needs only the FIRST
-  # in-SCC successor with a path home; it finds that successor with `prelude.findFirst` over the
-  # lazy `map` of `pathsBetween` calls, so a successor after the winner never pays its own
-  # (worst-case exponential) enumeration. The prior form was `builtins.filter (p: p != [ ]) …`
-  # then `head`: `filter` must evaluate its predicate on every element to decide membership, which
-  # forces EVERY successor's full `pathsBetween` result before the first one is read off — doing
-  # and discarding the work of every successor found after the answer. `findFirst` walks the same
-  # successor list (`findFirstIndex`'s countdown-foldl' scan has no early cutoff over the SPINE),
-  # but it stops applying the predicate — and so stops forcing `pathsBetween` — the moment a match
-  # is held, which is where the exponential term actually lives.
-  cyclePaths =
-    { edges, nodes, ... }:
-    let
-      cyclic = cycles { inherit edges nodes; };
-    in
-    if cyclic == [ ] then
-      [ ]
-    else
-      let
-        # The partition ARM by name, never the door: this consumer needs the tag map and
-        # nothing else, and binding a door would make its answer depend on a default it has
-        # no stake in.
-        inherit ((partition.lowlink { inherit edges nodes; })) sccOf;
-        # The component's smallest key is the ENTRY POINT, so the head of the returned walk is
-        # order-independent. The REST of the walk is not: it follows the order of `edges u` and
-        # of `pathsBetween`'s enumeration, so a component holding several simple cycles can yield
-        # a different representative under a permuted successor list over the SAME edge set.
-        # Deterministic for a given accessor, but not a function of the node set alone — a caller
-        # wanting a witness stable across accessor permutations cannot pin this walk.
-        repCycle =
-          members:
-          let
-            u = builtins.head (builtins.sort builtins.lessThan members);
-            # u is self-reachable, so at least one in-component successor has a path home.
-            # `findFirst` short-circuits at the first non-empty `pathsBetween` result — see the
-            # COST note above the door — rather than forcing every successor's enumeration first.
-            firstPs = prelude.findFirst (ps: ps != [ ]) [ ] (
-              map (v: traverse.pathsBetween { inherit edges; } v u) (
-                builtins.filter (v: sccOf.${attrKey v} == sccOf.${attrKey u}) (
-                  let
-                    es = edges u;
-                  in
-                  if builtins.isList es then es else throw (notEdgeList "cyclePaths" u es)
-                )
-              )
-            );
-            back = if firstPs == [ ] then [ ] else builtins.head firstPs;
-          in
-          # `back` is the winning path, ending AT u; dropping that last element closes the walk
-          # without repeating the head. A self-loop leaves [ u ].
-          [ u ] ++ (if back == [ ] then [ ] else prelude.init back);
-      in
-      map repCycle (
-        prelude.mapAttrsToList (_: g: g) (builtins.groupBy (k: attrKey sccOf.${attrKey k}) cyclic)
-      );
-
   # Impact analysis alias (uses efficient single-target path).
   impactOf = _dependentsOfAs "impactOf";
 
@@ -437,8 +325,6 @@ let
 in
 {
   inherit
-    cycles
-    cyclePaths
     dependents
     dependentsOf
     dependentsFrontier

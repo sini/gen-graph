@@ -13,8 +13,8 @@
 # out-edge read. Consumers state their cost in this form, never as O(reachable).
 #
 # A CONSUMER RUNNING THIS SUM ONCE PER NODE MULTIPLIES IT BY n, which is where a dense figure
-# one class worse than the operator's own comes from — and it is why `cycles` and the per-node
-# partition arm no longer run it that way. They bind the amortized dual below instead, which
+# one class worse than the operator's own comes from — and it is why the per-node partition arm
+# (`fbNode`) no longer runs it that way. It binds the amortized dual below instead, which
 # charges the out-degree factor once for the whole graph; the operators above are unchanged and
 # are what a caller traversing once still wants.
 #

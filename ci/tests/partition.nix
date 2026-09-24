@@ -3,7 +3,7 @@
 # `fbNode` and `fbWork` are the two forward–backward arms published under their own names, and
 # `lowlink` is Tarjan's single DFS, iterated, published under its; `condensationClosure` is the
 # closure construction published under its; `condensation` is the
-# door and today defaults to `fbNode`. The door's default is a separate decision from any
+# door and today defaults to `lowlink`. The door's default is a separate decision from any
 # arm's identity — that separation is the whole point of the names — so the agreement between
 # them is a property measured at every revision rather than read off today's one-line
 # delegation.
@@ -408,7 +408,7 @@ in
 
     # ── the door against its default arm, and against the other one ──
     test-door-equals-default-arm = {
-      expr = builtins.mapAttrs (_: fx: condensation fx == fbNode fx) allFixtures;
+      expr = builtins.mapAttrs (_: fx: condensation fx == lowlink fx) allFixtures;
       expected = builtins.mapAttrs (_: _: true) allFixtures;
     };
     # The door against the arm it does NOT default to: the ruling requires the partition and

@@ -1180,28 +1180,20 @@ in
         );
       };
 
-    # THE LOWLINK ARM'S DOMAIN IS A CLOSED ACCESSOR (ADR-0025 item 1). A target outside `nodes` is
-    # refused by name, and so is a `nodes` entry that is not a string; each refusal is catchable.
-    # `cyclicEdgesWhere` and `cyclePaths` bind the arm, so they refuse under its name. On `offNode`
-    # both aborted uncatchably (`attribute 'x' missing`) before they bound it; on `offUnrelated`,
-    # where the off-node target sits on no cycle, they ANSWERED before, and refusing is the
-    # narrowed domain (README, *The partition routing contract*). `cycles` keeps the open
-    # convention and still answers there.
+    # THE PARTITION FAMILY'S DOMAIN IS A CLOSED ACCESSOR (ADR-0025 item 1). An edge to x ∉ `nodes`
+    # means `(nodes, edges)` is not a graph, so it has no SCC partition. The shared finisher
+    # (`lib/partition.nix`, `finish`) checks it once for every arm, so every surface built on the
+    # partition refuses by name, catchably — under the arm's name, or `lowlink`'s for the door and
+    # the partition's consumers, or `condensationOf`'s for the closure arm, which reaches the
+    # finisher by that public name. Before the check was shared, the forward–backward arms, the door
+    # and the closure arm aborted uncatchably (`attribute 'x' missing`) and `cycles` answered. The
+    # seeded traversals keep the open convention and are not in this group.
+    #
+    # A `nodes` entry that is not a string is refused as such, BEFORE any target is read: a
+    # non-string node with an edge must not be reported as "a target outside `nodes`". The fixture
+    # gives every node an edge, because a node with none passes whichever check runs first.
     flake.testsError.lowlink-domain =
       let
-        mk = m: {
-          nodes = builtins.attrNames m;
-          edges = id: m.${id} or [ ];
-        };
-        lab = g: {
-          inherit (g) nodes;
-          labeledEdges =
-            id:
-            map (x: {
-              label = "${id}>${x}";
-              target = x;
-            }) (g.edges id);
-        };
         # a -> x -> b -> a, x outside `nodes`: the off-node target is ON the cycle
         offNode = {
           nodes = [
@@ -1217,13 +1209,112 @@ in
             }
             .${id};
         };
-        # a <-> b, c -> x, x outside `nodes`: the off-node target is on no cycle and no p-edge
-        offUnrelated = mk {
-          a = [ "b" ];
-          b = [ "a" ];
-          c = [ "x" ];
+        # a <-> b, c -> x, x outside `nodes`: the off-node target is on no cycle
+        offUnrelated = {
+          nodes = [
+            "a"
+            "b"
+            "c"
+          ];
+          edges =
+            id:
+            {
+              a = [ "b" ];
+              b = [ "a" ];
+              c = [ "x" ];
+            }
+            .${id} or [ ];
         };
-        outside = from: "^gen-graph\\.lowlink: edges \"${from}\" names a target outside `nodes`$";
+        # a -> x, acyclic
+        offSink = {
+          nodes = [ "a" ];
+          edges = id: { a = [ "x" ]; }.${id} or [ ];
+        };
+        # b -> x -> b, only b in `nodes`: a cycle that exists only through an off-node vertex
+        offLoop = {
+          nodes = [ "b" ];
+          edges =
+            id:
+            {
+              b = [ "x" ];
+              x = [ "b" ];
+            }
+            .${id};
+        };
+        # every accessor above is total where it is read, so an abort would be gen-graph's
+        fixtures = {
+          offNode = "a";
+          offUnrelated = "c";
+          offSink = "a";
+          offLoop = "b";
+        };
+        # 1 <-> 2: every node has an edge
+        intNode = {
+          nodes = [
+            1
+            2
+          ];
+          edges = n: [ (if n == 1 then 2 else 1) ];
+        };
+        lab = g: {
+          inherit (g) nodes;
+          labeledEdges =
+            id:
+            map (x: {
+              label = "l";
+              target = x;
+            }) (g.edges id);
+        };
+        # surface -> the name its refusal carries
+        surfaces = {
+          fbNode = {
+            who = "fbNode";
+            f = g: genGraph.fbNode g;
+          };
+          fbWork = {
+            who = "fbWork";
+            f = g: genGraph.fbWork g;
+          };
+          lowlink = {
+            who = "lowlink";
+            f = g: genGraph.lowlink g;
+          };
+          fbNode-sccOf = {
+            who = "fbNode";
+            f = g: (genGraph.fbNode g).sccOf;
+          };
+          fbWork-sccOf = {
+            who = "fbWork";
+            f = g: (genGraph.fbWork g).sccOf;
+          };
+          lowlink-sccOf = {
+            who = "lowlink";
+            f = g: (genGraph.lowlink g).sccOf;
+          };
+          # the door names the arm it is bound to, so these cells are the binding's discriminator
+          condensation = {
+            who = "lowlink";
+            f = g: genGraph.condensation g;
+          };
+          condensationClosure = {
+            who = "condensationOf";
+            f = g: genGraph.condensationClosure g;
+          };
+          cycles = {
+            who = "lowlink";
+            f = g: genGraph.cycles g;
+          };
+          cyclePaths = {
+            who = "lowlink";
+            f = g: genGraph.cyclePaths g;
+          };
+          cyclicEdgesWhere = {
+            who = "lowlink";
+            f = g: genGraph.cyclicEdgesWhere (lab g) (_: true);
+          };
+        };
+        outside = who: from: "^gen-graph\\.${who}: edges \"${from}\" names a target outside `nodes`$";
+        notString = who: "^gen-graph\\.${who}: got int, expected a node identifier \\(a string\\)$";
         cell = msg: expr: {
           expr = builtins.deepSeq expr expr;
           expectedError = {
@@ -1232,51 +1323,49 @@ in
           };
         };
         refused = v: !(builtins.tryEval (builtins.deepSeq v true)).success;
-        ab = l: l == "a>b" || l == "b>a";
-        nonString = genGraph.lowlink {
-          nodes = [ 1 ];
-          edges = _: [ ];
+        open = {
+          inherit
+            offNode
+            offUnrelated
+            offSink
+            offLoop
+            ;
         };
+        # one entry per (surface, open fixture)
+        grid =
+          f:
+          builtins.listToAttrs (
+            builtins.concatMap (
+              s: map (fx: f s surfaces.${s} fx fixtures.${fx}) (builtins.attrNames fixtures)
+            ) (builtins.attrNames surfaces)
+          );
       in
-      {
-        test-lowlink-offNode = cell (outside "a") (genGraph.lowlink offNode).sccOf;
-        test-cyclicEdgesWhere-offNode = cell (outside "a") (
-          genGraph.cyclicEdgesWhere (lab offNode) (_: true)
-        );
-        test-cyclePaths-offNode = cell (outside "a") (genGraph.cyclePaths offNode);
-        test-lowlink-offUnrelated = cell (outside "c") (genGraph.lowlink offUnrelated).sccOf;
-        test-cyclicEdgesWhere-offUnrelated = cell (outside "c") (
-          genGraph.cyclicEdgesWhere (lab offUnrelated) ab
-        );
-        test-cyclePaths-offUnrelated = cell (outside "c") (genGraph.cyclePaths offUnrelated);
-        test-lowlink-non-string-node = cell "^gen-graph\\.lowlink: got int, expected a node identifier \\(a string\\)$" nonString.sccOf;
-        test-lowlink-refusals-are-catchable = {
-          expr = {
-            offNode = refused (genGraph.lowlink offNode).sccOf;
-            cyclicEdgesWhere-offNode = refused (genGraph.cyclicEdgesWhere (lab offNode) (_: true));
-            cyclePaths-offNode = refused (genGraph.cyclePaths offNode);
-            offUnrelated = refused (genGraph.lowlink offUnrelated).sccOf;
-            cyclicEdgesWhere-offUnrelated = refused (genGraph.cyclicEdgesWhere (lab offUnrelated) ab);
-            cyclePaths-offUnrelated = refused (genGraph.cyclePaths offUnrelated);
-            non-string-node = refused nonString.sccOf;
-          };
-          expected = {
-            offNode = true;
-            cyclicEdgesWhere-offNode = true;
-            cyclePaths-offNode = true;
-            offUnrelated = true;
-            cyclicEdgesWhere-offUnrelated = true;
-            cyclePaths-offUnrelated = true;
-            non-string-node = true;
-          };
-        };
-        # the open convention `cycles` keeps, on the same fixture the partition surfaces refuse
-        test-cycles-answers-offUnrelated = {
-          expr = genGraph.cycles offUnrelated;
-          expected = [
-            "a"
-            "b"
-          ];
+      grid (
+        s: sv: fx: from: {
+          name = "test-${s}-${fx}";
+          value = cell (outside sv.who from) (sv.f open.${fx});
+        }
+      )
+      // builtins.listToAttrs (
+        map (s: {
+          name = "test-${s}-non-string-node-with-an-edge";
+          value = cell (notString surfaces.${s}.who) (surfaces.${s}.f intNode);
+        }) (builtins.attrNames surfaces)
+      )
+      // {
+        test-refusals-are-catchable = {
+          expr = grid (
+            s: sv: fx: _: {
+              name = "${s}-${fx}";
+              value = refused (sv.f open.${fx});
+            }
+          );
+          expected = grid (
+            s: _: fx: _: {
+              name = "${s}-${fx}";
+              value = true;
+            }
+          );
         };
       };
 

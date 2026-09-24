@@ -7,9 +7,9 @@
 # `ci/bench/cone-ceiling.sh` follows.
 #
 # FIVE ARMS, and the fourth one is the point:
-#   fbNode   — the per-node forward–backward arm, the door's default;
+#   fbNode   — the per-node forward–backward arm;
 #   fbWork   — the worklist forward–backward arm;
-#   lowlink  — Tarjan's single DFS, iterated: one `genericClosure` loop over a persistent trie.
+#   lowlink  — Tarjan's single DFS, iterated, the door's default: one `genericClosure` loop over a persistent trie.
 #              It contains no recursion, but its evaluation depth grows as Θ(log₈ n), two
 #              frames per trie level, so it is read at 100,000 on four shapes: `star` is the
 #              one that chains a frame's lowlink if it goes unforced, `cycle` and `rand` the
