@@ -557,19 +557,22 @@ in
       };
     };
 
-    # ── THE DEPTH-CAP REFUSALS NAME THE SURFACE THE CALLER CALLED ──
+    # ── THE DEPTH-CAP REFUSAL NAMES THE SURFACE THE CALLER CALLED; A RETIRED `maxDepth` TOO ──
     #
-    # `preorder.nix`'s guard lives in ONE place — the shared `foldPreorder.go` — and
-    # `traverse.nix`'s in `pathsBetween`'s own `dfs`. That the guard FIRES, and that it fires
-    # catchably where the old construction aborted uncatchably, is a boolean asserted beside
-    # each surface's other halves in `ci/tests/{preorder,traverse}.nix`. What only this
-    # output can assert is the ADR-0009 amendment's actual demand: that the refusal names a
-    # surface BY NAME — and, for the shared core, that it names the caller rather than
-    # itself. Three specializations abort identically otherwise, and a caller handed one is
-    # sent back to bisect its own fixture.
+    # `pathsBetween`'s `dfs` is still self-recursive, so it keeps a stated cap and its refusal.
+    # That the guard FIRES catchably is asserted in `ci/tests/traverse.nix`; what only this
+    # output can assert is the ADR-0009 amendment's demand that the refusal names its surface.
     #
-    # Anchored at the front and through the cap, for the reason the closure refusals are: an
-    # unanchored pattern goes green on a message that has grown a cause it cannot support.
+    # The four walks `foldPreorder`, `expandPreorder`, `foldReach` and `ancestorsOf` are
+    # `genericClosure` loops with no depth ceiling (`lib/preorder.nix`'s header), so their
+    # `maxDepth` is RETIRED and refused by name: each cell below reads the output field furthest
+    # from the accumulator, because the refusal must gate EVERY field, not only the one a
+    # caller of the old walk would have read. `foldPreorder` names its caller's `surface`, which
+    # is how a specialization written outside this library (den-hoag's `forwardExpand`) names
+    # itself.
+    #
+    # Anchored at the front, for the reason the closure refusals are: an unanchored pattern goes
+    # green on a message that has grown a cause it cannot support.
     flake.testsError.depth-refusal =
       let
         chain =
@@ -588,10 +591,8 @@ in
             bottom = key 0;
             edges = k: m.${k} or [ ];
           };
-        # `c9` is one node past the cap of 8 and refuses; `c8` sits exactly on it and
-        # returns. `pathsBetween`'s boundary is one node further out, its terminating check
-        # being consulted before the guard, so `c10` is what refuses there.
-        c8 = chain 8;
+        # `pathsBetween`'s boundary is `maxDepth + 1` nodes, its terminating check being
+        # consulted before the guard: `c9` returns under a cap of 8 and `c10` refuses.
         c9 = chain 9;
         c10 = chain 10;
         c = c9;
@@ -613,29 +614,23 @@ in
             top = key (n - 1);
             parent = k: m.${k} or null;
           };
-        # 8 ancestors sits exactly on the cap of 8 and returns; 9 (one more node) refuses —
-        # unlike `pathsBetween`, `ancestorsOf` has no terminating check exempting one extra
-        # frame, so the boundary is `maxDepth` ancestors exactly, not `maxDepth + 1`.
         ac9 = ancestorsChain 9;
-        ac10 = ancestorsChain 10;
       in
       {
-        test-expandpreorder-refusal-names-the-surface = {
+        test-expandpreorder-refuses-a-retired-maxdepth-by-name = {
           expr =
             (genGraph.expandPreorder {
               roots = [ c.top ];
               key = f: f;
               inherit (c) edges;
               maxDepth = 8;
-            }).nodes;
+            }).seen;
           expectedError = {
             type = "ThrownError";
-            msg = "^gen-graph\\.expandPreorder: DFS depth exceeded the stated cap of 8\\..*";
+            msg = "^gen-graph\\.expandPreorder: maxDepth is retired\\..*";
           };
         };
-        # The other specialization of the same core. Two surfaces, two names, one guard: this
-        # is what a message hard-coding `foldPreorder` at the throw site fails.
-        test-foldreach-refusal-names-the-surface = {
+        test-foldreach-refuses-a-retired-maxdepth-by-name = {
           expr =
             (genGraph.foldReach {
               roots = [ c.top ];
@@ -644,38 +639,43 @@ in
               project = e: [ e ];
               itemKey = i: i;
               maxDepth = 8;
-            }).nodes;
+            }).visited;
           expectedError = {
             type = "ThrownError";
-            msg = "^gen-graph\\.foldReach: DFS depth exceeded the stated cap of 8\\..*";
+            msg = "^gen-graph\\.foldReach: maxDepth is retired\\..*";
           };
         };
-        # ★ AND THE NAME IS READ OFF THE CALLER, not chosen from a fixed set of three. A
-        # specialization written OUTSIDE this library (den-hoag's `forwardExpand` is one) names
-        # itself the same way, which is why `surface` carries no membership assertion — the
-        # contrast with `fixpoint.closureOf`, whose class really is closed. Without this cell
-        # the two above are consistent with a `surface` the core ignores for anything but its
-        # own two callers.
-        test-foldpreorder-refusal-names-a-caller-outside-this-library = {
-          expr = genGraph.foldPreorder {
-            roots = [ c.top ];
-            key = f: f;
-            acc = 0;
-            expand = acc: frame: {
-              acc = acc + 1;
-              children = c.edges frame;
-            };
+        # ★ THE NAME IS READ OFF THE CALLER, not chosen from a fixed set: without this cell the
+        # two above are consistent with a `surface` the core ignores for anything but its own
+        # two callers.
+        test-foldpreorder-refuses-a-retired-maxdepth-naming-a-caller-outside-this-library = {
+          expr =
+            (genGraph.foldPreorder {
+              roots = [ c.top ];
+              key = f: f;
+              acc = 0;
+              expand = acc: frame: {
+                acc = acc + 1;
+                children = c.edges frame;
+              };
+              maxDepth = 8;
+              surface = "forwardExpand";
+            }).visited;
+          expectedError = {
+            type = "ThrownError";
+            msg = "^gen-graph\\.forwardExpand: maxDepth is retired\\..*";
+          };
+        };
+        test-ancestorsof-refuses-a-retired-maxdepth-by-name = {
+          expr = genGraph.ancestorsOf {
+            inherit (ac9) parent;
             maxDepth = 8;
-            surface = "forwardExpand";
-          };
+          } ac9.top;
           expectedError = {
             type = "ThrownError";
-            msg = "^gen-graph\\.forwardExpand: DFS depth exceeded the stated cap of 8\\..*";
+            msg = "^gen-graph\\.ancestorsOf: maxDepth is retired\\..*";
           };
         };
-        # `traverse.nix`'s own core. Same law, same shape, a separate recursion and a separate
-        # cap — its frames cost ≈4 per link against `foldPreorder`'s ≈2, so one number could
-        # not have served both.
         test-pathsbetween-refusal-names-the-surface = {
           expr = genGraph.pathsBetween {
             inherit (c10) edges;
@@ -686,33 +686,11 @@ in
             msg = "^gen-graph\\.pathsBetween: path depth exceeded the stated cap of 8\\..*";
           };
         };
-        # A fourth self-recursive core, its own recursion (`ancestorsOf.go`), its own cap.
-        # ★ Frame cost ≈1 per link — no fork over children, no fold accumulator — so it is
-        # the tightest of the four (measured boundary 9,988, against 4,993 for the shared
-        # preorder core and 2,497 for `pathsBetween`); one number could not have served all.
-        test-ancestorsof-refusal-names-the-surface = {
-          expr = genGraph.ancestorsOf {
-            inherit (ac10) parent;
-            maxDepth = 8;
-          } ac10.top;
-          expectedError = {
-            type = "ThrownError";
-            msg = "^gen-graph\\.ancestorsOf: ancestor chain depth exceeded the stated cap of 8\\..*";
-          };
-        };
-        # LIVE CONTROL, same run, same accessors: under the cap all three cores return.
-        # Without it every cell above is consistent with a guard that refuses at any depth,
-        # which is the failure mode a refusal-only output cannot otherwise see.
+        # LIVE CONTROL, same run, same accessors: `pathsBetween` under its cap returns, and the
+        # four walks WITHOUT `maxDepth` return. Without it every cell above is consistent with a
+        # surface that refuses every call, which a refusal-only output cannot otherwise see.
         test-depth-refusal-under-the-cap-control = {
           expr = {
-            preorder =
-              builtins.length
-                (genGraph.expandPreorder {
-                  roots = [ c8.top ];
-                  key = f: f;
-                  inherit (c8) edges;
-                  maxDepth = 8;
-                }).nodes;
             paths = builtins.length (
               builtins.head (
                 genGraph.pathsBetween {
@@ -721,16 +699,41 @@ in
                 } c9.top c9.bottom
               )
             );
-            ancestors = builtins.length (
-              genGraph.ancestorsOf {
-                inherit (ac9) parent;
-                maxDepth = 8;
-              } ac9.top
+            expandPreorder = builtins.attrNames (
+              (genGraph.expandPreorder {
+                roots = [ c.top ];
+                key = f: f;
+                inherit (c) edges;
+              }).seen
             );
+            foldReach = builtins.length (
+              builtins.attrNames
+                (genGraph.foldReach {
+                  roots = [ c.top ];
+                  edges = t: c.edges t;
+                  target = e: e;
+                  project = e: [ e ];
+                  itemKey = i: i;
+                }).visited
+            );
+            foldPreorder =
+              (genGraph.foldPreorder {
+                roots = [ c.top ];
+                key = f: f;
+                acc = 0;
+                expand = acc: frame: {
+                  acc = acc + 1;
+                  children = c.edges frame;
+                };
+                surface = "forwardExpand";
+              }).acc;
+            ancestors = builtins.length (genGraph.ancestorsOf { inherit (ac9) parent; } ac9.top);
           };
           expected = {
-            preorder = 8;
             paths = 9;
+            expandPreorder = builtins.genList (i: "n" + pad i) 9;
+            foldReach = 9;
+            foldPreorder = 9;
             ancestors = 8;
           };
         };

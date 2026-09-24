@@ -4,14 +4,13 @@
 # order); cycle-break; per-edge classFilter projection + negative-edge suppression
 # (foldReach); lazy/demand-generated edges + seedable seen0 (expandPreorder);
 # dual-bucket classify + null-key unguarded (foldPreorder); empty/degenerate seeds;
-# the stated depth cap's named, CATCHABLE refusal.
+# the retired `maxDepth`'s named, CATCHABLE refusal on every output field.
 { genGraph, ... }:
 let
   inherit (genGraph) foldPreorder expandPreorder foldReach;
   sorted = builtins.sort builtins.lessThan;
 
-  # A chain of n nodes, (n-1) → (n-2) → … → 0. The only shape that reaches a DEPTH ceiling
-  # at the smallest node count, and the one the ceiling was measured on.
+  # A chain of n nodes, (n-1) → (n-2) → … → 0.
   chain =
     n:
     let
@@ -638,81 +637,70 @@ in
         ];
       };
 
-    # ── THE DEPTH CAP'S REFUSAL (ADR-0009 fourth amendment / ADR-0032) ─────────
+    # ── A RETIRED `maxDepth` IS REFUSED BY NAME, AND THE REFUSAL GATES EVERY FIELD ─────────
     #
-    # What these cells assert is that the refusal is CATCHABLE — the defect they replace is
-    # an `stack overflow; max-call-depth exceeded` ABORT, which `tryEval` cannot observe at
-    # all, so `success == false` is the whole claim and it is unavailable on the old
-    # construction. WHICH surface the message names is a claim about the MESSAGE, and
-    # `ci/tests-error.nix` is the only output that can assert one.
+    # The walks are `genericClosure` loops with no depth ceiling (`lib/preorder.nix`'s header),
+    # so the cap and its refusal are retired and `maxDepth` itself is refused by name (ADR-0025
+    # item 1: a value or a named refusal, never an inert door or an uncatchable `unexpected
+    # argument`). The claim is CATCHABILITY on EVERY output field — a refusal that guarded
+    # `nodes` alone would let a caller reading `seen` or `visited` meet a door that describes
+    # nothing. The message's own text is asserted in `ci/tests-error.nix`. A chain of ONE node
+    # is the fixture on purpose: no depth reaches anything, so only the argument can refuse.
     #
-    # `maxDepth` is lowered rather than the fixture deepened: the cap and the boundary the
-    # cell asserts then move together at one binding, and a 4,001-node fixture per cell
-    # would buy nothing the cap does not. The SHIPPED default gets its own pair below,
-    # because that number is the one a caller actually receives.
-
-    test-expandpreorder-refuses-past-maxdepth-catchably =
+    # The cells that pinned the depth refusal (`test-{expandpreorder,foldpreorder,foldreach}-
+    # refuses-past-maxdepth-catchably`, the `returns-at-exactly-maxdepth` control and the
+    # default-cap pair) are retired: under this refusal a `returns … maxDepth = 8 … == false`
+    # cell is green on every input, so it would pin a ceiling that no longer exists.
+    test-expandpreorder-refuses-a-retired-maxdepth-on-every-field =
       let
-        c = chain 9;
+        c = chain 1;
+        r = expandPreorder {
+          roots = [ c.top ];
+          key = f: f;
+          inherit (c) edges;
+          maxDepth = 8;
+        };
       in
       {
-        expr =
-          returns
-            (expandPreorder {
-              roots = [ c.top ];
-              key = f: f;
-              inherit (c) edges;
-              maxDepth = 8;
-            }).nodes;
-        expected = false;
+        expr = {
+          nodes = returns r.nodes;
+          seen = returns r.seen;
+        };
+        expected = {
+          nodes = false;
+          seen = false;
+        };
       };
 
-    # LIVE CONTROL, same run: a chain of exactly `maxDepth` traverses and emits every node.
-    # Without it the cell above is consistent with a guard that refuses everything, and with
-    # one that refuses a depth BELOW the cap it names.
-    test-control-expandpreorder-returns-at-exactly-maxdepth =
+    test-foldreach-refuses-a-retired-maxdepth-on-every-field =
       let
-        c = chain 8;
+        c = chain 1;
+        r = foldReach {
+          roots = [ c.top ];
+          edges = t: c.edges t;
+          target = e: e;
+          project = e: [ e ];
+          itemKey = i: i;
+          maxDepth = 8;
+        };
       in
       {
-        expr =
-          builtins.length
-            (expandPreorder {
-              roots = [ c.top ];
-              key = f: f;
-              inherit (c) edges;
-              maxDepth = 8;
-            }).nodes;
-        expected = 8;
+        expr = {
+          nodes = returns r.nodes;
+          seen = returns r.seen;
+          visited = returns r.visited;
+        };
+        expected = {
+          nodes = false;
+          seen = false;
+          visited = false;
+        };
       };
 
-    # The guard lives in the shared `foldPreorder` core, so it reaches every specialization —
-    # which is the whole reason it is there and not at one exported surface. `foldReach` and
-    # the primitive itself are the other two.
-    test-foldreach-refuses-past-maxdepth-catchably =
+    test-foldpreorder-refuses-a-retired-maxdepth-on-every-field =
       let
-        c = chain 9;
-      in
-      {
-        expr =
-          returns
-            (foldReach {
-              roots = [ c.top ];
-              edges = t: c.edges t;
-              target = e: e;
-              project = e: [ e ];
-              itemKey = i: i;
-              maxDepth = 8;
-            }).nodes;
-        expected = false;
-      };
-
-    test-foldpreorder-refuses-past-maxdepth-catchably =
-      let
-        c = chain 9;
-      in
-      {
-        expr = returns (foldPreorder {
+        c = chain 1;
+        r = foldPreorder {
           roots = [ c.top ];
           key = f: f;
           acc = 0;
@@ -721,47 +709,57 @@ in
             children = c.edges frame;
           };
           maxDepth = 8;
-        });
-        expected = false;
-      };
-
-    # ★ THE ONLY CELL AT THE SHIPPED DEFAULT, and the only one that can say the default sits
-    # BELOW the evaluator's own ceiling. Lowering `maxDepth` above proves the guard fires; it
-    # says nothing about whether the number a caller receives arrives before an abort no
-    # assertion can see. Measured boundary on this shape at `374b0ad`: returns at depth 4,993
-    # and aborts at 4,994. Raise the default past that and this cell stops reading `false` —
-    # as radioactive rather than failing, since the abort kills the cell instead of failing it, and a crash
-    # is the loudest reading available for a refusal that no longer beats the abort.
-    test-expandpreorder-default-cap-refuses-below-the-evaluator-ceiling =
-      let
-        c = chain 4001;
+        };
       in
       {
-        expr =
-          returns
-            (expandPreorder {
-              roots = [ c.top ];
-              key = f: f;
-              inherit (c) edges;
-            }).nodes;
-        expected = false;
+        expr = {
+          acc = returns r.acc;
+          visited = returns r.visited;
+        };
+        expected = {
+          acc = false;
+          visited = false;
+        };
       };
 
-    # And the default is not merely small: a chain one node shorter traverses whole. Without
-    # this, the cell above passes on a default of 1.
-    test-control-expandpreorder-default-cap-returns-just-below-it =
+    # LIVE CONTROL, same run, same fixture: without `maxDepth` every field of all three
+    # returns. Without it the cells above are consistent with a surface that refuses every call.
+    test-control-the-walks-return-without-maxdepth =
       let
-        c = chain 4000;
+        c = chain 1;
+        ep = expandPreorder {
+          roots = [ c.top ];
+          key = f: f;
+          inherit (c) edges;
+        };
+        fr = foldReach {
+          roots = [ c.top ];
+          edges = t: c.edges t;
+          target = e: e;
+          project = e: [ e ];
+          itemKey = i: i;
+        };
+        fp = foldPreorder {
+          roots = [ c.top ];
+          key = f: f;
+          acc = 0;
+          expand = acc: frame: {
+            acc = acc + 1;
+            children = c.edges frame;
+          };
+        };
       in
       {
-        expr =
-          builtins.length
-            (expandPreorder {
-              roots = [ c.top ];
-              key = f: f;
-              inherit (c) edges;
-            }).nodes;
-        expected = 4000;
+        expr = map returns [
+          ep.nodes
+          ep.seen
+          fr.nodes
+          fr.seen
+          fr.visited
+          fp.acc
+          fp.visited
+        ];
+        expected = builtins.genList (_: true) 7;
       };
   };
 }

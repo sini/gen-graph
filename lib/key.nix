@@ -87,6 +87,14 @@ let
     who: id: v:
     "gen-graph.${who}: edges ${renderId id} returned a ${builtins.typeOf v}, not a list of node ids";
 
+  # A RETIRED argument is still accepted and refused by name (ADR-0025 item 1): dropping it from
+  # closed formals would meet a stale caller with an uncatchable `unexpected argument`, and
+  # ignoring it would leave a door that describes nothing. `preorder.nix`'s header says why the
+  # walks no longer have the ceiling `maxDepth` capped.
+  retiredMaxDepth =
+    who:
+    "gen-graph.${who}: maxDepth is retired. This walk is a builtins.genericClosure loop, not a recursion, so it has no depth ceiling for a cap to sit below; remove the argument.";
+
   nodeKey =
     who: v:
     if builtins.isAttrs v || builtins.isList v || builtins.isFunction v || v == null then
@@ -103,6 +111,7 @@ in
     renderId
     edgesAccessor
     notEdgeList
+    retiredMaxDepth
     notAnIdentifier
     identifier
     nodeKey
