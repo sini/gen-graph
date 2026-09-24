@@ -209,7 +209,7 @@ frames; `visited` seeds the guard set (a pre-seeded key prunes that frame's subt
 forcing it). `expandPreorder` and `foldReach` are thin specializations of it.
 
 **No depth or fan-out ceiling.** The fold is a `builtins.genericClosure` loop over an explicit
-DFS stack, with every carried field forced each step (ADR-0022), and its visited set is Bentley &
+DFS stack, with every carried field forced each step, and its visited set is Bentley &
 Saxe's logarithmic method over native attrsets, so it copies Θ(n log(n/32)) values rather than
 Θ(n²) (`lib/preorder.nix`'s header has the construction and the measured cost, and
 `./ci/bench/walks-cost.sh` is its oracle). `maxDepth` is **retired**: all four walks
@@ -229,8 +229,8 @@ is the caller's, not the library's.
 frames that generate forever, is not refused: the walk runs until the evaluator is killed
 (measured on the prototype: still running at 20.6 GB after 134 s, deaf to SIGTERM, where the old
 depth cap refused in 0.12 s). No finite prefix distinguishes an infinite demand-generated graph
-from a large one, so any guard would refuse some finite graph past a bound — a cost cap, which
-ADR-0032 forbids. The precondition is stated instead: the reachable key set is finite, and
+from a large one, so any guard would refuse some finite graph past a bound — a cap that only
+bounds cost, and the library states no such cap. The precondition is stated instead: the reachable key set is finite, and
 `null`-keyed frames terminate by finite authored structure. `reachableFrom` carries the same
 precondition.
 
