@@ -54,6 +54,23 @@ let
   # message would abort in the act of refusing.
   renderId = id: if builtins.isString id then builtins.toJSON id else "<a ${builtins.typeOf id}>";
 
+  # ── ANY OTHER CALLER FUNCTION (den-hoag-pqp4z, widened by den-hoag-hekcx) ──
+  # `callableAt` is the door: it returns the function or refuses a non-callable by name. A surface
+  # binds its result in a `let`, so the door is forced by the first application and never again.
+  # `badResult` is the refusal a site throws when an applied result is not the type it reads; the
+  # test itself is written out at the site. Both name the type and never the value. A function the
+  # library applies one argument at a time has its first result tested at the site too, with
+  # `builtins.isFunction h || callable h`, before the second application.
+  callableAt =
+    surface: name: want: f:
+    if callable f then
+      f
+    else
+      throw "gen-graph.${surface}: ${name} is a ${builtins.typeOf f}, not a function returning ${want}";
+  badResult =
+    surface: name: subject: want: v:
+    throw "gen-graph.${surface}: ${name} ${subject} returned a ${builtins.typeOf v}, not ${want}";
+
   # ── THE PLAIN ACCESSOR'S RESULT IS A CLAIM TOO (den-hoag-0mqv1) ──
   # A surface taking `{ edges, ... }` applies `edges` and reads its result as a list. Callability is
   # decided once per invocation, where the first application forces it (`edgesAccessor`); the
@@ -81,6 +98,8 @@ in
   inherit
     attrKey
     callable
+    callableAt
+    badResult
     renderId
     edgesAccessor
     notEdgeList

@@ -30,6 +30,9 @@
 let
   inherit (import ./key.nix)
     attrKey
+    badResult
+    callableAt
+    renderId
     edgesAccessor
     identifier
     nodeKey
@@ -78,7 +81,16 @@ let
     { edges, ... }:
     startId: pred:
     builtins.seq (nodeKey "reachableWhere" startId) (
-      builtins.filter pred (reachableFrom { inherit edges; } startId)
+      let
+        p = callableAt "reachableWhere" "pred" "a bool" pred;
+      in
+      builtins.filter (
+        id:
+        let
+          b = p id;
+        in
+        if builtins.isBool b then b else badResult "reachableWhere" "pred" (renderId id) "a bool" b
+      ) (reachableFrom { inherit edges; } startId)
     );
 
   # Point query: can fromId reach toId? The operator STOPS EXPANDING AT THE TARGET, so the
@@ -202,13 +214,16 @@ let
     }:
     startId:
     let
+      pa = callableAt "ancestorsOf" "parent" "a node id (a string) or null" parent;
       go =
         depth: visited: id:
         let
-          p = parent id;
+          p = pa id;
         in
         if p == null then
           [ ]
+        else if !builtins.isString p then
+          badResult "ancestorsOf" "parent" (renderId id) "a node id (a string) or null" p
         else if visited ? ${attrKey p} then
           [ ]
         # After both terminating checks, for `pathsBetween`'s reason: neither descends, so
@@ -350,10 +365,46 @@ let
   # per-round restriction, which is how a caller whose accessor narrows between traversals
   # still hoists the part that does not (`lib/partition.nix`, the worklist arm).
   closureVia =
-    succ: startId:
+    who: succ: startId:
+    let
+      want = "a list of { key = <node id>; }";
+      s = callableAt who "succ" want succ;
+      # The element shape is this library's own `succ` contract, and it is tested by primops alone,
+      # so a visit costs no lambda call. The TYPE of `key` is den-hoag-3w9e7's node-id ruling and is
+      # not tested here.
+      notSucc =
+        id: xs:
+        if builtins.isList xs then
+          throw "gen-graph.${who}: succ ${renderId id} returned a list holding an element that is not { key = <node id>; }"
+        else
+          badResult who "succ" (renderId id) want xs;
+    in
     builtins.genericClosure {
-      startSet = succ startId;
-      operator = item: succ item.key;
+      startSet =
+        let
+          xs = s startId;
+        in
+        if
+          builtins.isList xs
+          && builtins.all builtins.isAttrs xs
+          && builtins.length (builtins.catAttrs "key" xs) == builtins.length xs
+        then
+          xs
+        else
+          notSucc startId xs;
+      operator =
+        item:
+        let
+          xs = s item.key;
+        in
+        if
+          builtins.isList xs
+          && builtins.all builtins.isAttrs xs
+          && builtins.length (builtins.catAttrs "key" xs) == builtins.length xs
+        then
+          xs
+        else
+          notSucc item.key xs;
     };
 
   # The hoisted readings of `reachableFrom` and `selfReachable`: same closure, same exclusion
@@ -361,12 +412,14 @@ let
   reachableVia =
     succ: startId:
     builtins.seq (nodeKey "reachableVia" startId) (
-      builtins.filter (id: id != startId) (map (r: r.key) (closureVia succ startId))
+      builtins.filter (id: id != startId) (map (r: r.key) (closureVia "reachableVia" succ startId))
     );
 
   selfReachableVia =
     succ: id:
-    builtins.seq (nodeKey "selfReachableVia" id) (builtins.any (r: r.key == id) (closureVia succ id));
+    builtins.seq (nodeKey "selfReachableVia" id) (
+      builtins.any (r: r.key == id) (closureVia "selfReachableVia" succ id)
+    );
 in
 {
   inherit

@@ -21,6 +21,9 @@
 let
   inherit (import ./key.nix)
     attrKey
+    badResult
+    callableAt
+    renderId
     keyedAttrs
     edgesAccessor
     identifier
@@ -184,10 +187,30 @@ let
       keyed = map (k: {
         key = k;
       });
-      seed0 = if prune targetId then revOf targetId else [ ];
+      pr = callableAt "dependentsFrontier" "prune" "a bool" prune;
+      seed0 =
+        let
+          b = pr targetId;
+        in
+        if !builtins.isBool b then
+          badResult "dependentsFrontier" "prune" (renderId targetId) "a bool" b
+        else if b then
+          revOf targetId
+        else
+          [ ];
       reached = builtins.genericClosure {
         startSet = keyed seed0;
-        operator = item: if prune item.key then keyed (revOf item.key) else [ ];
+        operator =
+          item:
+          let
+            b = pr item.key;
+          in
+          if !builtins.isBool b then
+            badResult "dependentsFrontier" "prune" (renderId item.key) "a bool" b
+          else if b then
+            keyed (revOf item.key)
+          else
+            [ ];
       };
     in
     builtins.seq (identifier "dependentsFrontier" targetId) (

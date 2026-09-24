@@ -27,7 +27,14 @@
 #   visited key prunes that frame's whole subtree WITHOUT forcing it.
 { prelude }:
 let
-  inherit (import ./key.nix) attrKey edgesAccessor notEdgeList;
+  inherit (import ./key.nix)
+    attrKey
+    badResult
+    callable
+    callableAt
+    edgesAccessor
+    notEdgeList
+    ;
   # ── THE DEPTH CEILING, NAMED RATHER THAN REMOVED ──
   #
   # `foldPreorder.go` below is SELF-RECURSIVE — a frame's children are folded inside that
@@ -96,10 +103,19 @@ let
       surface ? "foldPreorder",
     }:
     let
+      kf = callableAt surface "key" "a node id (a string) or null" key;
+      ex = callableAt surface "expand" "{ acc; children ? [ ]; }" expand;
       go =
         depth: state: frame:
         let
-          k = key frame;
+          k =
+            let
+              k0 = kf frame;
+            in
+            if k0 == null || builtins.isString k0 then
+              k0
+            else
+              badResult surface "key" "on a frame" "a node id (a string) or null" k0;
         in
         # ★ THE GUARD SITS AFTER THE VISITED CHECK, and that is load-bearing rather than
         # incidental: an already-visited frame returns without descending, so it can never
@@ -113,12 +129,29 @@ let
         else
           let
             marked = if k == null then state.visited else state.visited // { ${attrKey k} = true; };
-            r = expand state.acc frame;
+            r =
+              let
+                h = ex state.acc;
+                r0 = h frame;
+              in
+              if !(builtins.isFunction h || callable h) then
+                badResult surface "expand" "on the accumulator"
+                  "a function from a frame to { acc; children ? [ ]; }"
+                  h
+              else if builtins.isAttrs r0 && r0 ? acc then
+                r0
+              else
+                badResult surface "expand" "on a frame" "{ acc; children ? [ ]; }" r0;
+            cs = r.children or [ ];
           in
-          prelude.foldl' (go (depth + 1)) {
-            acc = r.acc;
-            visited = marked;
-          } (r.children or [ ]);
+          prelude.foldl' (go (depth + 1))
+            {
+              acc = r.acc;
+              visited = marked;
+            }
+            (
+              if builtins.isList cs then cs else badResult surface "expand" "on a frame" "children as a list" cs
+            );
     in
     prelude.foldl' (go 1) { inherit acc visited; } roots;
 
@@ -144,6 +177,9 @@ let
     }:
     let
       e = edgesAccessor "expandPreorder" edges;
+      # applied, never read: a door each, and `emit`'s first application must return a function
+      rs = callableAt "expandPreorder" "resolve" "a payload" resolve;
+      em = callableAt "expandPreorder" "emit" "a function from a payload to a witness" emit;
       r = foldPreorder {
         inherit roots key maxDepth;
         surface = "expandPreorder";
@@ -152,10 +188,20 @@ let
         expand =
           nodes: frame:
           let
-            payload = resolve frame;
+            payload = rs frame;
           in
           {
-            acc = nodes ++ [ (emit frame payload) ];
+            acc = nodes ++ [
+              (
+                let
+                  h = em frame;
+                in
+                if builtins.isFunction h || callable h then
+                  h payload
+                else
+                  badResult "expandPreorder" "emit" "on a frame" "a function from a payload to a witness" h
+              )
+            ];
             children = (
               let
                 es = e payload;
@@ -196,10 +242,19 @@ let
       maxDepth ? defaultMaxDepth,
     }:
     let
+      ik = callableAt "foldReach" "itemKey" "a string or null" itemKey;
+      pj = callableAt "foldReach" "project" "a list of items" project;
       addItem =
         st: item:
         let
-          k = itemKey item;
+          k =
+            let
+              k0 = ik item;
+            in
+            if k0 == null || builtins.isString k0 then
+              k0
+            else
+              badResult "foldReach" "itemKey" "on an item" "a string or null" k0;
         in
         if k != null && st.seen ? ${attrKey k} then
           st
@@ -219,7 +274,12 @@ let
           nodes = nodes0;
         };
         expand = st: edge: {
-          acc = prelude.foldl' addItem st (project edge);
+          acc = prelude.foldl' addItem st (
+            let
+              xs = pj edge;
+            in
+            if builtins.isList xs then xs else badResult "foldReach" "project" "on an edge" "a list of items" xs
+          );
           children = (
             let
               es = e (target edge);

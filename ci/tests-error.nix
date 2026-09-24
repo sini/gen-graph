@@ -1378,6 +1378,362 @@ in
             msg = "expected a set but found a string";
           };
         };
+        # FALSIFIER: a functor passes `callable` and aborts when its result is applied, at every door
+        # (den-hoag-hekcx F1); `callable` stays gen-view's twin rather than applying the functor
+        test-a-functor-returning-a-non-function-edges-aborts-on-application = {
+          expr = genGraph.reachableFrom (acc { __functor = _self: 1; }) "a";
+          expectedError = {
+            type = "TypeError";
+            msg = "attempt to call something which is not a function but an integer";
+          };
+        };
+      };
+
+    # den-hoag-hekcx: every other caller function's result, its callability, and a binary function's
+    # first application are refused by name where the library applies them. Catchability is
+    # `ci/tests/caller-functions.nix`, over the same constructions; these pin WHICH refusal, anchored.
+    # Not pinned, because the text depends on which name a shared core's refusal carries
+    # (den-hoag-7gp66): foldReach's `target` (reads `key`), `nodeRefFindings`' result (`mkNodeRef`),
+    # `mkProjectionFindings`' isNode result (`mkEndpointProjection`), `topoOrderKahn` (`topoOrder`),
+    # and fromRegistry's `parent` result (read and refused downstream, by `ancestorsOf`).
+    flake.testsError.caller-functions =
+      let
+        F = import ./tests/_fixtures/caller-functions.nix { inherit genGraph; };
+        G = genGraph;
+        esc =
+          builtins.replaceStrings
+            [
+              "\\"
+              "."
+              "("
+              ")"
+              "["
+              "]"
+              "{"
+              "}"
+              "?"
+              "*"
+              "+"
+              "|"
+              "^"
+              "$"
+            ]
+            [
+              "\\\\"
+              "\\."
+              "\\("
+              "\\)"
+              "\\["
+              "\\]"
+              "\\{"
+              "\\}"
+              "\\?"
+              "\\*"
+              "\\+"
+              "\\|"
+              "\\^"
+              "\\$"
+            ];
+        cell = surface: tail: expr: {
+          expr = builtins.deepSeq expr expr;
+          expectedError = {
+            type = "ThrownError";
+            msg = "^gen-graph\\.${surface}: ${esc tail}$";
+          };
+        };
+        res = k: F.surfaces.${k} F.malformed.${k};
+        nf = k: F.surfaces.${k} 1;
+      in
+      {
+        test-binary-expandPreorder-emit =
+          cell "expandPreorder" "emit on a frame returned a int, not a function from a payload to a witness"
+            (F.binary.expandPreorder-emit);
+        test-binary-foldPreorder-expand =
+          cell "foldPreorder"
+            "expand on the accumulator returned a set, not a function from a frame to { acc; children ? [ ]; }"
+            (F.binary.foldPreorder-expand);
+        test-binary-fromRegistry-edges =
+          cell "fromRegistry"
+            "edges \"a\" returned a list, not a function from a registry entry to a list of node ids"
+            (F.binary.fromRegistry-edges);
+        test-binary-fromRegistry-parent =
+          cell "fromRegistry"
+            "parent \"b\" returned a null, not a function from a registry entry to a node id or null"
+            (F.binary.fromRegistry-parent);
+        test-binary-queryFold-combine =
+          cell "queryFold"
+            "combine on the accumulator returned a int, not a function from a value to the next accumulator"
+            (F.binary.queryFold-combine);
+        test-binary-seededFixpoint =
+          cell "seededFixpoint"
+            "step at iteration 0 returned a set, not a function from the accumulator to an edge map"
+            (F.binary.seededFixpoint);
+        test-binary-seededFixpoint-support =
+          cell "seededFixpoint"
+            "step on the converged accumulator returned a set, not a function from the accumulator to an edge map"
+            (F.binary.seededFixpoint-support);
+        test-binary-selectEdges =
+          cell "selectEdges"
+            "pred on the source \"a\" returned a bool, not a function from a target to a bool"
+            (F.binary.selectEdges);
+        test-binary-topoOrder-lessThan =
+          cell "topoOrder" "lessThan on the key \"b\" returned a bool, not a function from a key to a bool"
+            (F.binary.topoOrder-lessThan);
+        test-nf-ancestorsOf =
+          cell "ancestorsOf" "parent is a int, not a function returning a node id (a string) or null"
+            (nf "ancestorsOf");
+        test-nf-dependentsFrontier =
+          cell "dependentsFrontier" "prune is a int, not a function returning a bool"
+            (nf "dependentsFrontier");
+        test-nf-expandPreorder-key =
+          cell "expandPreorder" "key is a int, not a function returning a node id (a string) or null"
+            (nf "expandPreorder-key");
+        test-nf-fixpoint-refusal = cell "fixpoint" "refusal is a int, not a function returning a string" (
+          nf "fixpoint-refusal"
+        );
+        test-nf-fixpoint-step = cell "fixpoint" "step is a int, not a function returning an edge map" (
+          nf "fixpoint-step"
+        );
+        test-nf-foldPreorder-expand =
+          cell "foldPreorder" "expand is a int, not a function returning { acc; children ? [ ]; }"
+            (nf "foldPreorder-expand");
+        test-nf-foldPreorder-key =
+          cell "foldPreorder" "key is a int, not a function returning a node id (a string) or null"
+            (nf "foldPreorder-key");
+        test-nf-foldReach-itemKey =
+          cell "foldReach" "itemKey is a int, not a function returning a string or null"
+            (nf "foldReach-itemKey");
+        test-nf-foldReach-project =
+          cell "foldReach" "project is a int, not a function returning a list of items"
+            (nf "foldReach-project");
+        test-nf-fromRegistry-parent =
+          cell "fromRegistry" "parent is a int, not a function returning a node id or null"
+            (nf "fromRegistry-parent");
+        test-nf-fromScan-project =
+          cell "fromScan" "project is a int, not a function returning a node id (a string)"
+            (nf "fromScan-project");
+        test-nf-fromScan-scan =
+          cell "fromScan" "scan is a int, not a function returning a list of references"
+            (nf "fromScan-scan");
+        test-nf-labeledFrom =
+          cell "labeledFrom" "perLabel.x is a int, not a function returning a list of node ids"
+            (nf "labeledFrom");
+        test-nf-materializeParents =
+          cell "materializeParents" "parent is a int, not a function returning a node id or null"
+            (nf "materializeParents");
+        test-nf-mkEndpointProjection-childBearing =
+          cell "mkEndpointProjection" "childBearing is a int, not a function returning a bool"
+            (nf "mkEndpointProjection-childBearing");
+        test-nf-mkEndpointProjection-isNode =
+          cell "mkEndpointProjection" "isNode is a int, not a function returning a bool"
+            (nf "mkEndpointProjection-isNode");
+        test-nf-mkEndpointProjection-structuralAttributesOf =
+          cell "mkEndpointProjection"
+            "structuralAttributesOf is a int, not a function returning a set of structural attributes"
+            (nf "mkEndpointProjection-structuralAttributesOf");
+        test-nf-mkNodeRef = cell "mkNodeRef" "isRegistered is a int, not a function returning a bool" (
+          nf "mkNodeRef"
+        );
+        test-nf-mkProjectionFindings-childBearing =
+          cell "mkProjectionFindings" "childBearing is a int, not a function returning a bool"
+            (nf "mkProjectionFindings-childBearing");
+        test-nf-mkProjectionFindings-isNode =
+          cell "mkProjectionFindings" "isNode is a int, not a function returning a bool"
+            (nf "mkProjectionFindings-isNode");
+        test-nf-mkProjectionFindings-structuralAttributesOf =
+          cell "mkProjectionFindings"
+            "structuralAttributesOf is a int, not a function returning a set of structural attributes"
+            (nf "mkProjectionFindings-structuralAttributesOf");
+        test-nf-nodeRefFindings =
+          cell "nodeRefFindings" "isRegistered is a int, not a function returning a bool"
+            (nf "nodeRefFindings");
+        test-nf-reachableVia =
+          cell "reachableVia" "succ is a int, not a function returning a list of { key = <node id>; }"
+            (nf "reachableVia");
+        test-nf-reachableWhere = cell "reachableWhere" "pred is a int, not a function returning a bool" (
+          nf "reachableWhere"
+        );
+        test-nf-seededFixpoint =
+          cell "seededFixpoint" "step is a int, not a function returning an edge map"
+            (nf "seededFixpoint");
+        test-nf-select = cell "select" "pred is a int, not a function returning a bool" (nf "select");
+        test-nf-selectEdges = cell "selectEdges" "pred is a int, not a function returning a bool" (
+          nf "selectEdges"
+        );
+        test-nf-selfReachableVia =
+          cell "selfReachableVia" "succ is a int, not a function returning a list of { key = <node id>; }"
+            (nf "selfReachableVia");
+        test-nf-topoOrder-lessThan = cell "topoOrder" "lessThan is a int, not a function returning a bool" (
+          nf "topoOrder-lessThan"
+        );
+        test-pass-expandPreorder-emit =
+          cell "expandPreorder"
+            "emit is a int, not a function returning a function from a payload to a witness"
+            (F.passThrough.expandPreorder-emit 1);
+        test-pass-expandPreorder-resolve =
+          cell "expandPreorder" "resolve is a int, not a function returning a payload"
+            (F.passThrough.expandPreorder-resolve 1);
+        test-pass-queryFold-combine =
+          cell "queryFold"
+            "combine is a int, not a function returning a function from a value to the next accumulator"
+            (F.passThrough.queryFold-combine 1);
+        test-pass-queryFold-valueOf =
+          cell "queryFold" "valueOf is a int, not a function returning a value"
+            (F.passThrough.queryFold-valueOf 1);
+        test-pass-select-nodeData =
+          cell "select" "nodeData is a int, not a function returning a node's data"
+            (F.passThrough.select-nodeData 1);
+        test-res-ancestorsOf =
+          cell "ancestorsOf" "parent \"c\" returned a set, not a node id (a string) or null"
+            (res "ancestorsOf");
+        test-res-dependentsFrontier = cell "dependentsFrontier" "prune \"c\" returned a int, not a bool" (
+          res "dependentsFrontier"
+        );
+        test-res-expandPreorder-key =
+          cell "expandPreorder" "key on a frame returned a set, not a node id (a string) or null"
+            (res "expandPreorder-key");
+        test-res-fixpoint-refusal = cell "fixpoint" "refusal on the cap 0 returned a int, not a string" (
+          res "fixpoint-refusal"
+        );
+        test-res-fixpoint-step =
+          cell "fixpoint" "step at iteration 0 returned a int, not an edge map { from = [ to … ]; }"
+            (res "fixpoint-step");
+        test-res-foldPreorder-expand =
+          cell "foldPreorder" "expand on a frame returned a int, not { acc; children ? [ ]; }"
+            (res "foldPreorder-expand");
+        test-res-foldPreorder-key =
+          cell "foldPreorder" "key on a frame returned a set, not a node id (a string) or null"
+            (res "foldPreorder-key");
+        test-res-foldReach-itemKey =
+          cell "foldReach" "itemKey on an item returned a set, not a string or null"
+            (res "foldReach-itemKey");
+        test-res-foldReach-project =
+          cell "foldReach" "project on an edge returned a int, not a list of items"
+            (res "foldReach-project");
+        test-res-fromScan-project =
+          cell "fromScan" "project on a reference of the item \"a\" returned a set, not a node id (a string)"
+            (res "fromScan-project");
+        test-res-fromScan-scan =
+          cell "fromScan" "scan on the item \"a\" returned a int, not a list of references"
+            (res "fromScan-scan");
+        test-res-labeledFrom =
+          cell "labeledFrom" "perLabel.x \"a\" returned a int, not a list of node ids"
+            (res "labeledFrom");
+        test-res-materializeParents =
+          cell "materializeParents" "parent \"a\" returned a set, not a node id or null"
+            (res "materializeParents");
+        test-res-mkEndpointProjection-childBearing =
+          cell "mkEndpointProjection" "childBearing \"deps\" returned a int, not a bool"
+            (res "mkEndpointProjection-childBearing");
+        test-res-mkEndpointProjection-isNode =
+          cell "mkEndpointProjection" "isNode \"b\" returned a int, not a bool"
+            (res "mkEndpointProjection-isNode");
+        test-res-mkEndpointProjection-structuralAttributesOf =
+          cell "mkEndpointProjection"
+            "structuralAttributesOf \"a\" returned a int, not a set of structural attributes"
+            (res "mkEndpointProjection-structuralAttributesOf");
+        test-res-mkNodeRef = cell "mkNodeRef" "isRegistered \"a\" returned a int, not a bool" (
+          res "mkNodeRef"
+        );
+        test-res-mkProjectionFindings-childBearing =
+          cell "mkProjectionFindings" "childBearing \"deps\" returned a int, not a bool"
+            (res "mkProjectionFindings-childBearing");
+        test-res-mkProjectionFindings-structuralAttributesOf =
+          cell "mkProjectionFindings"
+            "structuralAttributesOf \"a\" returned a int, not a set of structural attributes"
+            (res "mkProjectionFindings-structuralAttributesOf");
+        test-res-reachableVia =
+          cell "reachableVia" "succ \"a\" returned a int, not a list of { key = <node id>; }"
+            (res "reachableVia");
+        test-res-reachableWhere = cell "reachableWhere" "pred \"b\" returned a int, not a bool" (
+          res "reachableWhere"
+        );
+        test-res-seededFixpoint =
+          cell "seededFixpoint" "step at iteration 0 returned a int, not an edge map { from = [ to … ]; }"
+            (res "seededFixpoint");
+        test-res-select = cell "select" "pred on the node \"a\" returned a int, not a bool" (res "select");
+        test-res-selectEdges =
+          cell "selectEdges" "pred on the edge \"a\" -> \"b\" returned a int, not a bool"
+            (res "selectEdges");
+        test-res-selfReachableVia =
+          cell "selfReachableVia" "succ \"a\" returned a int, not a list of { key = <node id>; }"
+            (res "selfReachableVia");
+        test-res-topoOrder-lessThan =
+          cell "topoOrder" "lessThan on the keys \"b\" and \"a\" returned a int, not a bool"
+            (res "topoOrder-lessThan");
+        test-shape-ancestorsOf-scalar =
+          cell "ancestorsOf" "parent \"c\" returned a int, not a node id (a string) or null"
+            (F.shapes.ancestorsOf-scalar);
+        test-shape-dependentsFrontier-operator =
+          cell "dependentsFrontier" "prune \"b\" returned a int, not a bool"
+            (F.shapes.dependentsFrontier-operator);
+        test-shape-fixpoint-step-empty-seed =
+          cell "fixpoint" "step at iteration 0 returned a int, not an edge map { from = [ to … ]; }"
+            (F.shapes.fixpoint-step-empty-seed);
+        test-shape-fixpoint-step-entry =
+          cell "fixpoint"
+            "step at iteration 0 returned an edge map whose entry \"a\" is a int, not a list of node ids"
+            (F.shapes.fixpoint-step-entry);
+        test-shape-foldPreorder-expand-children =
+          cell "foldPreorder" "expand on a frame returned a int, not children as a list"
+            (F.shapes.foldPreorder-expand-children);
+        test-shape-foldPreorder-expand-no-acc =
+          cell "foldPreorder" "expand on a frame returned a set, not { acc; children ? [ ]; }"
+            (F.shapes.foldPreorder-expand-no-acc);
+        test-shape-foldPreorder-key-scalar =
+          cell "foldPreorder" "key on a frame returned a int, not a node id (a string) or null"
+            (F.shapes.foldPreorder-key-scalar);
+        test-shape-mkEndpointProjection-child-value =
+          cell "mkEndpointProjection"
+            "structuralAttributesOf \"a\", at its child-bearing attribute \"kids\", returned a int, not a set of children"
+            (F.shapes.mkEndpointProjection-child-value);
+        test-shape-reachableVia-element-int =
+          cell "reachableVia" "succ \"a\" returned a list holding an element that is not { key = <node id>; }"
+            (F.shapes.reachableVia-element-int);
+        test-shape-reachableVia-element-no-key =
+          cell "reachableVia" "succ \"a\" returned a list holding an element that is not { key = <node id>; }"
+            (F.shapes.reachableVia-element-no-key);
+        test-shape-reachableVia-operator =
+          cell "reachableVia" "succ \"b\" returned a int, not a list of { key = <node id>; }"
+            (F.shapes.reachableVia-operator);
+        test-shape-reachableVia-operator-element =
+          cell "reachableVia" "succ \"b\" returned a list holding an element that is not { key = <node id>; }"
+            (F.shapes.reachableVia-operator-element);
+        test-shape-seededFixpoint-entry =
+          cell "seededFixpoint"
+            "step at iteration 0 returned an edge map whose entry \"a\" is a int, not a list of node ids"
+            (F.shapes.seededFixpoint-entry);
+        test-shape-seededFixpoint-support =
+          cell "seededFixpoint"
+            "step on the converged accumulator returned a int, not an edge map { from = [ to … ]; }"
+            (F.shapes.seededFixpoint-support);
+        # FALSIFIERS, not doors. UNANCHORED, because the text is Nix's: the day a door covers one of
+        # these inputs, its cell reds and says so.
+        # A pattern formal is a function, and what it does with its argument is not decidable
+        # before applying it (den-hoag-g8lo).
+        test-a-pattern-formal-pred-aborts-in-the-callers-destructuring = {
+          expr = G.select F.g ({ x }: true);
+          expectedError = {
+            type = "TypeError";
+            msg = "called without required argument 'x'";
+          };
+        };
+        # A functor passes `callable` (gen-view's twin) and returns a non-function when applied.
+        test-a-functor-returning-a-non-function-aborts-on-application = {
+          expr = G.select F.g { __functor = _self: 1; };
+          expectedError = {
+            type = "TypeError";
+            msg = "attempt to call something which is not a function but an integer";
+          };
+        };
+        # `succ`'s element is checked for `{ key; }`; the TYPE of `key` is den-hoag-3w9e7's.
+        test-a-non-string-succ-key-is-not-refused-by-name = {
+          expr = G.reachableVia (_: [ { key = { }; } ]) "a";
+          expectedError = {
+            type = "EvalError";
+            msg = "cannot compare a set with a set";
+          };
+        };
       };
   };
 }

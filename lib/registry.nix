@@ -1,6 +1,12 @@
 { prelude }:
 let
-  inherit (import ./key.nix) attrKey callable;
+  inherit (import ./key.nix)
+    attrKey
+    badResult
+    callable
+    callableAt
+    renderId
+    ;
   self = {
     fromRegistry =
       {
@@ -20,8 +26,33 @@ let
       in
       {
         inherit nodes;
-        edges = id: e id (registry.${attrKey id} or { });
-        parent = id: parent id (registry.${attrKey id} or { });
+        # both are applied to the id and then to its entry, so the first application must return a
+        # function; its final result is the downstream surface's to read
+        edges =
+          id:
+          let
+            h = e id;
+          in
+          if builtins.isFunction h || callable h then
+            h (registry.${attrKey id} or { })
+          else
+            badResult "fromRegistry" "edges" (renderId id)
+              "a function from a registry entry to a list of node ids"
+              h;
+        parent =
+          let
+            pa = callableAt "fromRegistry" "parent" "a node id or null" parent;
+          in
+          id:
+          let
+            h = pa id;
+          in
+          if builtins.isFunction h || callable h then
+            h (registry.${attrKey id} or { })
+          else
+            badResult "fromRegistry" "parent" (renderId id)
+              "a function from a registry entry to a node id or null"
+              h;
         nodeData = id: registry.${attrKey id} or { };
       };
 
@@ -130,14 +161,35 @@ let
         parents ? [ ],
       }:
       let
+        sc = callableAt "fromScan" "scan" "a list of references" scan;
+        pj = callableAt "fromScan" "project" "a node id (a string)" project;
         derivedEdges = builtins.concatMap (
           item:
-          map (r: {
-            from = item.id;
-            to = project r;
-            inherit item;
-            ref = r;
-          }) (scan item.value)
+          map
+            (r: {
+              from = item.id;
+              to =
+                let
+                  t = pj r;
+                in
+                if builtins.isString t then
+                  t
+                else
+                  badResult "fromScan" "project" "on a reference of the item ${renderId item.id}"
+                    "a node id (a string)"
+                    t;
+              inherit item;
+              ref = r;
+            })
+            (
+              let
+                xs = sc item.value;
+              in
+              if builtins.isList xs then
+                xs
+              else
+                badResult "fromScan" "scan" "on the item ${renderId item.id}" "a list of references" xs
+            )
         ) items;
       in
       self.mkGraph {

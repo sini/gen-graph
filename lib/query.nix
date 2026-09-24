@@ -15,7 +15,9 @@
 let
   inherit (import ./key.nix)
     attrKey
+    badResult
     callable
+    callableAt
     identifier
     nodeKey
     renderId
@@ -45,13 +47,27 @@ let
       perLabel,
       nodes,
     }:
+    let
+      doors = builtins.mapAttrs (
+        label: f: callableAt "labeledFrom" "perLabel.${label}" "a list of node ids" f
+      ) perLabel;
+    in
     {
       inherit nodes;
       labeledEdges =
         id:
-        builtins.concatMap (label: map (target: { inherit label target; }) (perLabel.${label} id)) (
-          builtins.attrNames perLabel
-        );
+        builtins.concatMap (
+          label:
+          map (target: { inherit label target; }) (
+            let
+              ts = doors.${label} id;
+            in
+            if builtins.isList ts then
+              ts
+            else
+              badResult "labeledFrom" "perLabel.${label}" (renderId id) "a list of node ids" ts
+          )
+        ) (builtins.attrNames perLabel);
     };
 
   # ── THE ACCESSOR'S RESULT IS A CLAIM, CHECKED WHERE IT IS READ ──
@@ -122,15 +138,6 @@ let
   # these bindings run only on the refusal path: a result check runs once per application, and
   # a call costs an Env (`keyedAttrs`, `key.nix`). A pattern formal is callable and still aborts
   # on its argument; that input is a falsifier cell, as `labeledEdges`'s is.
-  callableAt =
-    surface: name: want: f:
-    if callable f then
-      f
-    else
-      throw "gen-graph.${surface}: ${name} is a ${builtins.typeOf f}, not a function returning ${want}";
-  badResult =
-    surface: name: subject: want: v:
-    throw "gen-graph.${surface}: ${name} ${subject} returned a ${builtins.typeOf v}, not ${want}";
 
   # ── THE ONE PUBLISHED PROJECTION ──
   # `forgetLabels : labeledGraph → { edges; nodes; }` is the single sanctioned bridge from
@@ -972,17 +979,37 @@ let
       valueOf ? (id: id),
       ...
     }:
+    let
+      # applied, never read: lazy doors (den-hoag-hekcx), and `combine`'s first application must
+      # return a function
+      cb = callableAt "queryFold" "combine" "a function from a value to the next accumulator" combine;
+      vo = callableAt "queryFold" "valueOf" "a value" valueOf;
+    in
     builtins.seq (if args ? from then identifier "queryFold" args.from else null) (
-      builtins.foldl' (acc: id: combine acc (valueOf id)) empty (
-        queryAll (
-          builtins.removeAttrs args [
-            "empty"
-            "combine"
-            "valueOf"
-            "mode" # `query { mode = "fixpoint"; … }` dispatches here — strip the alias
-          ]
+      builtins.foldl'
+        (
+          acc: id:
+          let
+            h = cb acc;
+          in
+          if builtins.isFunction h || callable h then
+            h (vo id)
+          else
+            badResult "queryFold" "combine" "on the accumulator"
+              "a function from a value to the next accumulator"
+              h
         )
-      )
+        empty
+        (
+          queryAll (
+            builtins.removeAttrs args [
+              "empty"
+              "combine"
+              "valueOf"
+              "mode" # `query { mode = "fixpoint"; … }` dispatches here — strip the alias
+            ]
+          )
+        )
     );
 
   # ── THE complete mode dispatch (final form) ────────────────────────────────

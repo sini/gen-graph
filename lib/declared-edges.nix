@@ -101,7 +101,13 @@ let
     name: i: v:
     "gen-graph.mkDeclaredEdges: key '${name}' element ${toString i}: got ${builtins.typeOf v}, which was not built by mkNodeRef";
 
-  inherit (import ./key.nix) attrKey notAnIdentifier;
+  inherit (import ./key.nix)
+    attrKey
+    badResult
+    callableAt
+    notAnIdentifier
+    renderId
+    ;
 
   _indices = xs: builtins.genList (i: i) (builtins.length xs);
 
@@ -116,10 +122,16 @@ let
     isRegistered: id:
     if !(builtins.isString id) then
       [ (notAnIdentifier "mkNodeRef" id) ]
-    else if !(isRegistered id) then
-      [ (_notRegistered id) ]
     else
-      [ ];
+      let
+        r = isRegistered id;
+      in
+      if !builtins.isBool r then
+        badResult "mkNodeRef" "isRegistered" (renderId id) "a bool" r
+      else if !r then
+        [ (_notRegistered id) ]
+      else
+        [ ];
 
   # ONE conjunct per declared form, each checked to REFERENCE DEPTH. Every violating position reports
   # rather than only the first, because a validator that stops at one hides the rest of the same
@@ -212,9 +224,12 @@ in
   # in step, and the failure when they stop agreeing is silent.
   mkNodeRef =
     { isRegistered }:
+    let
+      ir = callableAt "mkNodeRef" "isRegistered" "a bool" isRegistered;
+    in
     id:
     let
-      findings = _nodeRefFindings isRegistered id;
+      findings = _nodeRefFindings ir id;
     in
     if findings == [ ] then
       {
@@ -226,7 +241,12 @@ in
 
   # nodeRefFindings : { isRegistered } -> id -> [string] — the same contract as a VALUE, so a caller
   # or an oracle reads the message the constructor would throw.
-  nodeRefFindings = { isRegistered }: id: _nodeRefFindings isRegistered id;
+  nodeRefFindings =
+    { isRegistered }:
+    let
+      ir = callableAt "nodeRefFindings" "isRegistered" "a bool" isRegistered;
+    in
+    id: _nodeRefFindings ir id;
 
   # mkSpawnedNodeRef : id -> <nodeRef>   (ROUTE 2, substrate-minted at spawn time)
   #

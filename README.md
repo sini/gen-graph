@@ -50,6 +50,8 @@ The four accessor fields:
 
 Functions that only need traversal destructure `{ edges, ... }`. Functions that need global analysis also take `nodes`. Functions that need parent walks take `parent`. No function requires all four.
 
+Every caller-supplied function is checked where the library applies it. A value that is not callable, a result of a type the surface does not read, and a curried function whose first application does not return a function are each a refusal by name (`gen-graph.<surface>: …`) that `tryEval` catches, never an interpreter abort or a plausible wrong answer. The check is lazy: a function a call never applies is never refused. Two shapes are recorded rather than refused: a pattern-formal function (`{ x }: …`) aborts in the caller's own destructuring, and a `__functor` that returns a non-function aborts when applied.
+
 ## Gen Ecosystem
 
 | Library                                              | Role                                                                                                                   |
@@ -683,7 +685,7 @@ materializeParents : { parent, nodes, ... } → { id → id }
 
 **`materialize g`** — builds an edge map `{ nodeId = [targetId ...]; }` for all nodes. Deduplicates each target list via `lib.unique`.
 
-**`materializeParents g`** — builds `{ nodeId = parentId; }` for nodes where `parent id != null`.
+**`materializeParents g`** — builds `{ nodeId = parentId; }` for nodes where `parent id != null`. A `parent` result that is a set, a list or a function is refused by name; a scalar is carried as given.
 
 ### Fixpoint
 

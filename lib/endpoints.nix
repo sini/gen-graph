@@ -58,6 +58,7 @@
 # constrains correctness (ADR-0032 ruling 2).
 { prelude }:
 let
+  inherit (import ./key.nix) badResult callableAt renderId;
   # THE THREE REFUSALS, WRITTEN ONCE AND SHARED BY BOTH SURFACES BELOW. The validator RETURNS these
   # and the projection THROWS the first of them, so the two surfaces cannot come to state different
   # contracts: the throw IS the first finding, never a second copy of the same three tests.
@@ -93,17 +94,34 @@ let
         in
         if !(builtins.isString e) then
           [ (_notAnId id name i e) ]
-        else if !(isNode e) then
-          [ (_notANode id name e) ]
         else
-          [ ]
+          let
+            b = isNode e;
+          in
+          if !builtins.isBool b then
+            badResult "mkEndpointProjection" "isNode" (renderId e) "a bool" b
+          else if !b then
+            [ (_notANode id name e) ]
+          else
+            [ ]
       ) (builtins.genList (i: i) (builtins.length value));
 
   # The contract's DOMAIN: the non-child-bearing structural names, and nothing else. The gate is
   # part of the definition rather than an optimisation, and it reads the injected predicate rather
   # than any literal name — a gate written against a literal would admit the child-bearing family
   # whose name it failed to guess.
-  _governed = childBearing: sa: builtins.filter (name: !(childBearing name)) (builtins.attrNames sa);
+  _governed =
+    childBearing: sa:
+    builtins.filter (
+      name:
+      let
+        b = childBearing name;
+      in
+      if builtins.isBool b then
+        !b
+      else
+        badResult "mkProjectionFindings" "childBearing" (renderId name) "a bool" b
+    ) (builtins.attrNames sa);
 in
 {
   # mkEndpointProjection : { childBearing, isNode } -> (id -> structuralRecord) -> id -> [id]
@@ -112,18 +130,48 @@ in
   # ids, and emits a SET.
   mkEndpointProjection =
     { childBearing, isNode }:
-    structuralAttributesOf: id:
+    structuralAttributesOf:
     let
-      sa = structuralAttributesOf id;
+      who = "mkEndpointProjection";
+      cb = callableAt who "childBearing" "a bool" childBearing;
+      isN = callableAt who "isNode" "a bool" isNode;
+      saF =
+        callableAt who "structuralAttributesOf" "a set of structural attributes"
+          structuralAttributesOf;
+    in
+    id:
+    let
+      sa =
+        let
+          s = saF id;
+        in
+        if builtins.isAttrs s then
+          s
+        else
+          badResult who "structuralAttributesOf" (renderId id) "a set of structural attributes" s;
       endpointsOf =
         name:
-        if childBearing name then
-          builtins.attrNames sa.${name}
+        let
+          b = cb name;
+          v = sa.${name};
+        in
+        if !builtins.isBool b then
+          badResult who "childBearing" (renderId name) "a bool" b
+        else if b then
+          (
+            if builtins.isAttrs v then
+              builtins.attrNames v
+            else
+              badResult who "structuralAttributesOf"
+                "${renderId id}, at its child-bearing attribute ${renderId name},"
+                "a set of children"
+                v
+          )
         else
           let
-            findings = _family2Findings isNode id name sa.${name};
+            findings = _family2Findings isN id name v;
           in
-          if findings == [ ] then sa.${name} else throw (builtins.head findings);
+          if findings == [ ] then v else throw (builtins.head findings);
     in
     prelude.unique (builtins.concatMap endpointsOf (builtins.attrNames sa));
 
@@ -136,9 +184,25 @@ in
   # proves only that something refused, never that it refused for the reason under test.
   mkProjectionFindings =
     { childBearing, isNode }:
-    structuralAttributesOf: id:
+    structuralAttributesOf:
     let
-      sa = structuralAttributesOf id;
+      who = "mkProjectionFindings";
+      cb = callableAt who "childBearing" "a bool" childBearing;
+      isN = callableAt who "isNode" "a bool" isNode;
+      saF =
+        callableAt who "structuralAttributesOf" "a set of structural attributes"
+          structuralAttributesOf;
     in
-    builtins.concatMap (name: _family2Findings isNode id name sa.${name}) (_governed childBearing sa);
+    id:
+    let
+      sa =
+        let
+          s = saF id;
+        in
+        if builtins.isAttrs s then
+          s
+        else
+          badResult who "structuralAttributesOf" (renderId id) "a set of structural attributes" s;
+    in
+    builtins.concatMap (name: _family2Findings isN id name sa.${name}) (_governed cb sa);
 }

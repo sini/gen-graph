@@ -2,6 +2,10 @@
 let
   inherit (import ./key.nix)
     attrKey
+    badResult
+    callable
+    callableAt
+    renderId
     edgesAccessor
     keyedAttrs
     notEdgeList
@@ -23,11 +27,21 @@ let
 
   materializeParents =
     { parent, nodes, ... }:
+    let
+      pa = callableAt "materializeParents" "parent" "a node id or null" parent;
+    in
     prelude.listToAttrs (
       builtins.filter (e: e.value != null) (
         map (id: {
           name = attrKey id;
-          value = parent id;
+          value =
+            let
+              p = pa id;
+            in
+            if builtins.isAttrs p || builtins.isList p || builtins.isFunction p then
+              badResult "materializeParents" "parent" (renderId id) "a node id or null" p
+            else
+              p;
         }) nodes
       )
     );
@@ -79,8 +93,27 @@ let
 
   selectEdges =
     pred: edgeMap:
+    let
+      p = callableAt "selectEdges" "pred" "a bool" pred;
+    in
     prelude.filterAttrs (_: targets: targets != [ ]) (
-      prelude.mapAttrs (from: targets: builtins.filter (to: pred from to) targets) edgeMap
+      prelude.mapAttrs (
+        from: targets:
+        builtins.filter (
+          to:
+          let
+            h = p from;
+            b = h to;
+          in
+          if !(builtins.isFunction h || callable h) then
+            badResult "selectEdges" "pred" "on the source ${renderId from}" "a function from a target to a bool"
+              h
+          else if builtins.isBool b then
+            b
+          else
+            badResult "selectEdges" "pred" "on the edge ${renderId from} -> ${renderId to}" "a bool" b
+        ) targets
+      ) edgeMap
     );
 in
 {

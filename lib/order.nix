@@ -82,6 +82,10 @@
 let
   inherit (import ./key.nix)
     attrKey
+    badResult
+    callable
+    callableAt
+    renderId
     edgesAccessor
     keyedAttrs
     notEdgeList
@@ -159,9 +163,16 @@ let
       lessThan ? builtins.lessThan,
     }:
     let
+      kf = callableAt "topoOrder" "keyOf" "a string" keyOf;
+      lt = callableAt "topoOrder" "lessThan" "a bool" lessThan;
+      notLessBool =
+        a: b: badResult "topoOrder" "lessThan" "on the keys ${renderId a} and ${renderId b}" "a bool";
+      # a comparator is applied one key at a time, so its first application must return a function
+      notLessFn =
+        a: badResult "topoOrder" "lessThan" "on the key ${renderId a}" "a function from a key to a bool";
       keyed = prelude.imap0 (i: node: {
         inherit i node;
-        key = keyOf node;
+        key = kf node;
       }) nodes;
       keys = map (k: k.key) keyed;
 
@@ -180,7 +191,7 @@ let
           node = nodeOf.${attrKey k};
           es = e node;
         in
-        if builtins.isList es then map keyOf es else throw (notEdgeList "topoOrder" node es)
+        if builtins.isList es then map kf es else throw (notEdgeList "topoOrder" node es)
       );
 
       # ── THE CERTIFICATE-GATED ARM ──
@@ -230,7 +241,18 @@ let
       cand = builtins.sort (
         a: b:
         if degRaw.${attrKey a} == degRaw.${attrKey b} then
-          lessThan a b
+          (
+            let
+              h = lt a;
+              r = h b;
+            in
+            if !(builtins.isFunction h || callable h) then
+              notLessFn a h
+            else if builtins.isBool r then
+              r
+            else
+              notLessBool a b r
+          )
         else
           degRaw.${attrKey a} < degRaw.${attrKey b}
       ) keys;
@@ -329,7 +351,20 @@ let
           b
         else if b == null then
           a
-        else if lessThan b.k a.k then
+        else if
+          (
+            let
+              h = lt b.k;
+              r = h a.k;
+            in
+            if !(builtins.isFunction h || callable h) then
+              notLessFn b.k h
+            else if builtins.isBool r then
+              r
+            else
+              notLessBool b.k a.k r
+          )
+        then
           mergeH b a
         else
           let

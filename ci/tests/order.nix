@@ -1473,7 +1473,10 @@ in
           else
             import
               (builtins.toFile "order-heap.nix" (
-                "{ lessThan }:\nlet\n" + region + "\nin\n{ inherit rankOf mergeH singleton insertAll; }\n"
+                # the region reads the door-checked comparator `lt` and its refusals (den-hoag-hekcx)
+                "{ lessThan }:\nlet\nlt = lessThan;\ncallable = _: false;\nnotLessFn = _: _: throw \"not a function\";\nnotLessBool = _: _: _: throw \"not a bool\";\n"
+                + region
+                + "\nin\n{ inherit rankOf mergeH singleton insertAll; }\n"
               ))
               {
                 lessThan = builtins.lessThan;

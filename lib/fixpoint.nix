@@ -1,6 +1,26 @@
 { prelude }:
 let
-  inherit (import ./key.nix) attrKey keyedAttrs;
+  inherit (import ./key.nix)
+    attrKey
+    badResult
+    callable
+    callableAt
+    keyedAttrs
+    ;
+
+  # An edge map is `{ from = [ to … ]; }`: a set whose values are lists. The value test is a primop
+  # predicate, so it costs no lambda call; the key is found only on the refusal path.
+  edgeMapOr =
+    who: subject: m:
+    if !builtins.isAttrs m then
+      badResult who "step" subject "an edge map { from = [ to … ]; }" m
+    else if builtins.all builtins.isList (builtins.attrValues m) then
+      m
+    else
+      let
+        k = builtins.head (builtins.filter (k: !builtins.isList m.${k}) (builtins.attrNames m));
+      in
+      throw "gen-graph.${who}: step ${subject} returned an edge map whose entry ${builtins.toJSON k} is a ${builtins.typeOf m.${k}}, not a list of node ids";
   edgeMaps = import ./edge-maps.nix { inherit prelude; };
 
   countEdges =
@@ -37,6 +57,8 @@ let
       refusal ? capReached,
     }:
     let
+      st = callableAt "fixpoint" "step" "an edge map" step;
+      rf = callableAt "fixpoint" "refusal" "a string" refusal;
       # ── THE TERMINATION GUARD TESTS THE SUBSET ORDER OVER EDGE CONTENT ──
       #
       # The semilattice this fixpoint is computed in orders edge maps by INCLUSION OF
@@ -74,10 +96,18 @@ let
       go =
         iter: current:
         if iter >= maxIter then
-          throw (refusal maxIter)
+          throw (
+            let
+              m = rf maxIter;
+            in
+            if builtins.isString m then
+              m
+            else
+              badResult "fixpoint" "refusal" "on the cap ${toString maxIter}" "a string" m
+          )
         else
           let
-            next = step current;
+            next = edgeMapOr "fixpoint" "at iteration ${toString iter}" (st current);
             withdrawn = edgeMaps.differenceEdges current next;
             withdrawnPairs = builtins.concatMap (
               from: map (to: "${from} → ${to}") (builtins.sort builtins.lessThan withdrawn.${from})
@@ -194,12 +224,27 @@ let
       maxIter ? 1000,
     }:
     let
+      st = callableAt "seededFixpoint" "step" "an edge map" step;
       base = edgeMaps.unionEdges seed frontier;
 
       supported =
         acc:
         let
-          unsupported = edgeMaps.differenceEdges acc (edgeMaps.unionEdges base (step acc acc));
+          unsupported = edgeMaps.differenceEdges acc (
+            edgeMaps.unionEdges base (
+              edgeMapOr "seededFixpoint" "on the converged accumulator" (
+                let
+                  h = st acc;
+                in
+                if builtins.isFunction h || callable h then
+                  h acc
+                else
+                  badResult "seededFixpoint" "step" "on the converged accumulator"
+                    "a function from the accumulator to an edge map"
+                    h
+              )
+            )
+          );
           pairs = builtins.concatMap (
             from: map (to: "${from} → ${to}") (builtins.sort builtins.lessThan unsupported.${from})
           ) (builtins.attrNames unsupported);
@@ -217,7 +262,17 @@ let
           acc
         else
           let
-            produced = step dF acc;
+            produced = edgeMapOr "seededFixpoint" "at iteration ${toString iter}" (
+              let
+                h = st dF;
+              in
+              if builtins.isFunction h || callable h then
+                h acc
+              else
+                badResult "seededFixpoint" "step" "at iteration ${toString iter}"
+                  "a function from the accumulator to an edge map"
+                  h
+            );
             acc' = edgeMaps.unionEdges acc produced;
             dF' = edgeMaps.differenceEdges produced acc;
           in
