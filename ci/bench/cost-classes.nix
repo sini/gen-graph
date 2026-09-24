@@ -24,6 +24,9 @@
 #      node) and `fbWork` (one forward–backward pass per component over a `foldl'`
 #      accumulator). They are complementary rather than ranked, so the pair is the
 #      measurement: neither figure means anything without the other's on the same shape.
+#      `lowlink` (Tarjan's single DFS, iterated over a persistent 8-ary trie) is the third
+#      arm, Θ((n + m) · log₈ n) on every shape; read it on calls AND `nrOpUpdateValuesCopied`
+#      as well as the three heap axes, because calls cannot see a `//` copy.
 #   2b. the PARTITION CELL'S TWO TERMS — every arm above spends one cost FINDING the
 #      partition and a second one FINISHING it into the record they all return, and a single
 #      column cannot say which of the two moved. The finisher is the term every arm shares
@@ -98,7 +101,8 @@
 #   arm   = cycles | condensation | dependents | transitiveClosure | topoOrderKahn
 #         | transitiveReduction | topoOrder | coneRank | coneRankShipped | floor
 #         | degreeProfile           (the carve-out ladder's degree witness)
-#         | fbNode | fbWork | condensationClosure | cyclePaths | dependentsOf
+#         | fbNode | fbWork | lowlink | condensationClosure | cyclePaths | dependentsOf
+#         | cyclicEdgesWhere | cyclicEdgesWhereOne | cyclicEdgesWhereNone   (`p` all / one / none)
 #         | dependentsFrontier | dependentsFrontierPruned
 #         | cyclesUnhoisted | fbNodeUnhoisted | cyclePathsUnhoisted
 #         | fbWorkHoisted | dependentsOfHoisted
@@ -109,7 +113,7 @@
 #         | closureNaive            (the round-schedule pair with `transitiveClosure`)
 #         | uniqueStrings | uniqueInts   (the dedup at a fixed L; `n` is L, not a node count)
 #         | sentinel | sentinelPeerOrder | sentinelPeerClosure | sentinelVerdict
-#   shape = complete | cycle | cyclechord | chain | wide | fleet | discrim | total | totalrev
+#   shape = complete | cycle | cyclechord | rand | chain | wide | fleet | discrim | total | totalrev
 #         | deepwide | path | inStar | inTree
 #   n     = node count (use doublings, e.g. 50/100/200, so a ratio reads as 2^exp)
 #
@@ -628,6 +632,22 @@ let
               else
                 [ next ];
           };
+      # Out-degree 2 to pseudo-random targets (a fixed linear congruence), the third shape the
+      # `lowlink` cost row is read on beside `cycle` and `chain`. Its component structure varies
+      # with n — one component at 1,000, 918 at 2,000 — so read the `len` control with it.
+      rand = {
+        nodes = ringNodes;
+        edges =
+          id:
+          let
+            i = idxOf.${id};
+            mod = a: b: a - (a / b) * b;
+          in
+          map (j: pad (mod (mod (i * 1103515245 + j * 2654435761 + 12345) 2147483648) n)) [
+            1
+            2
+          ];
+      };
       # ── THE CARVE-OUT LADDER, three of whose four rungs are here ──
       # `path`, `inStar` and `inTree` are the SAME construction as `cycle` and `cyclechord`
       # above — `ringNodes` plus one `idxOf` lookup and one `pad` per accessor call — and they
@@ -792,6 +812,21 @@ let
       midId = builtins.elemAt nodes (n / 2);
     in
     id: builtins.lessThan id midId;
+
+  # The fixture as a labelled graph for `cyclicEdgesWhere`: every edge is labelled "l" except
+  # the head node's first, labelled "hit", so `p = l: l == "hit"` accepts exactly one edge.
+  labeled = {
+    inherit nodes;
+    labeledEdges =
+      id:
+      let
+        es = edges id;
+      in
+      builtins.genList (k: {
+        label = if id == builtins.head nodes && k == 0 then "hit" else "l";
+        target = builtins.elemAt es k;
+      }) (builtins.length es);
+  };
 
   # ── THE HARNESS SENTINEL ──────────────────────────────────────────────────────────
   # A shared bench file is a MUTABLE INSTRUMENT. Adding one attribute to the dispatch
@@ -1180,6 +1215,18 @@ let
       (g.fbNode acc).sccs
     else if arm == "fbWork" then
       (g.fbWork acc).sccs
+    else if arm == "lowlink" then
+      (g.lowlink acc).sccs
+    # ── `cyclicEdgesWhere`, THROUGH THE ARM IT BINDS, AT THREE DENSITIES OF `p` ── `p` accepting
+    # every edge forces every tag; one edge forces one tag, which on `lowlink` is the whole
+    # partition; none forces no tag at all. The `len` control is the witness count: n on `cycle`
+    # under all, 1 under one, 0 under none.
+    else if arm == "cyclicEdgesWhere" then
+      g.cyclicEdgesWhere labeled (_: true)
+    else if arm == "cyclicEdgesWhereOne" then
+      g.cyclicEdgesWhere labeled (l: l == "hit")
+    else if arm == "cyclicEdgesWhereNone" then
+      g.cyclicEdgesWhere labeled (_: false)
     # ── THE DECOMPOSITION, AND ITS TWO HALVES ARE READ TOGETHER ── `fbNodeTags` forces the
     # tag map ALONE, through the field `condensationOf` publishes it as, so `fbNode` minus this
     # arm is the finisher. `condensationOfDiscrete` is the finisher standing alone on an acyclic

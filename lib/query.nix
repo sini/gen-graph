@@ -352,25 +352,32 @@ let
   # the answer is exactly the material for that message. The order is (from, label, to)
   # ascending so the answer is a function of the graph and not of accessor enumeration.
   #
-  # COST: Θ(Σ_v (|reach⁺ v| + |reach⁻ v|)) over the endpoints of the edges satisfying `p`, on
-  # top of one pass over the labelled edges. The partition arm is `fbNode`, whose tag for a node
-  # is one forward and one backward closure from that node (`partition.nix`, `nodeTags`); the
-  # tags are built lazily and the `&&` below short-circuits, so only an endpoint of a
-  # p-satisfying edge forces one. When every node is such an endpoint that sum is QUADRATIC on a
-  # ring and equally on an acyclic chain, and linear on a star. Measured at gen-graph
-  # `648dee5` in `nrFunctionCalls`, `p` accepting every edge, at n = 250 / 500 / 1000 / 2000:
-  # ring 650,249 / 2,550,303 / 10,100,393 / 40,202,423 (×3.98 per doubling); chain 20,162,012
-  # at n = 2000 (×3.97); star 233,465 (×2.13). With `p` always false the ring costs 16,031 at
-  # n = 2000 (×2.00). `fbWork` does not remove the quadratic: it is linear on the ring and
-  # quadratic on a chain whose nodes are listed tail-first. A linear SCC construction that does
-  # not recurse (ADR-0022) is the open spike den-hoag-c48r1.
+  # COST: Θ((n + m) · log₈ n) for the partition, on top of one pass over the labelled edges. The
+  # partition arm is `lowlink` (`partition.nix`), Tarjan's DFS iterated over a persistent 8-ary
+  # trie, which is where the log comes from. The `&&` below short-circuits, so the partition is
+  # forced only if some edge satisfies `p`, and then it is forced WHOLE by the first tag read:
+  # with `p` never true the surface costs the edge pass alone. Measured in `nrFunctionCalls`
+  # (`ci/bench/cost-classes.nix`, arms `cyclicEdgesWhere` / `…One` / `…None`, which bind `p` to
+  # every edge / one edge / no edge), `p` on every edge, n = 1000 → 20000: `cycle` 451,095 →
+  # 10,660,107, `chain` 446,045 → 10,560,053, `rand` 550,845 → 12,863,196, span exponents 1.06 /
+  # 1.06 / 1.05; `nrOpUpdateValuesCopied` flat at 127 on all three. Each doubling inside one
+  # trie depth reads ×2.00; the one that adds a level (4000 → 8000) reads ×2.36. Bound to
+  # `fbNode` the same `cycle` cells read 10,096,051 → 40,192,051 → 160,384,051 at n = 1000 /
+  # 2000 / 4000 (×3.98, ×3.99).
+  # ★ THE TRADE, stated rather than absorbed: `fbNode` forced one tag per endpoint lazily, so with
+  # `p` true on ONE edge of a 5000-node `cycle` it cost 420,104 calls where this surface now
+  # costs 2,605,120 (×6.2). That is a constant factor on a sparse `p`, bought for a class bound on
+  # every `p`: `fbNode`'s per-endpoint cost depends on reach, so no threshold on the number of
+  # p-edges bounds it, and routing between arms by that count inside the binder would be a
+  # second default beside the door's (README, *The partition routing contract*). `p` never true
+  # costs 50,021 either way. A target outside `nodes` is refused by name under `lowlink`'s name.
   cyclicEdgesWhere =
     graph: p:
     let
       plain = forgetLabels graph;
       # The partition ARM by name, never the door: this consumer reads the tag map and
       # nothing else, so it has no stake in which algorithm the door defaults to.
-      inherit (partition.fbNode plain) sccOf;
+      inherit (partition.lowlink plain) sccOf;
       hits = builtins.concatMap (
         from:
         map

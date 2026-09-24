@@ -6,9 +6,14 @@
 # separate evaluation — the shape `ci/bench/sentinel.sh` establishes and
 # `ci/bench/cone-ceiling.sh` follows.
 #
-# FOUR ARMS, and the third one is the point:
+# FIVE ARMS, and the fourth one is the point:
 #   fbNode   — the per-node forward–backward arm, the door's default;
 #   fbWork   — the worklist forward–backward arm;
+#   lowlink  — Tarjan's single DFS, iterated: one `genericClosure` loop over a persistent trie.
+#              It contains no recursion, but its evaluation depth grows as Θ(log₈ n), two
+#              frames per trie level, so it is read at 100,000 on four shapes: `star` is the
+#              one that chains a frame's lowlink if it goes unforced, `cycle` and `rand` the
+#              ones that chain the pop's running minimum;
 #   unforced — the worklist arm written the OTHER way: a `remaining` set read every round and
 #              a tag map written every round and read in none. It is CHARACTERIZATION of
 #              TODAY's practical limitation, not a control: informational, printed and never
@@ -116,6 +121,27 @@ let
           in
           [ (pad (if i + 1 < n then i + 1 else 0)) ];
       };
+    # one hub pointing at every other node: out-degree n - 1 inside ONE frame, n components
+    star = fromPairs (map (key "n") (ix n)) [
+      {
+        name = key "n" 0;
+        value = map (key "n") (builtins.genList (i: i + 1) (n - 1));
+      }
+    ];
+    # out-degree 2 to pseudo-random targets, `ci/bench/cost-classes.nix`'s `rand` congruence
+    rand =
+      let
+        mod = a: b: a - (a / b) * b;
+      in
+      fromPairs (map (key "n") (ix n)) (
+        map (i: {
+          name = key "n" i;
+          value = map (j: key "n" (mod (mod (i * 1103515245 + j * 2654435761 + 12345) 2147483648) n)) [
+            1
+            2
+          ];
+        }) (ix n)
+      );
     # n/10 independent 10-chains: n components, bounded depth — the shape a host fleet
     # produces, and the one whose component count is large while no single walk is long.
     fleet =
@@ -205,6 +231,8 @@ if arm == "fbNode" then
   doorReport (g.fbNode acc)
 else if arm == "fbWork" then
   doorReport (g.fbWork acc)
+else if arm == "lowlink" then
+  doorReport (g.lowlink acc)
 else if arm == "closure" then
   doorReport (g.condensationClosure acc)
 else if arm == "unforced" then

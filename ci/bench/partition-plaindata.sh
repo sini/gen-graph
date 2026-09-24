@@ -52,7 +52,7 @@ controls_run=0
 unclassified=0
 
 for shape in chain cycle fleet; do
-  for arm in door fbNode fbWork closure; do
+  for arm in door fbNode fbWork lowlink closure; do
     out=$(cell "$arm" "$shape" 60)
     rc=$?
     shown=$out

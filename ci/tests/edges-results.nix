@@ -61,6 +61,7 @@ let
     condensation = G.condensation (acc e);
     fbNode = G.fbNode (acc e);
     fbWork = G.fbWork (acc e);
+    lowlink = G.lowlink (acc e);
     condensationOf = G.condensationOf (acc e) {
       a = "a";
       b = "a";
@@ -143,8 +144,8 @@ in
         reachableFrom = G.reachableFrom (acc good) "a";
       };
       expected = {
-        admitted = 32;
-        total = 32;
+        admitted = 33;
+        total = 33;
         leaves = [ "c" ];
         reachableFrom = [
           "b"

@@ -40,9 +40,10 @@
 # and Okasaki (*Purely Functional Data Structures*, 1998, §3.1) takes exactly this substrate
 # restriction as its subject. The ready set here is a leftist heap, so the loop's ready-set
 # term is Θ(n log n); holding it as a sorted array instead costs Θ(n²), because every arrival
-# rebuilds the unconsumed residue and re-sorts it. ★ The absence of a mutable heap is also
-# the reason `condensation` gives for not being Tarjan's algorithm (`lib/global.nix`); it is
-# not a bound on either surface, and that justification is NOT re-derived here.
+# rebuilds the unconsumed residue and re-sorts it. ★ The absence of a mutable heap was once
+# also the reason the partition gave for having no Tarjan arm. It was not a bound there either:
+# Tarjan's DFS is the `lowlink` arm (`lib/partition.nix`), its stack and index map persistent,
+# and its recursion stepped by one `genericClosure` loop.
 # The floor: emitting the ready set in min-key order under a caller-supplied comparator sorts
 # that set, so the loop inherits the comparison-sorting bound of Ω(m log m) comparisons. The
 # heap attains it, and no comparison-based container beats it without changing the contract.
@@ -53,18 +54,17 @@
 # The CYCLE path is deliberately not derived from the Kahn residual — a residual knows
 # only THAT nodes went unemitted, not which cycles they form — so it costs a `global.cycles`
 # call PLUS a PARTITION call, and it runs only on a CYCLIC graph. The partition it spends is
-# `partition.fbNode`, the forward–backward arm, bound by name below: it is NOT the closure
+# `partition.lowlink`, Tarjan's DFS iterated, bound by name below: it is NOT the closure
 # construction, and the difference is the whole cost story here. Measured at n = 200
-# (`ci/bench/cost-classes.nix`, arms `cycles` / `fbNode` / `topoOrder`): on `cycle` the guard
-# is 41,403 `list.elements` against the partition's 364,817, and on `complete` 160,003
-# against 1,038,617 — the partition is the larger term on both shapes and on all three axes
-# at that size, and the report as a whole is EXPONENT 2.00 on `list` and `nrLookups`, fitted
-# over k = 25/50/100/200 on `cycle`; `sets` is approaching 2.00 from below (1.88 over the
-# last pair) rather than sitting at it. Do not quote either term as the cost alone.
-# The partition's term is Θ(Σ_v (|reach⁺ v| + |reach⁻ v|)) over the cyclic keys, one forward and
-# one backward closure per key (`partition.nix`, `nodeTags`), so it is quadratic in the size of
-# one large component; `cyclicEdgesWhere` (`query.nix`) carries the measured figures. A linear,
-# non-recursive SCC construction is the open spike den-hoag-c48r1.
+# (`ci/bench/cost-classes.nix`, arms `cycles` / `lowlink` / `topoOrder`): on `cycle` the guard
+# is 41,403 `list.elements` against the partition's 20,855, and on `complete` 160,003 against
+# 377,055 — which term is larger FLIPS with the shape, because the guard is Θ(Σ_v |reach⁺ v|)
+# and the partition Θ((n + m) · log₈ n) with m = n² on `complete`. Do not quote either term as
+# the cost alone. The guard is the quadratic one, so the report as a whole is superlinear and
+# climbing towards it: `list` exponents 1.28 / 1.65 / 1.55 and `nrLookups` 1.32 / 1.58 / 1.63
+# over k = 25/50/100/200 on `cycle`. Bound to `fbNode`, the partition term was itself
+# Θ(Σ_v (|reach⁺ v| + |reach⁻ v|)) and the report read 2.00 on both. Re-deriving the guard from
+# the partition is a separate change.
 # ★ THE SURFACE THAT IS SUPER-QUADRATIC IS THE CLOSURE, AND IT IS NOT ON THIS PATH: reaching
 # the same partition through `condensationClosure` instead is exponent 2.93 on `list` over the
 # same k and 2.97 on `sets`, while `nrLookups` sits a full exponent below both at 1.88. The
@@ -567,7 +567,7 @@ let
         edges = k: depsOf.${attrKey k} or [ ];
       };
       cyclicKeys = global.cycles keyAccessor;
-      sccOf = (partition.fbNode keyAccessor).sccOf;
+      sccOf = (partition.lowlink keyAccessor).sccOf;
       cycles = prelude.mapAttrsToList (_: g: map (k: nodeOf.${attrKey k}) g) (
         builtins.groupBy (k: attrKey sccOf.${attrKey k}) cyclicKeys
       );

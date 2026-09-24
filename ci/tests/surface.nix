@@ -71,6 +71,7 @@ let
     "labeledFrom"
     "labeledTranspose"
     "leaves"
+    "lowlink"
     "materialize"
     "materializeParents"
     "mkDeclaredEdges"

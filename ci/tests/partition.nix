@@ -1,7 +1,8 @@
 # The SCC PARTITION door against its arms, on the generated shapes.
 #
-# `fbNode` and `fbWork` are the two forward–backward arms published under their own names;
-# `condensationClosure` is the closure construction published under its; `condensation` is the
+# `fbNode` and `fbWork` are the two forward–backward arms published under their own names, and
+# `lowlink` is Tarjan's single DFS, iterated, published under its; `condensationClosure` is the
+# closure construction published under its; `condensation` is the
 # door and today defaults to `fbNode`. The door's default is a separate decision from any
 # arm's identity — that separation is the whole point of the names — so the agreement between
 # them is a property measured at every revision rather than read off today's one-line
@@ -30,7 +31,10 @@
 # breaks those consumers.
 #
 # The shapes are the bench's, verbatim, so a figure measured in `ci/bench/cost-classes.nix`
-# and a verdict asserted here are about the same graphs.
+# and a verdict asserted here are about the same graphs — except `lateentry`, which is here for
+# the tag alone: on it the DFS enters a two-member component at its LARGER member, so an arm
+# naming a component by its DFS root rather than its smallest member fails these cells, and on
+# every other shape it passes them.
 { genGraph, genPrelude, ... }:
 let
   inherit (genGraph)
@@ -38,6 +42,7 @@ let
     condensationClosure
     fbNode
     fbWork
+    lowlink
     reachableFrom
     ;
   prelude = genPrelude;
@@ -202,11 +207,52 @@ let
       }) (ix 10)
     );
 
+  # triples b, b+1, b+2 with b -> b+2 -> b+1 -> b+2: a depth-first walk from b ENTERS the
+  # component {b+1, b+2} at its LARGER member, so an arm naming a component by its DFS root
+  # rather than its smallest member names it wrong. The acyclic and ring shapes above cannot:
+  # their DFS root is the smallest member on every component.
+  lateentry =
+    n:
+    let
+      m = n / 3;
+      k = i: j: key "t" i + "-" + toString j;
+    in
+    fromPairs
+      (builtins.concatLists (
+        map (
+          i:
+          map (k i) [
+            0
+            1
+            2
+          ]
+        ) (ix m)
+      ))
+      (
+        builtins.concatLists (
+          map (i: [
+            {
+              name = k i 0;
+              value = [ (k i 2) ];
+            }
+            {
+              name = k i 1;
+              value = [ (k i 2) ];
+            }
+            {
+              name = k i 2;
+              value = [ (k i 1) ];
+            }
+          ]) (ix m)
+        )
+      );
+
   # Small enough that the closure reference runs in a suite, large enough that the arms could
   # diverge anywhere in tens of components rather than in a handful. The reference is
   # super-quadratic; scale belongs to `ci/bench/cost-classes.nix`, agreement belongs here.
   small = 60;
   shapes = {
+    lateentry = lateentry small;
     chain = chain small;
     cycle = cycle small;
     wide = wide small;
@@ -323,6 +369,20 @@ in
     };
     test-fbwork-tag-map-value-for-value = {
       expr = builtins.mapAttrs (_: fx: (fbWork fx).sccOf == (condensationClosure fx).sccOf) allFixtures;
+      expected = builtins.mapAttrs (_: _: true) allFixtures;
+    };
+
+    # ── the lowlink arm, against the reference AND against `fbNode` ──
+    test-lowlink-equals-closure-reference = {
+      expr = builtins.mapAttrs (_: fx: lowlink fx == condensationClosure fx) allFixtures;
+      expected = builtins.mapAttrs (_: _: true) allFixtures;
+    };
+    test-lowlink-tag-map-value-for-value = {
+      expr = builtins.mapAttrs (_: fx: (lowlink fx).sccOf == (condensationClosure fx).sccOf) allFixtures;
+      expected = builtins.mapAttrs (_: _: true) allFixtures;
+    };
+    test-lowlink-equals-fbnode = {
+      expr = builtins.mapAttrs (_: fx: lowlink fx == fbNode fx) allFixtures;
       expected = builtins.mapAttrs (_: _: true) allFixtures;
     };
 

@@ -1,4 +1,5 @@
-# SCC partitioning — the one published door and the forward–backward arms behind it.
+# SCC partitioning — the one published door and the three arms behind it: two forward–backward
+# arms and Tarjan's lowlink arm.
 #
 # THEORY. A strongly connected component is an equivalence class of the mutual-reachability
 # relation (Tarjan 1972, Lemma 9), and the condensation is the QUOTIENT of the graph by that
@@ -18,17 +19,20 @@
 # pivot on EVERY node and does no cutting at all, which is why it carries no accumulator —
 # it is the definition, not the algorithm built on it.
 #
-# NEITHER ARM IS TARJAN'S LINEAR SINGLE-DFS, AND THE MUTABLE STACK IS NOT WHY. A persistent
-# structure holds a stack and a lowlink map without mutation, the way this library's own
-# ready set is a purely functional heap (`lib/order.nix`); "pure Nix cannot express it" is
-# the same false impossibility claim the ordering surface already retired. THE OBSTRUCTION IS
-# RECURSION. Tarjan's single pass is a self-applying DFS step, and such a step is closed off
-# twice over: ADR-0022 makes NON-RECURSIVE SCC detection a binding constraint, and the
-# evaluator's call-depth ceiling ends a step that applies itself with an uncatchable `stack
-# overflow; max-call-depth exceeded` — measured on this library at ~10^4 frames (AGENTS.md's
-# frame-ceiling row) and again as `coneRank`'s descent (`lib/order.nix`, its driver). Both
-# arms below ITERATE over a worklist, which is what keeps them inside that constraint — the
-# reason `condensationClosure` (`lib/global.nix`) also gives for not being it either.
+# TARJAN'S SINGLE DFS IS THE THIRD ARM, `lowlink`, AND IT IS ITERATED RATHER THAN RECURSED.
+# Neither the mutable stack nor recursion rules it out. A persistent structure holds a stack
+# and a lowlink map without mutation, the way this library's own ready set is a purely
+# functional heap (`lib/order.nix`). Recursion is an obstruction only to the RECURSIVE
+# formulation: STRONGCONNECT written as a self-applying DFS step is closed off twice over —
+# ADR-0022 makes NON-RECURSIVE SCC detection a binding constraint, and the evaluator's
+# call-depth ceiling ends a step that applies itself with an uncatchable `stack overflow;
+# max-call-depth exceeded`, measured on this library at ~10^4 frames (AGENTS.md's
+# frame-ceiling row) and again as `coneRank`'s descent (`lib/order.nix`, its driver). The DFS
+# does not need that formulation: its call stack is data, so one `builtins.genericClosure`
+# loop steps it, one edge or one pop per step, over a persistent map. That is `lowlink`
+# below. Its cost is Θ((n + m) · log₈ n), not Tarjan's O(V + E): the log is the persistent
+# map's, paid on each index read and write. The forward–backward arms ITERATE over a worklist
+# too, and remain for the shapes where they are cheaper (README, *When each arm wins*).
 #
 # THE DOOR CARRIES THE DEFAULT, THE ARM CARRIES THE ALGORITHM — the pattern `lib/order.nix`
 # landed for ordering, applied to the concern the same reasoning assigns to this library. A
@@ -47,8 +51,10 @@ let
   inherit (import ./key.nix)
     attrKey
     edgesAccessor
+    identifier
     keyedAttrs
     notEdgeList
+    renderId
     ;
   traverse = import ./traverse.nix;
   global = import ./global.nix { inherit prelude; };
@@ -275,16 +281,257 @@ let
     in
     (builtins.foldl' step { tags = { }; } nodes).tags;
 
+  # ── ARM: TARJAN'S LOWLINK, ITERATED ──
+  # Tarjan 1972's STRONGCONNECT: number vertices in DFS order, keep a stack of points, and pop a
+  # component when a vertex's LOWLINK equals its own number (Lemma 12; Theorem 13 for the
+  # procedure). One DFS, so every node and every edge is visited once.
+  #
+  # THE RECURSION IS DATA. The DFS call stack `cs` is a cons list of frames, each holding its
+  # vertex, its successor list, the index of the next edge and its lowlink. One
+  # `builtins.genericClosure` step does exactly one of four things — push a frame, examine one
+  # edge, finish a frame (folding its lowlink into the parent's), or pop one member off the point
+  # stack `ss` — so the loop runs O(n + m) steps. The code contains no recursion at all: every
+  # loop is `genericClosure` or `foldl'`, the trie's included.
+  #
+  # THE INDEX MAP is a persistent 8-ary trie of ints over ORDINALS: 0 is unvisited, a positive
+  # value is the DFS number while the vertex is on the point stack, −1 is assigned. `get` folds
+  # over the digits, `set` path-copies the spine, so each costs Θ(log₈ n) — which is where the
+  # arm's Θ((n + m) · log₈ n) comes from, and why its evaluation depth grows as Θ(log₈ n) (one
+  # nesting per trie level inside a step) although nothing recurses. B = 8 was measured against
+  # 4, 16 and 32 on calls, `list.elements` and wall time, and won at 20k and 100k.
+  #
+  # ORDINALS ARE KEY ORDER. Ordinal i is position i of the keyed node set's `attrNames`, so the
+  # contract's tag — the SMALLEST member (`tagOfMembers`) — is the member of least ordinal,
+  # tracked as an integer minimum during the pop with no string comparison. Tarjan names a
+  # component by its ROOT; that is a different member whenever the DFS enters a component at a
+  # member that is not its smallest, and `ci/tests/partition.nix`'s `lateentry` shape is the
+  # fixture that tells the two apart. The tag is the caller's `nodes` entry, with its context.
+  #
+  # EVERY FIELD THE LOOP CARRIES IS FORCED EACH STEP, BY CONSTRUCTION (ADR-0022). Every record is
+  # built by one of five strict constructors (`cell`, `frame`, `popping`, `comp`, `state`), each
+  # of which `seq`s every field before returning it; `genericClosure` forces each new state to
+  # read its `key`. So no field is ever an unforced thunk pointing into an earlier step, and the
+  # property belongs to the constructors rather than to a list of `seq`s kept in step with them.
+  #
+  # ITS DOMAIN IS A CLOSED ACCESSOR. A target outside `nodes` is refused by name, as the ordering
+  # family refuses a dangling target (`topoOrderCore`): an edge to x ∉ V means (V, E) is not a
+  # graph, so it has no SCC partition. A `nodes` entry that is not a string is refused by name
+  # too; it cannot be keyed.
+  lowlinkTags =
+    { edges, nodes, ... }:
+    let
+      e = edgesAccessor "lowlink" edges;
+      byKey = keyedAttrs (map (identifier "lowlink") nodes) (v: v);
+      names = builtins.attrNames byKey;
+      verts = builtins.attrValues byKey;
+      n = builtins.length names;
+      ordOf = builtins.listToAttrs (
+        builtins.genList (i: {
+          name = builtins.elemAt names i;
+          value = i;
+        }) n
+      );
+      ordinal =
+        from: w:
+        if builtins.isString w && ordOf ? ${attrKey w} then
+          ordOf.${attrKey w}
+        else
+          throw "gen-graph.lowlink: edges ${renderId from} names a target outside `nodes`";
+      succOf =
+        v:
+        let
+          id = builtins.elemAt verts v;
+          es = e id;
+        in
+        if builtins.isList es then map (ordinal id) es else throw (notEdgeList "lowlink" id es);
+
+      B = 8;
+      digit = k: d: builtins.bitAnd (k / d) (B - 1);
+      levels = builtins.length divs;
+      divs = builtins.genericClosure {
+        startSet = [ { key = 1; } ];
+        operator = x: if x.key * B >= n then [ ] else [ { key = x.key * B; } ];
+      };
+      divsDown = builtins.genList (l: (builtins.elemAt divs (levels - 1 - l)).key) levels;
+      force = l: builtins.foldl' (a: x: builtins.seq x a) l l;
+      empty = builtins.foldl' (sub: _: builtins.genList (_: sub) B) 0 divsDown;
+      get = t: k: builtins.foldl' (node: d: builtins.elemAt node (digit k d)) t divsDown;
+      set =
+        t: k: x:
+        let
+          spine = builtins.foldl' (
+            acc: l: acc ++ [ (builtins.elemAt (builtins.elemAt acc l) (digit k (builtins.elemAt divsDown l))) ]
+          ) [ t ] (builtins.genList (l: l) (levels - 1));
+        in
+        builtins.foldl' (
+          child: l:
+          let
+            node = builtins.elemAt spine l;
+            d = digit k (builtins.elemAt divsDown l);
+          in
+          force (builtins.genList (j: if j == d then child else builtins.elemAt node j) B)
+        ) x (builtins.genList (l: levels - 1 - l) levels);
+
+      cell = h: t: builtins.seq h (builtins.seq t { inherit h t; });
+      frame =
+        v: es: i: low:
+        builtins.seq v (
+          builtins.seq es (
+            builtins.seq i (
+              builtins.seq low {
+                inherit
+                  v
+                  es
+                  i
+                  low
+                  ;
+              }
+            )
+          )
+        );
+      popping =
+        root: min: ms:
+        builtins.seq root (builtins.seq min (builtins.seq ms { inherit root min ms; }));
+      comp = tag: ms: builtins.seq tag (builtins.seq ms { inherit tag ms; });
+      state =
+        key: map: next: cs: ss: r: pop: out:
+        builtins.seq key (
+          builtins.seq map (
+            builtins.seq next (
+              builtins.seq cs (
+                builtins.seq ss (
+                  builtins.seq r (
+                    builtins.seq pop (
+                      builtins.seq out {
+                        inherit
+                          key
+                          map
+                          next
+                          cs
+                          ss
+                          r
+                          pop
+                          out
+                          ;
+                      }
+                    )
+                  )
+                )
+              )
+            )
+          )
+        );
+
+      push =
+        s: cs: r: v:
+        state (s.key + 1) (set s.map v s.next) (s.next + 1) (cell (frame v (succOf v) 0
+          s.next
+        ) cs) (cell v s.ss) r null s.out;
+
+      step =
+        s:
+        if s.pop != null then
+          let
+            w = s.ss.h;
+            p = s.pop;
+            m = if w < p.min then w else p.min;
+            ms = cell w p.ms;
+          in
+          state (s.key + 1) (set s.map w (-1)) s.next s.cs s.ss.t s.r (
+            if w == p.root then null else popping p.root m ms
+          ) (if w == p.root then cell (comp m ms) s.out else s.out)
+        else if s.cs == null then
+          if s.r >= n then
+            null
+          else if get s.map s.r != 0 then
+            state (s.key + 1) s.map s.next null s.ss (s.r + 1) null s.out
+          else
+            push s null (s.r + 1) s.r
+        else
+          let
+            f = s.cs.h;
+          in
+          if f.i < builtins.length f.es then
+            let
+              w = builtins.elemAt f.es f.i;
+              mw = get s.map w;
+              f' = frame f.v f.es (f.i + 1) (if mw > 0 && mw < f.low then mw else f.low);
+            in
+            if mw == 0 then
+              push s (cell f' s.cs.t) s.r w
+            else
+              state (s.key + 1) s.map s.next (cell f' s.cs.t) s.ss s.r null s.out
+          else
+            let
+              parent = s.cs.t;
+            in
+            state (s.key + 1) s.map s.next (
+              if parent == null then
+                null
+              else
+                cell (frame parent.h.v parent.h.es parent.h.i (
+                  if f.low < parent.h.low then f.low else parent.h.low
+                )) parent.t
+            ) s.ss s.r (if f.low == get s.map f.v then popping f.v n null else null) s.out;
+
+      run = builtins.genericClosure {
+        startSet = [ (state 0 empty 1 null null 0 null null) ];
+        operator =
+          s:
+          let
+            s' = step s;
+          in
+          if s' == null then [ ] else [ s' ];
+      };
+      last = builtins.elemAt run (builtins.length run - 1);
+      conses =
+        l:
+        builtins.genericClosure {
+          startSet =
+            if l == null then
+              [ ]
+            else
+              [
+                {
+                  key = 0;
+                  c = l;
+                }
+              ];
+          operator =
+            x:
+            if x.c.t == null then
+              [ ]
+            else
+              [
+                {
+                  key = x.key + 1;
+                  c = x.c.t;
+                }
+              ];
+        };
+    in
+    builtins.listToAttrs (
+      builtins.concatMap (
+        x:
+        map (y: {
+          name = builtins.elemAt names y.c.h;
+          value = builtins.elemAt verts x.c.h.tag;
+        }) (conses x.c.h.ms)
+      ) (conses last.out)
+    );
+
   # ── THE ARMS, PUBLISHED BY NAME ──
-  # Each is the finisher over one arm's tag map, so the two differ in HOW the partition is
-  # found and in nothing else a caller can observe. That is what makes them complementary
-  # rather than ranked: neither refuses input the other accepts, and a caller that must have
-  # one of them can say so.
+  # Each is the finisher over one arm's tag map, so on a closed accessor the three differ in HOW
+  # the partition is found and in nothing else a caller can observe. That is what makes them
+  # complementary rather than ranked, and a caller that must have one of them can say so. The
+  # two forward–backward arms accept the same input; `lowlink` refuses a target outside `nodes`,
+  # which they accept.
   # `fbWork`'s tag is its component's smallest member as the BACKWARD pass returns it, and that
   # pass reads `transpose`, whose sources are text: so a representative (and `sccOf`) carrying
   # string context can come back as its text, depending on node order. `fbNode` keeps it.
   fbNode = accessor: condensationOf accessor (nodeTags accessor);
   fbWork = accessor: condensationOf accessor (workTags accessor);
+  lowlink = accessor: condensationOf accessor (lowlinkTags accessor);
 
   # ── THE FRONT DOOR ──
   # The default is the per-node arm, and the delegation is an IDENTITY rather than a wrapper,
@@ -302,5 +549,6 @@ in
     condensationOf
     fbNode
     fbWork
+    lowlink
     ;
 }

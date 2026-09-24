@@ -1177,6 +1177,106 @@ in
         );
       };
 
+    # THE LOWLINK ARM'S DOMAIN IS A CLOSED ACCESSOR (ADR-0025 item 1). A target outside `nodes` is
+    # refused by name, and so is a `nodes` entry that is not a string; each refusal is catchable.
+    # `cyclicEdgesWhere` and `cyclePaths` bind the arm, so they refuse under its name. On `offNode`
+    # both aborted uncatchably (`attribute 'x' missing`) before they bound it; on `offUnrelated`,
+    # where the off-node target sits on no cycle, they ANSWERED before, and refusing is the
+    # narrowed domain (README, *The partition routing contract*). `cycles` keeps the open
+    # convention and still answers there.
+    flake.testsError.lowlink-domain =
+      let
+        mk = m: {
+          nodes = builtins.attrNames m;
+          edges = id: m.${id} or [ ];
+        };
+        lab = g: {
+          inherit (g) nodes;
+          labeledEdges =
+            id:
+            map (x: {
+              label = "${id}>${x}";
+              target = x;
+            }) (g.edges id);
+        };
+        # a -> x -> b -> a, x outside `nodes`: the off-node target is ON the cycle
+        offNode = {
+          nodes = [
+            "a"
+            "b"
+          ];
+          edges =
+            id:
+            {
+              a = [ "x" ];
+              x = [ "b" ];
+              b = [ "a" ];
+            }
+            .${id};
+        };
+        # a <-> b, c -> x, x outside `nodes`: the off-node target is on no cycle and no p-edge
+        offUnrelated = mk {
+          a = [ "b" ];
+          b = [ "a" ];
+          c = [ "x" ];
+        };
+        outside = from: "^gen-graph\\.lowlink: edges \"${from}\" names a target outside `nodes`$";
+        cell = msg: expr: {
+          expr = builtins.deepSeq expr expr;
+          expectedError = {
+            type = "ThrownError";
+            inherit msg;
+          };
+        };
+        refused = v: !(builtins.tryEval (builtins.deepSeq v true)).success;
+        ab = l: l == "a>b" || l == "b>a";
+        nonString = genGraph.lowlink {
+          nodes = [ 1 ];
+          edges = _: [ ];
+        };
+      in
+      {
+        test-lowlink-offNode = cell (outside "a") (genGraph.lowlink offNode).sccOf;
+        test-cyclicEdgesWhere-offNode = cell (outside "a") (
+          genGraph.cyclicEdgesWhere (lab offNode) (_: true)
+        );
+        test-cyclePaths-offNode = cell (outside "a") (genGraph.cyclePaths offNode);
+        test-lowlink-offUnrelated = cell (outside "c") (genGraph.lowlink offUnrelated).sccOf;
+        test-cyclicEdgesWhere-offUnrelated = cell (outside "c") (
+          genGraph.cyclicEdgesWhere (lab offUnrelated) ab
+        );
+        test-cyclePaths-offUnrelated = cell (outside "c") (genGraph.cyclePaths offUnrelated);
+        test-lowlink-non-string-node = cell "^gen-graph\\.lowlink: got int, expected a node identifier \\(a string\\)$" nonString.sccOf;
+        test-lowlink-refusals-are-catchable = {
+          expr = {
+            offNode = refused (genGraph.lowlink offNode).sccOf;
+            cyclicEdgesWhere-offNode = refused (genGraph.cyclicEdgesWhere (lab offNode) (_: true));
+            cyclePaths-offNode = refused (genGraph.cyclePaths offNode);
+            offUnrelated = refused (genGraph.lowlink offUnrelated).sccOf;
+            cyclicEdgesWhere-offUnrelated = refused (genGraph.cyclicEdgesWhere (lab offUnrelated) ab);
+            cyclePaths-offUnrelated = refused (genGraph.cyclePaths offUnrelated);
+            non-string-node = refused nonString.sccOf;
+          };
+          expected = {
+            offNode = true;
+            cyclicEdgesWhere-offNode = true;
+            cyclePaths-offNode = true;
+            offUnrelated = true;
+            cyclicEdgesWhere-offUnrelated = true;
+            cyclePaths-offUnrelated = true;
+            non-string-node = true;
+          };
+        };
+        # the open convention `cycles` keeps, on the same fixture the partition surfaces refuse
+        test-cycles-answers-offUnrelated = {
+          expr = genGraph.cycles offUnrelated;
+          expected = [
+            "a"
+            "b"
+          ];
+        };
+      };
+
     # den-hoag-0mqv1: a plain accessor's `edges` result is refused by name where it is read. The
     # surfaces pinned here are the ones whose text names themselves under any reading of which name
     # a shared primitive's refusal carries (den-hoag-7gp66); `ci/tests/edges-results.nix` asserts the
@@ -1224,6 +1324,7 @@ in
           directDependents = genGraph.directDependents (acc e);
           roots = genGraph.roots (acc e);
           leaves = genGraph.leaves (acc e);
+          lowlink = (genGraph.lowlink (acc e)).sccOf;
           condensationOf = genGraph.condensationOf (acc e) {
             a = "a";
             b = "b";

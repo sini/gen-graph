@@ -258,11 +258,12 @@ let
   # transitive closure and asking it. The door is an unconditional alias for the
   # forward–backward arm (`condensation = fbNode`, `lib/partition.nix`) instead;
   # a caller whose correctness depends on THIS construction answering binds this name.
-  # Not Tarjan's linear O(V+E) single-DFS — and not because of the mutable stack/lowlink,
-  # which a persistent structure holds without mutation. Tarjan's pass is a SELF-APPLYING DFS
-  # step: ADR-0022 makes non-recursive SCC detection a binding constraint, and the evaluator's
-  # call-depth ceiling ends a self-applying step with an uncatchable `max-call-depth exceeded`.
-  # `lib/partition.nix`'s header carries the full reason; this arm iterates instead.
+  # Tarjan's single DFS is a sibling arm, `lowlink` (`lib/partition.nix`), not this one. What
+  # rules out the RECURSIVE formulation of that DFS is recursion itself — ADR-0022 makes
+  # non-recursive SCC detection a binding constraint, and the evaluator's call-depth ceiling ends
+  # a self-applying step with an uncatchable `max-call-depth exceeded` — and `lowlink` removes it
+  # by stepping the DFS as one `genericClosure` loop over a persistent map, at Θ((n + m) · log₈ n).
+  # `lib/partition.nix`'s header carries the full account.
   #
   # COST is the CLOSURE-CLASS cost shared with `dependents`/`transitiveReduction` —
   # SUPER-QUADRATIC and shape-dependent, not O(n²). The closure callers measure as ONE
@@ -326,16 +327,19 @@ let
   # bounded and Θ(n²) on a complete DAG. This surface builds no closure of its own, so the accessor
   # hoist reaches it only through `cycles` and the partition arm; it neither makes that decision nor
   # can it observe one they did not make.
-  # Reconstruction — the per-node forward–backward partition arm plus `pathsBetween`, which
-  # enumerates simple paths and is worst-case exponential — runs only once the graph is
-  # KNOWN cyclic, i.e. only on the branch a caller refuses on. Same discipline `order.nix` states
-  # for its own cycle report: the expensive analysis is on the way out.
-  # The partition arm is Θ(Σ_v (|reach⁺ v| + |reach⁻ v|)) over the nodes whose tag is forced —
-  # every cyclic node, and the successors of each component's entry point — because `fbNode` spends one forward and one
-  # backward closure per node: QUADRATIC in the size of one large component, and linear in the
-  # number of components. The measured figures are on `cyclicEdgesWhere` (`query.nix`), which
-  # binds the same arm; a linear, non-recursive SCC construction is the open spike
-  # den-hoag-c48r1.
+  # Reconstruction — the `lowlink` partition arm plus `pathsBetween`, which enumerates simple
+  # paths and is worst-case exponential — runs only once the graph is KNOWN cyclic, i.e. only on
+  # the branch a caller refuses on. Same discipline `order.nix` states for its own cycle report:
+  # the expensive analysis is on the way out.
+  # The partition arm is `lowlink`, Θ((n + m) · log₈ n) for the whole partition (the log is its
+  # persistent map's), paid once when the first tag is forced. That does NOT make this surface
+  # linear: the `cycles` guard above is a second term, Θ(Σ_v |reach⁺ v|), and it stays QUADRATIC
+  # in the size of one large component. Measured in `nrFunctionCalls` on `cycle`
+  # (`ci/bench/cost-classes.nix`, arms `cyclePaths` / `cycles`), n = 1000 → 2000: the surface
+  # reads 3,442,112 → 12,884,112 (×3.74), of which `cycles` is 3,017,018 → 12,034,018; bound to
+  # `fbNode` it read 13,066,056 → 52,132,056. Re-deriving `cycles` from the partition is a
+  # separate change. The DOMAIN is the arm's: a target outside `nodes` is refused by name under
+  # `lowlink`'s name, where `cycles` alone would answer.
   # ★ THE BACK-EDGE SEARCH SHORT-CIRCUITS (den-hoag-ckev). `repCycle` below needs only the FIRST
   # in-SCC successor with a path home; it finds that successor with `prelude.findFirst` over the
   # lazy `map` of `pathsBetween` calls, so a successor after the winner never pays its own
@@ -358,7 +362,7 @@ let
         # The partition ARM by name, never the door: this consumer needs the tag map and
         # nothing else, and binding a door would make its answer depend on a default it has
         # no stake in.
-        inherit ((partition.fbNode { inherit edges nodes; })) sccOf;
+        inherit ((partition.lowlink { inherit edges nodes; })) sccOf;
         # The component's smallest key is the ENTRY POINT, so the head of the returned walk is
         # order-independent. The REST of the walk is not: it follows the order of `edges u` and
         # of `pathsBetween`'s enumeration, so a component holding several simple cycles can yield

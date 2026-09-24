@@ -156,6 +156,8 @@ else if arm == "fbNode" then
   crossed (g.fbNode acc)
 else if arm == "fbWork" then
   crossed (g.fbWork acc)
+else if arm == "lowlink" then
+  crossed (g.lowlink acc)
 else if arm == "closure" then
   crossed (g.condensationClosure acc)
 else if arm == "legacy" then

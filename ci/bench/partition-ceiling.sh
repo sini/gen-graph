@@ -5,7 +5,9 @@
 #   ./ci/bench/partition-ceiling.sh     -> per-cell readings, then CEILING-FREE | CEILING-FOUND
 #                                          | INVALID
 #
-# THREE ARMS PER CELL. `fbNode` and `fbWork` are the two published forward–backward arms;
+# FOUR ARMS PER CELL. `fbNode` and `fbWork` are the two published forward–backward arms and
+# `lowlink` the iterated single-DFS arm, which is also read ALONE at 100,000 on `chain`, `cycle`,
+# `star` and `rand` below, a size the per-node arm cannot reach in a sweep;
 # `unforced` is the worklist arm written so that its tag map is written every round and read in
 # none, which is the construction whose accumulator chains. It is CHARACTERIZATION of TODAY's
 # practical limitation, not a control: informational, printed and never gated, useful for
@@ -79,7 +81,7 @@ unclassified=0
 
 for spec in "chain 1000" "chain 4000" "cycle 1000" "cycle 4000" "fleet 16000" "fleet 64000"; do
   read -r shape n <<<"$spec"
-  for arm in fbNode fbWork unforced; do
+  for arm in fbNode fbWork lowlink unforced; do
     out=$(cell "$arm" "$shape" "$n")
     rc=$?
     shown=$out
@@ -112,6 +114,29 @@ for spec in "chain 1000" "chain 4000" "cycle 1000" "cycle 4000" "fleet 16000" "f
   shown=$out
   [ "$rc" -eq 0 ] || shown=$(anchor "$out")
   printf '%-9s %-6s %-6s exit=%d %-18s %s\n' abortControl "$shape" "$n" "$rc" "$verdict" "${shown:-<no value>}"
+done
+
+# THE LOWLINK ROWS: the arm alone at 100,000, gated like the arms above, and each followed by
+# its own `abortControl` so the row is read in an evaluation that could have aborted.
+for shape in chain cycle star rand; do
+  out=$(cell lowlink "$shape" 100000)
+  rc=$?
+  shown=$out
+  reading=returned
+  if [ "$rc" -ne 0 ]; then
+    shown=$(anchor "$out")
+    reading=$(label "$out")
+  fi
+  printf '%-9s %-6s %-6s exit=%d %-18s %s\n' lowlink "$shape" 100000 "$rc" "${reading}" "${shown:-<no value>}"
+  [ "$rc" -eq 0 ] || arm_failures=$((arm_failures + 1))
+  out=$(cell abortControl "$shape" 100000)
+  rc=$?
+  controls_run=$((controls_run + 1))
+  if [ "$rc" -ne 0 ] && [ "$(label "$out")" = CALLDEPTH ]; then
+    controls_fired=$((controls_fired + 1))
+  elif [ "$rc" -ne 0 ]; then
+    unclassified=$((unclassified + 1))
+  fi
 done
 
 # THE CONSTRUCTED CANARY: diverges BY CONSTRUCTION (no base case, ever), so unlike `unforced`
