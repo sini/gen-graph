@@ -1726,6 +1726,17 @@ in
             msg = "attempt to call something which is not a function but an integer";
           };
         };
+        # The same mechanism, at a BINARY caller-function's PARTIAL-RESULT position (den-hoag-hekcx
+        # P-D1): the first application returns a functor, `isFunction h || callable h` admits it
+        # (D1), and its own `__functor` returns a non-function, which the second application then
+        # tries to call. Unpinned until now: no cell drove a functor into a partial-result position.
+        test-a-functor-partial-returning-a-non-function-aborts-on-application = {
+          expr = G.selectEdges (_: { __functor = _s: 1; }) F.E;
+          expectedError = {
+            type = "TypeError";
+            msg = "attempt to call something which is not a function but an integer";
+          };
+        };
         # `succ`'s element is checked for `{ key; }`; the TYPE of `key` is den-hoag-3w9e7's.
         test-a-non-string-succ-key-is-not-refused-by-name = {
           expr = G.reachableVia (_: [ { key = { }; } ]) "a";

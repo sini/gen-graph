@@ -166,5 +166,36 @@ in
         fixpoint = E;
       };
     };
+    # D1's gating oracle (den-hoag-hekcx P-D1): a lawful FUNCTOR as a binary caller function's
+    # PARTIAL result is applied, not refused. `builtins.isFunction h || callable h` admits it;
+    # reverting to bare `isFunction h` (contact 1's literal text) refuses both arms below, even
+    # though base answered them, which is the regression this cell exists to catch.
+    test-a-functor-partial-result-is-applied = {
+      expr = {
+        topoOrder =
+          (G.topoOrder {
+            nodes = [
+              "b"
+              "a"
+            ];
+            edges = _: [ ];
+            lessThan = a: {
+              __functor = _s: b: a < b;
+            };
+          }).order;
+        selectEdges = G.selectEdges (_: {
+          __functor = _s: to: to == "b";
+        }) E;
+      };
+      expected = {
+        topoOrder = [
+          "a"
+          "b"
+        ];
+        selectEdges = {
+          a = [ "b" ];
+        };
+      };
+    };
   };
 }
