@@ -1422,14 +1422,16 @@ nix-unit --flake ./ci#testsError   # cells asserting an ERROR (nix-unit `expecte
 nix flake check ./ci               # the batch gate, which covers ./ci#tests
 ```
 
-**628 tests** across **29 suites** in `./ci#tests`
-(`nix-unit --flake ./ci#tests` ⇒ `628/628 successful`, `3ff3ab5`) (`arms`, `arrivals`,
-`boundaries`, `closure-order`, `declared-edges`, `edge-maps`, `endpoints`, `entry`,
-`enumerate`, `fixpoint-tests`, `global`, `hoist`, `integration`, `labeled-global`,
-`labeled-transpose`, `order`, `order-front-door`, `partition`, `prelude-domain`, `preorder`,
-`purity`, `query`, `regex`, `registry`, `scan`, `series`, `surface`, `topo`, `traverse`),
-plus **35** in `./ci#testsError` (`nix-unit --flake ./ci#testsError` ⇒ `35/35 successful`,
-`3ff3ab5`) — run under [nix-unit](https://github.com/nix-community/nix-unit) via
+**740 tests** across **35 suites** in `./ci#tests`
+(`nix-unit --flake ./ci#tests` ⇒ `740/740 successful`, `fb04df8`) (`arms`, `arrivals`,
+`boundaries`, `caller-functions`, `caller-results`, `closure-order`, `context-node-names`,
+`declared-edges`, `edge-maps`, `edges-results`, `endpoints`, `entry`, `enumerate`,
+`fixpoint-tests`, `global`, `hoist`, `identifier-doors`, `integration`, `labeled-door`,
+`labeled-global`, `labeled-transpose`, `order`, `order-front-door`, `partition`,
+`prelude-domain`, `preorder`, `purity`, `query`, `regex`, `registry`, `scan`, `series`,
+`surface`, `topo`, `traverse`),
+plus **210** in `./ci#testsError` (`nix-unit --flake ./ci#testsError` ⇒ `210/210 successful`,
+`fb04df8`) — run under [nix-unit](https://github.com/nix-community/nix-unit) via
 the gen CI harness (`gen.lib.mkCi`). The `purity` suite asserts the library source stays
 nixpkgs-lib-free (gen-prelude only).
 
