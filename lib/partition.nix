@@ -44,7 +44,12 @@
 # other's meaning.
 { prelude }:
 let
-  inherit (import ./key.nix) attrKey keyedAttrs;
+  inherit (import ./key.nix)
+    attrKey
+    edgesAccessor
+    keyedAttrs
+    notEdgeList
+    ;
   traverse = import ./traverse.nix;
   global = import ./global.nix { inherit prelude; };
   order = import ./order.nix { inherit prelude; };
@@ -83,6 +88,7 @@ let
     { edges, nodes, ... }:
     tagOf:
     let
+      e = edgesAccessor "condensationOf" edges;
       membersOf = prelude.mapAttrs (_: es: builtins.sort builtins.lessThan (map (e: e.n) es)) (
         builtins.groupBy (e: attrKey e.r) (
           map (n: {
@@ -109,7 +115,15 @@ let
         builtins.filter (t: t != r) (
           builtins.attrValues (
             keyedAttrs (map (m: tagOf.${attrKey m}) (
-              prelude.concatMap (m: edges m) (membersOf.${attrKey r} or [ ])
+              prelude.concatMap (
+                m:
+                (
+                  let
+                    es = e m;
+                  in
+                  if builtins.isList es then es else throw (notEdgeList "condensationOf" m es)
+                )
+              ) (membersOf.${attrKey r} or [ ])
             )) (t: t)
           )
         )
@@ -229,6 +243,7 @@ let
     accessor@{ edges, nodes, ... }:
     let
       rev = global.transpose accessor;
+      e = edgesAccessor "fbWork" edges;
       step =
         acc: v:
         if acc.tags ? ${attrKey v} then
@@ -237,7 +252,14 @@ let
           let
             live = id: !(acc.tags ? ${attrKey id});
             forward = keyedAttrs (traverse.reachableFrom {
-              edges = id: builtins.filter live (edges id);
+              edges =
+                id:
+                builtins.filter live (
+                  let
+                    es = e id;
+                  in
+                  if builtins.isList es then es else throw (notEdgeList "fbWork" id es)
+                );
             } v) (_: true);
             component = [
               v

@@ -1176,5 +1176,107 @@ in
           genGraph.queryArrivals (qa X // { advance = _: 1; })
         );
       };
+
+    # den-hoag-0mqv1: a plain accessor's `edges` result is refused by name where it is read. The
+    # surfaces pinned here are the ones whose text names themselves under any reading of which name
+    # a shared primitive's refusal carries (den-hoag-7gp66); `ci/tests/edges-results.nix` asserts the
+    # rest refuse catchably.
+    flake.testsError.edges-results =
+      let
+        good =
+          id:
+          if id == "a" then
+            [ "b" ]
+          else if id == "b" then
+            [ "c" ]
+          else
+            [ ];
+        bad = id: if id == "b" then 1 else good id;
+        nodes = [
+          "a"
+          "b"
+          "c"
+        ];
+        acc = e: {
+          edges = e;
+          inherit nodes;
+        };
+        acyclic = e: if builtins.isFunction e then (id: if id == "a" then [ ] else e id) else e;
+        res = who: "^gen-graph\\.${who}: edges \"b\" returned a int, not a list of node ids$";
+        nf =
+          who:
+          "^gen-graph\\.${who}: the accessor's edges is a int, not a function from a node id to a list of node ids$";
+        cell = msg: expr: {
+          inherit expr;
+          expectedError = {
+            type = "ThrownError";
+            inherit msg;
+          };
+        };
+        # the walk surfaces are started at "b", so the refusal is read at the first application
+        surfaces = e: {
+          reachableFrom = genGraph.reachableFrom (acc e) "b";
+          canReach = genGraph.canReach (acc e) "b" "c";
+          selfReachable = genGraph.selfReachable (acc e) "b";
+          pathsBetween = genGraph.pathsBetween (acc e) "a" "c";
+          dependentsOf = genGraph.dependentsOf (acc e) "c";
+          dependentsFrontier = genGraph.dependentsFrontier (acc e) "c" (_: true);
+          directDependents = genGraph.directDependents (acc e);
+          roots = genGraph.roots (acc e);
+          leaves = genGraph.leaves (acc e);
+          condensationOf = genGraph.condensationOf (acc e) {
+            a = "a";
+            b = "b";
+            c = "c";
+          };
+          topoOrder = genGraph.topoOrder (acc (acyclic e));
+          coneRank = genGraph.coneRank (acc (acyclic e)) nodes;
+          expandPreorder = genGraph.expandPreorder {
+            roots = [ "b" ];
+            key = f: f;
+            edges = e;
+          };
+        };
+        cells = pin: e: builtins.mapAttrs (who: v: cell (pin who) (builtins.deepSeq v v)) (surfaces e);
+      in
+      builtins.listToAttrs (
+        map (n: {
+          name = "test-${n}-result";
+          value = (cells res bad).${n};
+        }) (builtins.attrNames (surfaces bad))
+        ++ map (n: {
+          name = "test-${n}-non-function";
+          value = (cells nf 1).${n};
+        }) (builtins.attrNames (surfaces 1))
+      )
+      // {
+        test-fromRegistry-non-function =
+          cell
+            "^gen-graph\\.fromRegistry: edges is a int, not a function from a node id and its registry entry to a list of node ids$"
+            (
+              genGraph.reachableFrom (genGraph.fromRegistry {
+                registry = {
+                  a = { };
+                };
+                edges = 1;
+              }) "a"
+            );
+        # FALSIFIERS, not doors: a missing `edges` is the arity class, a pattern-formal `edges` the
+        # caller's own destructuring
+        test-a-missing-edges-is-an-arity-abort = {
+          expr = genGraph.reachableFrom { inherit nodes; } "a";
+          expectedError = {
+            type = "TypeError";
+            msg = "called without required argument 'edges'";
+          };
+        };
+        test-a-pattern-formal-edges-aborts-in-the-callers-destructuring = {
+          expr = genGraph.reachableFrom (acc ({ x }: [ ])) "a";
+          expectedError = {
+            type = "TypeError";
+            msg = "expected a set but found a string";
+          };
+        };
+      };
   };
 }

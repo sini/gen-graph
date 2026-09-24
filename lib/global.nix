@@ -22,8 +22,10 @@ let
   inherit (import ./key.nix)
     attrKey
     keyedAttrs
+    edgesAccessor
     identifier
     nodeKey
+    notEdgeList
     ;
   edgeMaps = import ./edge-maps.nix { inherit prelude; };
   fp = import ./fixpoint.nix { inherit prelude; };
@@ -35,14 +37,23 @@ let
   # Θ(n + E) via groupBy instead of O(E²) via foldl'+// — the concatMap below visits every
   # node to read its out-edges, so a node with no out-edges still costs its visit.
   _reverseIndex =
+    who:
     { edges, nodes, ... }:
     let
+      e = edgesAccessor who edges;
       allEdges = prelude.concatMap (
         from:
-        map (to: {
-          name = to;
-          value = from;
-        }) (edges from)
+        map
+          (to: {
+            name = to;
+            value = from;
+          })
+          (
+            let
+              es = e from;
+            in
+            if builtins.isList es then es else throw (notEdgeList who from es)
+          )
       ) nodes;
       grouped = builtins.groupBy (e: attrKey e.name) allEdges;
     in
@@ -142,7 +153,7 @@ let
     { edges, nodes, ... }:
     targetId:
     let
-      reverseIndex = _reverseIndex { inherit edges nodes; };
+      reverseIndex = _reverseIndex who { inherit edges nodes; };
       revEdges = id: reverseIndex.${attrKey id} or [ ];
     in
     builtins.seq (identifier who targetId) (
@@ -168,7 +179,7 @@ let
     { edges, nodes, ... }:
     targetId: prune:
     let
-      reverseIndex = _reverseIndex { inherit edges nodes; };
+      reverseIndex = _reverseIndex "dependentsFrontier" { inherit edges nodes; };
       revOf = id: reverseIndex.${attrKey id} or [ ];
       keyed = map (k: {
         key = k;
@@ -363,7 +374,12 @@ let
             # COST note above the door — rather than forcing every successor's enumeration first.
             firstPs = prelude.findFirst (ps: ps != [ ]) [ ] (
               map (v: traverse.pathsBetween { inherit edges; } v u) (
-                builtins.filter (v: sccOf.${attrKey v} == sccOf.${attrKey u}) (edges u)
+                builtins.filter (v: sccOf.${attrKey v} == sccOf.${attrKey u}) (
+                  let
+                    es = edges u;
+                  in
+                  if builtins.isList es then es else throw (notEdgeList "cyclePaths" u es)
+                )
               )
             );
             back = if firstPs == [ ] then [ ] else builtins.head firstPs;
@@ -385,7 +401,7 @@ let
 
   # DIRECT reverse-adjacency (full map) — the public face of _reverseIndex.
   # DIRECT (immediate dependents), in contrast to dependentsOf's TRANSITIVE closure.
-  directDependents = { edges, nodes, ... }: _reverseIndex { inherit edges nodes; };
+  directDependents = { edges, nodes, ... }: _reverseIndex "directDependents" { inherit edges nodes; };
   directDependentsOf =
     accessor: id:
     builtins.seq (identifier "directDependentsOf" id) (

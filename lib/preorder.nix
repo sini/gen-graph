@@ -27,7 +27,7 @@
 #   visited key prunes that frame's whole subtree WITHOUT forcing it.
 { prelude }:
 let
-  inherit (import ./key.nix) attrKey;
+  inherit (import ./key.nix) attrKey edgesAccessor notEdgeList;
   # ── THE DEPTH CEILING, NAMED RATHER THAN REMOVED ──
   #
   # `foldPreorder.go` below is SELF-RECURSIVE — a frame's children are folded inside that
@@ -143,6 +143,7 @@ let
       maxDepth ? defaultMaxDepth,
     }:
     let
+      e = edgesAccessor "expandPreorder" edges;
       r = foldPreorder {
         inherit roots key maxDepth;
         surface = "expandPreorder";
@@ -155,7 +156,12 @@ let
           in
           {
             acc = nodes ++ [ (emit frame payload) ];
-            children = edges payload;
+            children = (
+              let
+                es = e payload;
+              in
+              if builtins.isList es then es else throw (notEdgeList "expandPreorder" payload es)
+            );
           };
       };
     in
@@ -202,6 +208,7 @@ let
             seen = if k == null then st.seen else st.seen // { ${attrKey k} = true; };
             nodes = st.nodes ++ [ item ];
           };
+      e = edgesAccessor "foldReach" edges;
       r = foldPreorder {
         inherit roots maxDepth;
         surface = "foldReach";
@@ -213,7 +220,12 @@ let
         };
         expand = st: edge: {
           acc = prelude.foldl' addItem st (project edge);
-          children = edges (target edge);
+          children = (
+            let
+              es = e (target edge);
+            in
+            if builtins.isList es then es else throw (notEdgeList "foldReach" (target edge) es)
+          );
         };
       };
     in

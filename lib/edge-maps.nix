@@ -1,7 +1,25 @@
 { prelude }:
 let
-  inherit (import ./key.nix) attrKey keyedAttrs;
-  materialize = { edges, nodes, ... }: keyedAttrs nodes (id: prelude.unique (edges id));
+  inherit (import ./key.nix)
+    attrKey
+    edgesAccessor
+    keyedAttrs
+    notEdgeList
+    ;
+  materialize =
+    { edges, nodes, ... }:
+    let
+      e = edgesAccessor "materialize" edges;
+    in
+    keyedAttrs nodes (
+      id:
+      prelude.unique (
+        let
+          es = e id;
+        in
+        if builtins.isList es then es else throw (notEdgeList "materialize" id es)
+      )
+    );
 
   materializeParents =
     { parent, nodes, ... }:

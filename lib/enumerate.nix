@@ -1,16 +1,24 @@
 { prelude }:
 let
-  inherit (import ./key.nix) attrKey;
+  inherit (import ./key.nix) attrKey edgesAccessor notEdgeList;
   roots =
     { edges, nodes, ... }:
     let
+      e = edgesAccessor "roots" edges;
       allTargets = builtins.listToAttrs (
         prelude.concatMap (
           id:
-          map (t: {
-            name = attrKey t;
-            value = true;
-          }) (edges id)
+          map
+            (t: {
+              name = attrKey t;
+              value = true;
+            })
+            (
+              let
+                es = e id;
+              in
+              if builtins.isList es then es else throw (notEdgeList "roots" id es)
+            )
         ) nodes
       );
     in
@@ -18,7 +26,18 @@ let
 
   leaves =
     { edges, nodes, ... }:
-    builtins.sort builtins.lessThan (builtins.filter (id: edges id == [ ]) nodes);
+    let
+      e = edgesAccessor "leaves" edges;
+    in
+    builtins.sort builtins.lessThan (
+      builtins.filter (
+        id:
+        let
+          es = e id;
+        in
+        if builtins.isList es then es == [ ] else throw (notEdgeList "leaves" id es)
+      ) nodes
+    );
 
   select = { nodes, nodeData, ... }: pred: builtins.filter (id: pred (nodeData id)) nodes;
 in

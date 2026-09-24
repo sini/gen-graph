@@ -80,7 +80,12 @@
 # analysis is on the way out either way.
 { prelude }:
 let
-  inherit (import ./key.nix) attrKey keyedAttrs;
+  inherit (import ./key.nix)
+    attrKey
+    edgesAccessor
+    keyedAttrs
+    notEdgeList
+    ;
   global = import ./global.nix { inherit prelude; };
   partition = import ./partition.nix { inherit prelude; };
 
@@ -168,7 +173,15 @@ let
       byKey = builtins.groupBy (k: attrKey k.key) keyed;
       collisions = builtins.filter (g: builtins.length g > 1) (prelude.mapAttrsToList (_: g: g) byKey);
       nodeOf = prelude.mapAttrs (_: g: (builtins.head g).node) byKey;
-      rawDepsOf = keyedAttrs keys (k: map keyOf (edges nodeOf.${attrKey k}));
+      e = edgesAccessor "topoOrder" edges;
+      rawDepsOf = keyedAttrs keys (
+        k:
+        let
+          node = nodeOf.${attrKey k};
+          es = e node;
+        in
+        if builtins.isList es then map keyOf es else throw (notEdgeList "topoOrder" node es)
+      );
 
       # ── THE CERTIFICATE-GATED ARM ──
       # A second arm behind this door, reached only where it can be PROVEN to answer exactly what
@@ -666,6 +679,7 @@ let
       badId = builtins.head (builtins.filter (id: !builtins.isString id) cone);
 
       coneSet = keyedAttrs cone (_: true);
+      e = edgesAccessor "coneRank" accessor.edges;
       # The membership test is TOTAL: a target that cannot be tested for cone membership
       # refuses by name AT THE SITE that used to abort on it. Guarding the predicate rather
       # than pre-scanning the edge lists is what keeps the accessor read where it already
@@ -674,13 +688,20 @@ let
       # exactly the targets the old spelling died on, no earlier and no later.
       inConeProducers =
         id:
-        builtins.filter (
-          d:
-          if builtins.isString d then
-            coneSet ? ${attrKey d}
-          else
-            throw "gen-graph.coneRank: edge target of type ${builtins.typeOf d} on node ${builtins.toJSON id} is not a string; cone membership needs a string target"
-        ) (accessor.edges id);
+        builtins.filter
+          (
+            d:
+            if builtins.isString d then
+              coneSet ? ${attrKey d}
+            else
+              throw "gen-graph.coneRank: edge target of type ${builtins.typeOf d} on node ${builtins.toJSON id} is not a string; cone membership needs a string target"
+          )
+          (
+            let
+              es = e id;
+            in
+            if builtins.isList es then es else throw (notEdgeList "coneRank" id es)
+          );
 
       # The driver ranges over the DISTINCT ids: the memo map is keyed by id, so a repeated
       # cone entry is one memo cell and one warming step, and ordering keys must be unique

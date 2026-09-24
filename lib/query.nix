@@ -13,7 +13,13 @@
 # witness-carrying modes live beside it.
 { prelude }:
 let
-  inherit (import ./key.nix) attrKey identifier nodeKey;
+  inherit (import ./key.nix)
+    attrKey
+    callable
+    identifier
+    nodeKey
+    renderId
+    ;
   regex = import ./regex.nix { inherit prelude; };
   global = import ./global.nix { inherit prelude; };
   partition = import ./partition.nix { inherit prelude; };
@@ -73,14 +79,6 @@ let
   # aborts on a node id — so that input has a falsifier cell (`ci/tests-error.nix`) instead.
   # The id is rendered only when it is a string: a refusal that coerced a caller value into
   # its own message would abort in the act of refusing.
-  renderId = id: if builtins.isString id then builtins.toJSON id else "<a ${builtins.typeOf id}>";
-
-  # Callable is a function, or a set whose `__functor` is one: `f ? __functor` alone admits
-  # `{ __functor = 1; }`, which aborts when applied. gen-view's `callable` (`lib/relation.nix`).
-  # A per-node site tests `builtins.isFunction` inline first, so a plain function costs no call.
-  callable =
-    v:
-    builtins.isFunction v || (builtins.isAttrs v && v ? __functor && builtins.isFunction v.__functor);
 
   edgesAt =
     surface: graph: id:

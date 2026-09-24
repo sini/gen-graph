@@ -43,6 +43,33 @@ let
   # For a door whose body only hands the id to the caller's accessor and to `genericClosure`/`==`:
   # that body answers correctly on an integer id today, so the guard refuses only the shapes that
   # are never a node id (den-hoag-bkdkg C1), and keeps every scalar the caller's accessor keys on.
+  # Callable is a function, or a set whose `__functor` is one: `f ? __functor` alone admits
+  # `{ __functor = 1; }`, which aborts when applied. gen-view's `callable` (`lib/relation.nix`).
+  # A per-application site tests `builtins.isFunction` inline first, so a plain function costs no call.
+  callable =
+    v:
+    builtins.isFunction v || (builtins.isAttrs v && v ? __functor && builtins.isFunction v.__functor);
+
+  # The id is rendered only when it is a string: a refusal that coerced a caller value into its own
+  # message would abort in the act of refusing.
+  renderId = id: if builtins.isString id then builtins.toJSON id else "<a ${builtins.typeOf id}>";
+
+  # ── THE PLAIN ACCESSOR'S RESULT IS A CLAIM TOO (den-hoag-0mqv1) ──
+  # A surface taking `{ edges, ... }` applies `edges` and reads its result as a list. Callability is
+  # decided once per invocation, where the first application forces it (`edgesAccessor`); the
+  # result is tested for being a list at each application, written out at the site, because a call
+  # costs an Env and these sites run once per visit. Only list-ness is checked: what a target must
+  # be differs by site, and is not this check's to decide.
+  edgesAccessor =
+    who: f:
+    if builtins.isFunction f || callable f then
+      f
+    else
+      throw "gen-graph.${who}: the accessor's edges is a ${builtins.typeOf f}, not a function from a node id to a list of node ids";
+  notEdgeList =
+    who: id: v:
+    "gen-graph.${who}: edges ${renderId id} returned a ${builtins.typeOf v}, not a list of node ids";
+
   nodeKey =
     who: v:
     if builtins.isAttrs v || builtins.isList v || builtins.isFunction v || v == null then
@@ -53,6 +80,10 @@ in
 {
   inherit
     attrKey
+    callable
+    renderId
+    edgesAccessor
+    notEdgeList
     notAnIdentifier
     identifier
     nodeKey

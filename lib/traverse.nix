@@ -28,7 +28,13 @@
 #
 # Pure builtins only — no dependencies, so this is a bare value (not a function).
 let
-  inherit (import ./key.nix) attrKey identifier nodeKey;
+  inherit (import ./key.nix)
+    attrKey
+    edgesAccessor
+    identifier
+    nodeKey
+    notEdgeList
+    ;
   # Follow edges transitively from a start node (excludes startId).
   # C-level BFS via genericClosure. Θ( Σ_{u ∈ reach startId} (1 + outdeg u) ) — the operator
   # below re-reads `edges` at every visit, so this is O(reachable) only at bounded out-degree.
@@ -46,9 +52,22 @@ let
     startId:
     builtins.seq (nodeKey "reachableFrom" startId) (
       let
+        e = edgesAccessor "reachableFrom" edges;
         result = builtins.genericClosure {
-          startSet = map (id: { key = id; }) (edges startId);
-          operator = item: map (id: { key = id; }) (edges item.key);
+          startSet = map (id: { key = id; }) (
+            let
+              es = e startId;
+            in
+            if builtins.isList es then es else throw (notEdgeList "reachableFrom" startId es)
+          );
+          operator =
+            item:
+            map (id: { key = id; }) (
+              let
+                es = e item.key;
+              in
+              if builtins.isList es then es else throw (notEdgeList "reachableFrom" item.key es)
+            );
         };
       in
       builtins.filter (id: id != startId) (map (r: r.key) result)
@@ -93,10 +112,28 @@ let
     fromId: toId:
     builtins.seq (nodeKey "canReach" fromId) (
       builtins.seq (nodeKey "canReach" toId) (
+        let
+          e = edgesAccessor "canReach" edges;
+        in
         builtins.any (r: r.key == toId) (
           builtins.genericClosure {
-            startSet = map (id: { key = id; }) (edges fromId);
-            operator = item: if item.key == toId then [ ] else map (id: { key = id; }) (edges item.key);
+            startSet = map (id: { key = id; }) (
+              let
+                es = e fromId;
+              in
+              if builtins.isList es then es else throw (notEdgeList "canReach" fromId es)
+            );
+            operator =
+              item:
+              if item.key == toId then
+                [ ]
+              else
+                map (id: { key = id; }) (
+                  let
+                    es = e item.key;
+                  in
+                  if builtins.isList es then es else throw (notEdgeList "canReach" item.key es)
+                );
           }
         )
       )
@@ -108,10 +145,25 @@ let
     { edges, ... }:
     id:
     builtins.seq (nodeKey "selfReachable" id) (
+      let
+        e = edgesAccessor "selfReachable" edges;
+      in
       builtins.any (r: r.key == id) (
         builtins.genericClosure {
-          startSet = map (t: { key = t; }) (edges id);
-          operator = item: map (t: { key = t; }) (edges item.key);
+          startSet = map (t: { key = t; }) (
+            let
+              es = e id;
+            in
+            if builtins.isList es then es else throw (notEdgeList "selfReachable" id es)
+          );
+          operator =
+            item:
+            map (t: { key = t; }) (
+              let
+                es = e item.key;
+              in
+              if builtins.isList es then es else throw (notEdgeList "selfReachable" item.key es)
+            );
         }
       )
     );
@@ -203,6 +255,7 @@ let
     }:
     startId: endId:
     let
+      e = edgesAccessor "pathsBetween" edges;
       dfs =
         depth: visited: current:
         if current == endId then
@@ -219,7 +272,12 @@ let
             newVisited = visited // {
               ${attrKey current} = true;
             };
-            targets = edges current;
+            targets = (
+              let
+                es = e current;
+              in
+              if builtins.isList es then es else throw (notEdgeList "pathsBetween" current es)
+            );
           in
           builtins.concatMap (
             next: map (path: [ current ] ++ path) (dfs (depth + 1) newVisited next)
@@ -264,7 +322,15 @@ let
   hoistEdges =
     { edges, nodes, ... }:
     let
-      wrap = id: map (t: { key = t; }) (edges id);
+      e = edgesAccessor "hoistEdges" edges;
+      wrap =
+        id:
+        map (t: { key = t; }) (
+          let
+            es = e id;
+          in
+          if builtins.isList es then es else throw (notEdgeList "hoistEdges" id es)
+        );
       wrapped = builtins.listToAttrs (
         map (id: {
           name = attrKey id;

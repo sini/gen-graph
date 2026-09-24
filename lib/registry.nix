@@ -1,6 +1,6 @@
 { prelude }:
 let
-  inherit (import ./key.nix) attrKey;
+  inherit (import ./key.nix) attrKey callable;
   self = {
     fromRegistry =
       {
@@ -10,10 +10,17 @@ let
       }:
       let
         nodes = builtins.attrNames registry;
+        # Applied inside the accessor this returns, so a non-function is refused where it is first
+        # applied; the result is the downstream surface's to read, and that surface checks it.
+        e =
+          if builtins.isFunction edges || callable edges then
+            edges
+          else
+            throw "gen-graph.fromRegistry: edges is a ${builtins.typeOf edges}, not a function from a node id and its registry entry to a list of node ids";
       in
       {
         inherit nodes;
-        edges = id: edges id (registry.${attrKey id} or { });
+        edges = id: e id (registry.${attrKey id} or { });
         parent = id: parent id (registry.${attrKey id} or { });
         nodeData = id: registry.${attrKey id} or { };
       };
