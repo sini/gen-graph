@@ -319,6 +319,12 @@ let
   # enumerates simple paths and is worst-case exponential — runs only once the graph is
   # KNOWN cyclic, i.e. only on the branch a caller refuses on. Same discipline `order.nix` states
   # for its own cycle report: the expensive analysis is on the way out.
+  # The partition arm is Θ(Σ_v (|reach⁺ v| + |reach⁻ v|)) over the nodes whose tag is forced —
+  # every cyclic node, and the successors of each component's entry point — because `fbNode` spends one forward and one
+  # backward closure per node: QUADRATIC in the size of one large component, and linear in the
+  # number of components. The measured figures are on `cyclicEdgesWhere` (`query.nix`), which
+  # binds the same arm; a linear, non-recursive SCC construction is the open spike
+  # den-hoag-c48r1.
   # ★ THE BACK-EDGE SEARCH SHORT-CIRCUITS (den-hoag-ckev). `repCycle` below needs only the FIRST
   # in-SCC successor with a path home; it finds that successor with `prelude.findFirst` over the
   # lazy `map` of `pathsBetween` calls, so a successor after the winner never pays its own

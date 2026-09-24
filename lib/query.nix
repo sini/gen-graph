@@ -353,6 +353,19 @@ let
   # WITNESSES, not a boolean: a caller refusing a graph has to say which edges did it, and
   # the answer is exactly the material for that message. The order is (from, label, to)
   # ascending so the answer is a function of the graph and not of accessor enumeration.
+  #
+  # COST: Θ(Σ_v (|reach⁺ v| + |reach⁻ v|)) over the endpoints of the edges satisfying `p`, on
+  # top of one pass over the labelled edges. The partition arm is `fbNode`, whose tag for a node
+  # is one forward and one backward closure from that node (`partition.nix`, `nodeTags`); the
+  # tags are built lazily and the `&&` below short-circuits, so only an endpoint of a
+  # p-satisfying edge forces one. When every node is such an endpoint that sum is QUADRATIC on a
+  # ring and equally on an acyclic chain, and linear on a star. Measured at gen-graph
+  # `648dee5` in `nrFunctionCalls`, `p` accepting every edge, at n = 250 / 500 / 1000 / 2000:
+  # ring 650,249 / 2,550,303 / 10,100,393 / 40,202,423 (×3.98 per doubling); chain 20,162,012
+  # at n = 2000 (×3.97); star 233,465 (×2.13). With `p` always false the ring costs 16,031 at
+  # n = 2000 (×2.00). `fbWork` does not remove the quadratic: it is linear on the ring and
+  # quadratic on a chain whose nodes are listed tail-first. A linear SCC construction that does
+  # not recurse (ADR-0022) is the open spike den-hoag-c48r1.
   cyclicEdgesWhere =
     graph: p:
     let
