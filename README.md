@@ -1441,10 +1441,16 @@ Cross-partition edges are rare in practice. The speed-up is shape-dependent: spl
 **Two test outputs, and both need running.**
 
 ```bash
-nix-unit --flake ./ci#tests        # cells asserting a VALUE
-nix-unit --flake ./ci#testsError   # cells asserting an ERROR (nix-unit `expectedError`)
-nix flake check ./ci               # the batch gate, which covers ./ci#tests
+nix develop ./ci --command ci                # cells asserting a VALUE, guarded
+nix develop ./ci --command ci --tests-error  # cells asserting an ERROR, guarded
+nix-unit --flake ./ci#tests        # cells asserting a VALUE; unguarded
+nix-unit --flake ./ci#testsError   # cells asserting an ERROR (nix-unit `expectedError`); unguarded
+nix flake check ./ci               # the batch gate, which covers ./ci#tests; unguarded
 ```
+
+`ci` refuses when anything under a declared read root is unknown to git — any extension or name,
+`_`-prefixed included — and the remedy is `git add` or a move. The unguarded forms read a
+git-filtered copy of the tree, so an untracked cell is silently absent and the run stays green.
 
 **740 tests** across **36 suites** in `./ci#tests`
 (`nix-unit --flake ./ci#tests` ⇒ `740/740 successful`, `fb04df8`) (`arms`, `arrivals`,

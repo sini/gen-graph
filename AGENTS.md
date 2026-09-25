@@ -308,7 +308,14 @@ Current output (verbatim):
 **Checks.** Test-runner invocation (from the repo root; CI runs the same command with `working-directory: ci`, `.github/workflows/ci.yml:13,18`). ★ `nix flake check` covers `#tests` ONLY — the error-assertion cells are on a second output and need their own invocation:
 
 ```sh
-nix flake check ./ci                 # the batch gate over ./ci#tests
-nix-unit --flake ./ci#tests          # the same cells, per-case
-nix-unit --flake ./ci#testsError     # the error-assertion cells — NOT covered above
+nix develop ./ci --command ci                # the cells, per-case, guarded
+nix develop ./ci --command ci --tests-error  # the error-assertion cells, guarded
+nix flake check ./ci                 # the batch gate over ./ci#tests; unguarded
+nix-unit --flake ./ci#tests          # the same cells, per-case; unguarded
+nix-unit --flake ./ci#testsError     # the error-assertion cells — NOT covered above; unguarded
 ```
+
+Run the suites locally through `ci`: it refuses when anything under a declared read root is
+unknown to git — any extension or name, `_`-prefixed included — and the remedy is `git add` or a
+move. The unguarded forms read a git-filtered copy of the tree, so an untracked cell is silently
+absent and the run stays green.
