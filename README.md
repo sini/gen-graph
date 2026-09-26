@@ -523,13 +523,12 @@ is a strict total order on distinct keys: the order is a function of the node se
 `keyOf` and `lessThan`, never of the `nodes` list's permutation. (3) **WHICH LINEAR EXTENSION —
 DECLARED AND PINNED, NOT NORMATIVE**: today the door answers with the Kahn arm's pick, the
 smallest ready key under `lessThan` taken globally; the cells pinning it are named
-`…-change-detector` and are re-baselined deliberately, and ADR-0009's ruled default flip to the
-rank recurrence moves it. A consumer whose value depends on the order among incomparable nodes
+`…-change-detector` and are re-baselined deliberately, and the ruled default flip to the rank
+recurrence moves it. A consumer whose value depends on the order among incomparable nodes
 declares that order itself — as edges — rather than inheriting this one. **`topoOrderKahn`** is
 outside clause 3: it is the named algorithm, and its global min-key ready discipline is its own
-contract, pinned by the cells that bind the arm by name. The basis is the owner's reading on
-den-hoag-nz21 (2026-08-19) and the premise it rests on, OPEN 4.A (2026-08-05): *"a pinned,
-DECLARED order — not one specific order"*.
+contract, pinned by the cells that bind the arm by name. The basis is the design's premise that
+the door owes *"a pinned, DECLARED order — not one specific order"*.
 
 **`topoOrder { } accessor`** does **not** throw on a cycle. It returns a producers-first
 ordering, or the cycles that prevented one — as strongly-connected-component member sets,
@@ -873,7 +872,7 @@ g = graph.fromRegistry {
 };
 ```
 
-**Malformed caller data is refused by name, catchably** (ADR-0025 item 1). Each read of caller data is guarded where it already was, never pre-scanned, so a construction refuses exactly what the unguarded read died on or misread, and a read that never meets the defect answers as before. **Shape** is checked at every read (a list is a list, an element is a record, a field is present); an endpoint's **stringness** only where the constructor keys it (`from`, a keyed `to`, a scanned item's `id`). An endpoint passed through unkeyed — `edges id` returning a `to`, `parent id`, `derivedEdges[i].from` — is not checked for type. A message names the door you invoked, the field and the element's position, and the type, never the value:
+**Malformed caller data is refused by name, catchably.** Each read of caller data is guarded where it already was, never pre-scanned, so a construction refuses exactly what the unguarded read died on or misread, and a read that never meets the defect answers as before. **Shape** is checked at every read (a list is a list, an element is a record, a field is present); an endpoint's **stringness** only where the constructor keys it (`from`, a keyed `to`, a scanned item's `id`). An endpoint passed through unkeyed — `edges id` returning a `to`, `parent id`, `derivedEdges[i].from` — is not checked for type. A message names the door you invoked, the field and the element's position, and the type, never the value:
 
 ```
 gen-graph.mkGraph: edges element 0: 'from' is a int, not a node identifier (a string)
