@@ -71,6 +71,12 @@ let
     surface: name: subject: want: v:
     throw "gen-graph.${surface}: ${name} ${subject} returned a ${builtins.typeOf v}, not ${want}";
 
+  # The same text for caller DATA a constructor reads (den-hoag-ndte): a field, or an element
+  # named by its position, that is not the shape the read needs.
+  notA =
+    surface: what: want: v:
+    "gen-graph.${surface}: ${what} is a ${builtins.typeOf v}, not ${want}";
+
   # ── THE PLAIN ACCESSOR'S RESULT IS A CLAIM TOO (den-hoag-0mqv1) ──
   # A surface taking `{ edges, ... }` applies `edges` and reads its result as a list. Callability is
   # decided once per invocation, where the first application forces it (`edgesAccessor`); the
@@ -108,6 +114,7 @@ in
     callable
     callableAt
     badResult
+    notA
     renderId
     edgesAccessor
     notEdgeList

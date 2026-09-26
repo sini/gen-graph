@@ -20,6 +20,7 @@ let
     callableAt
     identifier
     nodeKey
+    notA
     renderId
     ;
   regex = import ./regex.nix { inherit prelude; };
@@ -48,9 +49,17 @@ let
       nodes,
     }:
     let
+      perLabel' =
+        if builtins.isAttrs perLabel then
+          perLabel
+        else
+          throw (
+            notA "labeledFrom" "perLabel" "an attrset from a label to a function returning a list of node ids"
+              perLabel
+          );
       doors = builtins.mapAttrs (
         label: f: callableAt "labeledFrom" "perLabel.${label}" "a list of node ids" f
-      ) perLabel;
+      ) perLabel';
     in
     {
       inherit nodes;
@@ -67,7 +76,7 @@ let
             else
               badResult "labeledFrom" "perLabel.${label}" (renderId id) "a list of node ids" ts
           )
-        ) (builtins.attrNames perLabel);
+        ) (builtins.attrNames perLabel');
     };
 
   # ── THE ACCESSOR'S RESULT IS A CLAIM, CHECKED WHERE IT IS READ ──

@@ -739,8 +739,8 @@ in
         };
       };
     # den-hoag-u9k7j: the key projection is GUARDED. `unsafeDiscardStringContext` coerces, so an
-    # unguarded key would admit a forged `outPath` set as the node "b" silently. It must keep the
-    # TypeError it met before the projection existed.
+    # unguarded key would admit a forged `outPath` set as the node "b" silently. It is refused, and
+    # since den-hoag-ndte by name and catchably, where it met a TypeError before.
     flake.testsError.context-node-names = {
       test-a-forged-endpoint-is-not-coerced-into-a-node = {
         expr =
@@ -755,11 +755,77 @@ in
             ];
           }).nodes;
         expectedError = {
-          type = "TypeError";
-          msg = "expected a string but found a set.*";
+          type = "ThrownError";
+          msg = "^gen-graph\\.mkGraph: edges element 0: 'to' is a set, not a node identifier \\(a string\\)$";
         };
       };
     };
+
+    # den-hoag-ndte: the construction family refuses malformed caller data by name. Catchability,
+    # and what the guards leave answering, is `ci/tests/construction.nix` over the same
+    # constructions; these pin WHICH refusal, anchored. Each cell first evaluates the construction's
+    # well-formed twin under `tryEval`: a build refusing everything would throw the pinned text for
+    # the twin too, so the twin must answer before the subject is read.
+    flake.testsError.construction =
+      let
+        F = import ./tests/_fixtures/construction.nix { inherit genGraph; };
+        esc =
+          builtins.replaceStrings
+            [
+              "\\"
+              "."
+              "("
+              ")"
+              "["
+              "]"
+              "{"
+              "}"
+              "?"
+              "*"
+              "+"
+              "|"
+              "^"
+              "$"
+            ]
+            [
+              "\\\\"
+              "\\."
+              "\\("
+              "\\)"
+              "\\["
+              "\\]"
+              "\\{"
+              "\\}"
+              "\\?"
+              "\\*"
+              "\\+"
+              "\\|"
+              "\\^"
+              "\\$"
+            ];
+      in
+      builtins.listToAttrs (
+        map (
+          k:
+          let
+            r = F.refusals.${k};
+          in
+          {
+            name = "test-${k}";
+            value = {
+              expr =
+                if (builtins.tryEval (builtins.deepSeq r.good true)).success then
+                  builtins.deepSeq r.bad r.bad
+                else
+                  throw "construction cell: the well-formed twin refused";
+              expectedError = {
+                type = "ThrownError";
+                msg = "^gen-graph\\.${r.door}: ${esc r.text}$";
+              };
+            };
+          }
+        ) (builtins.attrNames F.refusals)
+      );
 
     # den-hoag-vq94z: a labeled graph's `labeledEdges` result is refused BY NAME where a surface
     # reads it. Where these cells assert a message, the unguarded read met interpreter text

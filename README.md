@@ -873,6 +873,21 @@ g = graph.fromRegistry {
 };
 ```
 
+**Malformed caller data is refused by name, catchably** (ADR-0025 item 1). Each read of caller data is guarded where it already was, never pre-scanned, so a construction refuses exactly what the unguarded read died on or misread, and a read that never meets the defect answers as before. **Shape** is checked at every read (a list is a list, an element is a record, a field is present); an endpoint's **stringness** only where the constructor keys it (`from`, a keyed `to`, a scanned item's `id`). An endpoint passed through unkeyed — `edges id` returning a `to`, `parent id`, `derivedEdges[i].from` — is not checked for type. A message names the door you invoked, the field and the element's position, and the type, never the value:
+
+```
+gen-graph.mkGraph: edges element 0: 'from' is a int, not a node identifier (a string)
+gen-graph.mkGraph: parents element 0 has no 'to'
+gen-graph.mkGraph: nodeData is a list, not an attrset from a node identifier to its data
+gen-graph.fromScan: items element 1 has no 'id'
+gen-graph.fromScan: scan on the item at position 0 returned a int, not a list of references
+gen-graph.fromRegistry: registry is a list, not an attrset from a node identifier to its entry
+gen-graph.labeledFrom: perLabel is a list, not an attrset from a label to a function returning a list of node ids
+gen-graph.fields: names element 0 is a int, not an attribute name (a string)
+```
+
+`fromScan` refuses a malformed `parents` or `nodeData` under its own name. An unknown or missing argument (`mkGraph { edgs = …; }`, `fromScan` without `items`) still aborts in Nix's own words, naming the door.
+
 **`fixtures`** — pre-built accessor records for common graph shapes:
 
 | Name           | Shape                                           |

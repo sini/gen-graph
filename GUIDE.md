@@ -286,6 +286,11 @@ graph.reachableFrom g "svc:web"   # [ "svc:api" "svc:db" ]
 graph.ancestorsOf g "svc:db"      # [ "svc:api" "svc:web" ]
 ```
 
+Malformed data is refused by name and catchably, where it is read:
+`mkGraph { edges = [ { from = 42; to = "b"; } ]; }` refuses with
+`gen-graph.mkGraph: edges element 0: 'from' is a int, not a node identifier (a string)`. The
+README's Construction section states the contract.
+
 ## How gen-graph fits the gen ecosystem
 
 gen-graph is the **query layer** — it answers structural questions about graphs that other libraries build:
