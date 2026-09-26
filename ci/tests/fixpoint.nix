@@ -333,7 +333,7 @@ in
         builtins.all ok [
           fixtures.chain
           fixtures.diamond
-          fixtures.serviceGraph
+          fixtures.attributed
           fixtures.cyclic
         ];
       expected = true;

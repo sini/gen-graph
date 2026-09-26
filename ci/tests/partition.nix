@@ -264,11 +264,11 @@ let
   };
   shipped = {
     inherit (genGraph.fixtures)
+      attributed
       chain
       cyclic
       diamond
       disconnected
-      serviceGraph
       tree
       ;
   };

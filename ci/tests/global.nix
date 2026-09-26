@@ -329,12 +329,12 @@ in
       expected = true;
     };
 
-    test-dependents-db = {
-      expr = builtins.sort builtins.lessThan (dependents fixtures.serviceGraph "db");
+    test-dependents-cedar = {
+      expr = builtins.sort builtins.lessThan (dependents fixtures.attributed "cedar");
       expected = [
-        "api"
-        "web"
-        "worker"
+        "alder"
+        "elm"
+        "fir"
       ];
     };
     test-dependents-leaf = {
@@ -342,8 +342,8 @@ in
       expected = [ ];
     };
     test-dependents-equals-impact = {
-      expr = impactOf fixtures.serviceGraph "db";
-      expected = dependents fixtures.serviceGraph "db";
+      expr = impactOf fixtures.attributed "cedar";
+      expected = dependents fixtures.attributed "cedar";
     };
     test-transpose-chain = {
       expr =
@@ -354,8 +354,8 @@ in
       expected = [ "c" ];
     };
     test-transpose-preserves-nodes = {
-      expr = builtins.sort builtins.lessThan (transpose fixtures.serviceGraph).nodes;
-      expected = builtins.sort builtins.lessThan fixtures.serviceGraph.nodes;
+      expr = builtins.sort builtins.lessThan (transpose fixtures.attributed).nodes;
+      expected = builtins.sort builtins.lessThan fixtures.attributed.nodes;
     };
     test-transpose-root-becomes-leaf = {
       expr = (transpose fixtures.chain).edges "a";
@@ -375,12 +375,12 @@ in
     # outside the `connect` algebra transpose reverses, so they carry through unchanged.
     test-transpose-composes-with-select = {
       expr = builtins.sort builtins.lessThan (
-        select (transpose fixtures.serviceGraph) (d: (d.type or "") == "datastore")
+        select (transpose fixtures.attributed) (d: (d.type or "") == "burl")
       );
       expected = [
-        "cache"
-        "db"
-        "queue"
+        "birch"
+        "cedar"
+        "dogwood"
       ];
     };
     test-transpose-composes-with-ancestorsOf = {
@@ -394,7 +394,7 @@ in
       # CONTROL: before the fix this call escaped tryEval (a missing-required-argument abort,
       # not a `throw`) — pin that it is now a normal, catchable, SUCCEEDING evaluation.
       expr =
-        (builtins.tryEval (builtins.deepSeq (select (transpose fixtures.serviceGraph) (_: true)) true))
+        (builtins.tryEval (builtins.deepSeq (select (transpose fixtures.attributed) (_: true)) true))
         .success;
       expected = true;
     };
@@ -417,12 +417,12 @@ in
 
     # --- dependentsOf (single-target reverse traversal) ---
 
-    test-dependentsOf-db = {
-      expr = builtins.sort builtins.lessThan (dependentsOf fixtures.serviceGraph "db");
+    test-dependentsOf-cedar = {
+      expr = builtins.sort builtins.lessThan (dependentsOf fixtures.attributed "cedar");
       expected = [
-        "api"
-        "web"
-        "worker"
+        "alder"
+        "elm"
+        "fir"
       ];
     };
     test-dependentsOf-leaf = {
@@ -430,36 +430,36 @@ in
       expected = [ ];
     };
     test-dependentsOf-matches-dependents = {
-      expr = dependentsOf fixtures.serviceGraph "queue";
-      expected = dependents fixtures.serviceGraph "queue";
+      expr = dependentsOf fixtures.attributed "dogwood";
+      expected = dependents fixtures.attributed "dogwood";
     };
     test-impactOf-uses-dependentsOf = {
-      expr = impactOf fixtures.serviceGraph "cache";
-      expected = dependentsOf fixtures.serviceGraph "cache";
+      expr = impactOf fixtures.attributed "birch";
+      expected = dependentsOf fixtures.attributed "birch";
     };
 
     # --- dependentsFrontier ---
     test-frontier-prune-all-equals-dependentsOf = {
       # prune = _: true reduces EXACTLY to dependentsOf (the conformance anchor).
-      expr = dependentsFrontier fixtures.serviceGraph "db" (_: true);
-      expected = builtins.sort builtins.lessThan (dependentsOf fixtures.serviceGraph "db");
+      expr = dependentsFrontier fixtures.attributed "cedar" (_: true);
+      expected = builtins.sort builtins.lessThan (dependentsOf fixtures.attributed "cedar");
     };
     test-frontier-prune-false-at-target = {
       # prune targetId == false => seed0 == [] => nothing downstream walked.
-      expr = dependentsFrontier fixtures.serviceGraph "db" (_: false);
+      expr = dependentsFrontier fixtures.attributed "cedar" (_: false);
       expected = [ ];
     };
     test-frontier-cutoff-mid-cone = {
-      # db's reverse neighbours are {api, worker}; cutting api stops web; worker has no dependents.
-      expr = dependentsFrontier fixtures.serviceGraph "db" (id: id != "api");
+      # cedar's reverse neighbours are {alder, fir}; cutting alder stops elm; fir has no dependents.
+      expr = dependentsFrontier fixtures.attributed "cedar" (id: id != "alder");
       expected = [
-        "api"
-        "worker"
+        "alder"
+        "fir"
       ];
     };
     test-frontier-pruned-boundary-present = {
-      # the pruned node api is STILL in the output (reached); only web is cut.
-      expr = builtins.elem "api" (dependentsFrontier fixtures.serviceGraph "db" (id: id != "api"));
+      # the pruned node alder is STILL in the output (reached); only elm is cut.
+      expr = builtins.elem "alder" (dependentsFrontier fixtures.attributed "cedar" (id: id != "alder"));
       expected = true;
     };
     test-frontier-cyclic-terminates = {
@@ -471,8 +471,8 @@ in
       # property (concrete witness): any prune yields a subset of the prune-all cone.
       expr =
         let
-          full = dependentsFrontier fixtures.serviceGraph "db" (_: true);
-          cut = dependentsFrontier fixtures.serviceGraph "db" (id: id != "api");
+          full = dependentsFrontier fixtures.attributed "cedar" (_: true);
+          cut = dependentsFrontier fixtures.attributed "cedar" (id: id != "alder");
         in
         builtins.all (id: builtins.elem id full) cut;
       expected = true;

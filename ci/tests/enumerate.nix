@@ -10,11 +10,11 @@ let
 in
 {
   flake.tests.enumerate = {
-    test-roots-service = {
-      expr = roots fixtures.serviceGraph;
+    test-roots-attributed = {
+      expr = roots fixtures.attributed;
       expected = [
-        "web"
-        "worker"
+        "elm"
+        "fir"
       ];
     };
     test-roots-chain = {
@@ -25,12 +25,12 @@ in
       expr = roots (mkGraph { });
       expected = [ ];
     };
-    test-leaves-service = {
-      expr = leaves fixtures.serviceGraph;
+    test-leaves-attributed = {
+      expr = leaves fixtures.attributed;
       expected = [
-        "cache"
-        "db"
-        "queue"
+        "birch"
+        "cedar"
+        "dogwood"
       ];
     };
     test-leaves-chain = {
@@ -43,25 +43,25 @@ in
     };
     test-select-by-type = {
       expr = builtins.sort builtins.lessThan (
-        select { inherit (fixtures.serviceGraph) nodes nodeData; } (d: (d.type or null) == "backend")
+        select { inherit (fixtures.attributed) nodes nodeData; } (d: (d.type or null) == "bough")
       );
       expected = [
-        "api"
-        "worker"
+        "alder"
+        "fir"
       ];
     };
     test-select-datastores = {
       expr = builtins.sort builtins.lessThan (
-        select { inherit (fixtures.serviceGraph) nodes nodeData; } (d: (d.type or null) == "datastore")
+        select { inherit (fixtures.attributed) nodes nodeData; } (d: (d.type or null) == "burl")
       );
       expected = [
-        "cache"
-        "db"
-        "queue"
+        "birch"
+        "cedar"
+        "dogwood"
       ];
     };
     test-select-none = {
-      expr = select { inherit (fixtures.serviceGraph) nodes nodeData; } (
+      expr = select { inherit (fixtures.attributed) nodes nodeData; } (
         d: (d.type or null) == "nonexistent"
       );
       expected = [ ];

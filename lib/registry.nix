@@ -288,47 +288,50 @@ let
           };
         };
       };
-      serviceGraph = self.mkGraph {
+      # A typed attributed graph (Ehrig, Prange & Ehrig 2006, §5): two sources, reconvergent sinks,
+      # every node carrying a `type`. Ids and types are invented. `disconnected` carries typed
+      # nodeData too, so the name records the fixture's use, not a property only it has.
+      attributed = self.mkGraph {
         edges = [
           {
-            from = "web";
-            to = "api";
+            from = "elm";
+            to = "alder";
           }
           {
-            from = "api";
-            to = "db";
+            from = "alder";
+            to = "cedar";
           }
           {
-            from = "api";
-            to = "cache";
+            from = "alder";
+            to = "birch";
           }
           {
-            from = "worker";
-            to = "db";
+            from = "fir";
+            to = "cedar";
           }
           {
-            from = "worker";
-            to = "queue";
+            from = "fir";
+            to = "dogwood";
           }
         ];
         nodeData = {
-          web = {
-            type = "frontend";
+          elm = {
+            type = "frond";
           };
-          api = {
-            type = "backend";
+          alder = {
+            type = "bough";
           };
-          db = {
-            type = "datastore";
+          cedar = {
+            type = "burl";
           };
-          cache = {
-            type = "datastore";
+          birch = {
+            type = "burl";
           };
-          worker = {
-            type = "backend";
+          fir = {
+            type = "bough";
           };
-          queue = {
-            type = "datastore";
+          dogwood = {
+            type = "burl";
           };
         };
       };

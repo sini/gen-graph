@@ -38,12 +38,12 @@ in
       expr = fixtures.tree.parent "root";
       expected = null;
     };
-    test-service-nodedata = {
-      expr = (fixtures.serviceGraph.nodeData "api").type;
-      expected = "backend";
+    test-attributed-nodedata = {
+      expr = (fixtures.attributed.nodeData "alder").type;
+      expected = "bough";
     };
-    test-service-nodedata-missing = {
-      expr = fixtures.serviceGraph.nodeData "nonexistent";
+    test-attributed-nodedata-missing = {
+      expr = fixtures.attributed.nodeData "nonexistent";
       expected = { };
     };
     test-mkgraph-empty = {

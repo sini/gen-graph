@@ -99,19 +99,19 @@ in
     };
     test-reachable-where-filter = {
       expr = builtins.sort builtins.lessThan (
-        reachableWhere fixtures.serviceGraph "web" (id: id != "cache")
+        reachableWhere fixtures.attributed "elm" (id: id != "birch")
       );
       expected = [
-        "api"
-        "db"
+        "alder"
+        "cedar"
       ];
     };
     test-reachable-where-all = {
-      expr = builtins.sort builtins.lessThan (reachableWhere fixtures.serviceGraph "web" (_: true));
+      expr = builtins.sort builtins.lessThan (reachableWhere fixtures.attributed "elm" (_: true));
       expected = [
-        "api"
-        "cache"
-        "db"
+        "alder"
+        "birch"
+        "cedar"
       ];
     };
     test-ancestors-tree = {
@@ -177,11 +177,11 @@ in
     # --- canReach ---
 
     test-canReach-true = {
-      expr = canReach fixtures.serviceGraph "web" "db";
+      expr = canReach fixtures.attributed "elm" "cedar";
       expected = true;
     };
     test-canReach-false = {
-      expr = canReach fixtures.serviceGraph "db" "web";
+      expr = canReach fixtures.attributed "cedar" "elm";
       expected = false;
     };
     test-canReach-direct = {

@@ -154,25 +154,25 @@ in
     test-select-edges-basic = {
       expr =
         let
-          mat = materialize fixtures.serviceGraph;
-          filtered = selectEdges (from: _to: from == "api") mat;
+          mat = materialize fixtures.attributed;
+          filtered = selectEdges (from: _to: from == "alder") mat;
         in
-        builtins.sort builtins.lessThan (filtered."api" or [ ]);
+        builtins.sort builtins.lessThan (filtered."alder" or [ ]);
       expected = [
-        "cache"
-        "db"
+        "birch"
+        "cedar"
       ];
     };
     test-select-edges-by-target = {
       expr =
         let
-          mat = materialize fixtures.serviceGraph;
-          filtered = selectEdges (_from: to: to == "db") mat;
+          mat = materialize fixtures.attributed;
+          filtered = selectEdges (_from: to: to == "cedar") mat;
         in
         builtins.sort builtins.lessThan (builtins.attrNames filtered);
       expected = [
-        "api"
-        "worker"
+        "alder"
+        "fir"
       ];
     };
     test-intersect-disjoint-sources = {

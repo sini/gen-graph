@@ -806,7 +806,7 @@ fromRegistry : { registry, edges, parent? } → accessorRecord
 fromScan     : { items, scan, project, nodeData? } → accessorRecord + { derivedEdges }
 field        : name → id → entry → [id]
 fields       : [name] → id → entry → [id]
-fixtures     : { diamond, chain, cyclic, tree, serviceGraph, disconnected }
+fixtures     : { diamond, chain, cyclic, tree, attributed, disconnected }
 labeledFixtures : { world, cyclic, poisoned }   # { labeledEdges; nodes; } for labeled queries
 ```
 
@@ -859,14 +859,14 @@ g = graph.fromRegistry {
 
 **`fixtures`** — pre-built accessor records for common graph shapes:
 
-| Name           | Shape                                       |
-| -------------- | ------------------------------------------- |
-| `diamond`      | `a → b,c → d`                               |
-| `chain`        | `a → b → c → d`                             |
-| `cyclic`       | `a → b → c → a`                             |
-| `tree`         | parent chain: grandchild → child1 → root    |
-| `serviceGraph` | web/api/worker/db/cache/queue with nodeData |
-| `disconnected` | a → b plus isolated `island` node           |
+| Name           | Shape                                           |
+| -------------- | ----------------------------------------------- |
+| `diamond`      | `a → b,c → d`                                   |
+| `chain`        | `a → b → c → d`                                 |
+| `cyclic`       | `a → b → c → a`                                 |
+| `tree`         | parent chain: grandchild → child1 → root        |
+| `attributed`   | two sources, reconvergent sinks; typed nodeData |
+| `disconnected` | a → b plus isolated `island` node               |
 
 ### Endpoint Projection
 
