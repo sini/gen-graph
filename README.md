@@ -21,7 +21,7 @@ gen-graph is **nixpkgs-lib-free** (Class B): it depends only on [gen-prelude](ht
 
 ## Overview
 
-gen-graph works with an **accessor record**: an attrset of functions that the caller provides to describe graph structure. Queries destructure only the accessors they need.
+gen-graph works with an **accessor record**: an attrset of functions that the caller provides to describe graph structure. Queries destructure only the accessors they need, and the record is open: fields a query does not read are carried, not refused, so a gen-product pgraph (`parent`, `nodeData`, `product` beside `nodes` and `edges`) is ordered by `topoOrder` whole.
 
 ```nix
 # Define accessors over your data
@@ -466,7 +466,7 @@ of it, for consumers that would rather write `before`/`after` constraints than b
 accessor.
 
 ```
-topoOrder { nodes; edges; keyOf ? id; lessThan ? builtins.lessThan }
+topoOrder { keyOf ? id; lessThan ? builtins.lessThan } { nodes; edges; ... }
     : { ok = true; order = [ node ]; } | { ok = false; cycles = [ [ node ] ]; }
 topoOrderKahn <same>      : <same>                     ( the ARM, by name )
 coneRank : { edges, ... } → [id] → { order, depth }
@@ -478,11 +478,23 @@ entryBetween befs afts   : entry
 phaseOrder  { name = entry; ... } : [ name ]           ( forward topological order )
 ```
 
-**`topoOrderKahn accessor`** is Kahn's algorithm published under its own name, and
+**`topoOrderKahn { } accessor`** is Kahn's algorithm published under its own name, and
 **`topoOrder`** is the door, which **selects**. The two are separate because a default is a
 separate decision from an algorithm: a caller whose correctness depends on *which* arm
 answers binds the arm, and `coneRank` below is exactly such a caller. Everything documented
-for `topoOrder` holds verbatim for the arm — same formals, same refusals, same cycle report.
+for `topoOrder` holds verbatim for the arm — same formals, same refusals, same cycle report —
+except that each refusal names the door the caller invoked.
+
+**Options first, then the graph.** The options set `{ keyOf, lessThan }` comes first, so
+`topoOrder { lessThan = …; }` is itself an ordering function; the graph record comes second and
+is **open**, so a record wider than `{ nodes, edges }` is ordered as it stands. The options set
+is natively closed for now: a misspelt option aborts uncatchably (the shared options check that
+would refuse it by name is not yet built). A graph argument that is not an attrset refuses by
+name; a record missing `nodes` or `edges` still aborts on the formals.
+★ **Migration hazard.** A caller still written in the one-record form `topoOrder { nodes; edges; }`
+now hands its record to the OPTIONS set and aborts uncatchably with `called with unexpected argument 'nodes'` — loudly, and in-roster the suites catch it. The quiet case is a caller that migrates
+mechanically to `topoOrder { } { nodes; edges; keyOf; }`: an option left on the open graph record
+is **ignored, not refused**, so `keyOf` and `lessThan` must move into the first argument.
 
 **The selection is invisible in the answer, by construction.** The second arm sorts the nodes
 by `(out-degree, key)` and then CHECKS two things about that candidate: that every edge points
@@ -505,7 +517,7 @@ refuses, the door pays the check and nothing else: **`2n − 1`** `list.elements
 door documents and cannot afford to check — can only produce a candidate the gate REJECTS, so
 that precondition is guarded here rather than merely stated.
 
-**`topoOrder accessor`** does **not** throw on a cycle. It returns a producers-first
+**`topoOrder { } accessor`** does **not** throw on a cycle. It returns a producers-first
 ordering, or the cycles that prevented one — as strongly-connected-component member sets,
 sorted within each component, **all** of them, so a caller sees every cycle at once rather
 than fixing one and meeting the next. A self-loop is reported as its own singleton

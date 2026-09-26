@@ -67,8 +67,8 @@ let
       b = "a";
       c = "c";
     };
-    topoOrder = G.topoOrder (acc (acyclic e));
-    topoOrderKahn = G.topoOrderKahn (acc (acyclic e));
+    topoOrder = G.topoOrder { } (acc (acyclic e));
+    topoOrderKahn = G.topoOrderKahn { } (acc (acyclic e));
     coneRank = G.coneRank (acc (acyclic e)) nodes;
     expandPreorder = G.expandPreorder {
       roots = [ "a" ];

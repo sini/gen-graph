@@ -41,16 +41,14 @@ let
     selfReachableVia = f: G.selfReachableVia f "a";
     topoOrder-lessThan =
       f:
-      G.topoOrder {
+      G.topoOrder { lessThan = f; } {
         inherit (g) nodes edges;
-        lessThan = f;
       };
     topoOrderKahn-lessThan =
       f:
-      G.topoOrderKahn {
+      G.topoOrderKahn { lessThan = f; } {
         inherit (g) nodes;
         edges = _: [ ];
-        lessThan = f;
       };
     foldPreorder-key =
       f:

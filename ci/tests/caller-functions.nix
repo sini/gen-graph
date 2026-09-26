@@ -139,10 +139,9 @@ in
     test-an-unapplied-function-is-not-refused = {
       expr = {
         select = G.select (g // { nodes = [ ]; }) 1;
-        topoOrder = G.topoOrder {
+        topoOrder = G.topoOrder { lessThan = 1; } {
           nodes = [ "a" ];
           edges = _: [ ];
-          lessThan = 1;
         };
         # the door is lazy: a pred that never forces its argument never applies `nodeData`
         selectNodeData = G.select (g // { nodeData = 1; }) (_: true);
@@ -173,16 +172,20 @@ in
     test-a-functor-partial-result-is-applied = {
       expr = {
         topoOrder =
-          (G.topoOrder {
-            nodes = [
-              "b"
-              "a"
-            ];
-            edges = _: [ ];
-            lessThan = a: {
-              __functor = _s: b: a < b;
-            };
-          }).order;
+          (G.topoOrder
+            {
+              lessThan = a: {
+                __functor = _s: b: a < b;
+              };
+            }
+            {
+              nodes = [
+                "b"
+                "a"
+              ];
+              edges = _: [ ];
+            }
+          ).order;
         selectEdges = G.selectEdges (_: {
           __functor = _s: to: to == "b";
         }) E;

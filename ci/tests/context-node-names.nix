@@ -493,7 +493,7 @@ in
     };
     # O1
     test-topo-order-over-a-context-carrying-node = {
-      expr = topoOrder gDag;
+      expr = topoOrder { } gDag;
       expected = {
         ok = true;
         order = [
@@ -505,7 +505,7 @@ in
     };
     # O1
     test-topo-order-names-a-cycle-through-a-context-carrying-node = {
-      expr = topoOrder gCyc;
+      expr = topoOrder { } gCyc;
       expected = {
         cycles = [
           [
@@ -518,7 +518,7 @@ in
     };
     # O1
     test-kahn-order-over-a-context-carrying-node = {
-      expr = topoOrderKahn gDag;
+      expr = topoOrderKahn { } gDag;
       expected = {
         ok = true;
         order = [
@@ -530,7 +530,7 @@ in
     };
     # O1
     test-kahn-order-over-a-wide-context-carrying-fan = {
-      expr = topoOrderKahn gFan;
+      expr = topoOrderKahn { } gFan;
       expected = {
         ok = true;
         order = [
@@ -886,7 +886,7 @@ in
     };
     # O1
     test-topo-order-certifies-a-linked-context-carrying-candidate = {
-      expr = topoOrder {
+      expr = topoOrder { } {
         nodes = [
           x
           "b"
@@ -903,7 +903,7 @@ in
     };
     # O1
     test-kahn-order-joins-at-a-context-carrying-consumer = {
-      expr = topoOrderKahn {
+      expr = topoOrderKahn { } {
         nodes = [
           "p"
           "q"
@@ -1053,7 +1053,7 @@ in
     };
     # O1 value
     test-an-ordered-node-keeps-its-context = {
-      expr = builtins.any builtins.hasContext (topoOrder gDag).order;
+      expr = builtins.any builtins.hasContext (topoOrder { } gDag).order;
       expected = true;
     };
     # G4: the cycle's rotation starts at its smallest member, and that member carries context
@@ -1068,7 +1068,7 @@ in
     };
     # O1: the named cycle's smallest member carries context
     test-topo-order-names-a-cycle-whose-smallest-member-carries-context = {
-      expr = topoOrder gMin;
+      expr = topoOrder { } gMin;
       expected = {
         cycles = [
           [
@@ -1081,7 +1081,7 @@ in
     };
     # O1: the context node is last in `nodes` with a unique out-degree
     test-topo-order-over-a-context-carrying-node-listed-last = {
-      expr = topoOrder gLast;
+      expr = topoOrder { } gLast;
       expected = {
         ok = true;
         order = [
@@ -1119,7 +1119,7 @@ in
           inherit follow;
           mode = "all";
         };
-        t = topoOrder gTwin;
+        t = topoOrder { } gTwin;
       };
       expected = {
         q = [

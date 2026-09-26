@@ -233,8 +233,8 @@ let
     totalrev = totalrev small;
   };
 
-  doorOrder = fx: (topoOrder fx).order;
-  armOrder = fx: (topoOrderKahn fx).order;
+  doorOrder = fx: (topoOrder { } fx).order;
+  armOrder = fx: (topoOrderKahn { } fx).order;
   reversed =
     xs: builtins.genList (i: builtins.elemAt xs (builtins.length xs - 1 - i)) (builtins.length xs);
 
@@ -487,7 +487,7 @@ in
     # something else delegates to it is not published.
     test-arm-direct-order = {
       expr =
-        (topoOrderKahn {
+        (topoOrderKahn { } {
           nodes = [
             "a"
             "b"
@@ -511,7 +511,7 @@ in
     test-arm-direct-cycle-report = {
       expr =
         let
-          r = topoOrderKahn {
+          r = topoOrderKahn { } {
             nodes = [
               "a"
               "b"
@@ -543,7 +543,7 @@ in
     test-arm-direct-refuses-dangling = {
       expr =
         !(builtins.tryEval (
-          builtins.deepSeq (topoOrderKahn {
+          builtins.deepSeq (topoOrderKahn { } {
             nodes = [ "a" ];
             edges = _: [ "ghost" ];
           }) true
@@ -554,7 +554,7 @@ in
     test-arm-direct-refusal-control = {
       expr =
         !(builtins.tryEval (
-          builtins.deepSeq (topoOrderKahn {
+          builtins.deepSeq (topoOrderKahn { } {
             nodes = [ "a" ];
             edges = _: [ ];
           }) true
@@ -576,7 +576,7 @@ in
     test-arm-direct-refuses-non-string-key = {
       expr =
         !(builtins.tryEval (
-          builtins.deepSeq (topoOrderKahn {
+          builtins.deepSeq (topoOrderKahn { } {
             nodes = [ 42 ];
             edges = _: [ ];
           }) true
@@ -590,7 +590,7 @@ in
     test-arm-direct-refuses-non-string-edge-target = {
       expr =
         !(builtins.tryEval (
-          builtins.deepSeq (topoOrderKahn {
+          builtins.deepSeq (topoOrderKahn { } {
             nodes = [ "a" ];
             edges = _: [ 42 ];
           }) true

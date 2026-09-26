@@ -1294,7 +1294,7 @@ let
     # failure path, which is arms 1 and 2 over again. `initialReady` below says which.
     else if arm == "topoOrder" then
       let
-        r = g.topoOrder acc;
+        r = g.topoOrder { } acc;
       in
       if r.ok then r.order else r.cycles
     # The DOOR's other arm, by name — `topoOrderKahn` is the Kahn loop with the door's
@@ -1307,7 +1307,7 @@ let
     # rather than a reading here, because an equality is not a cost.
     else if arm == "topoOrderKahn" then
       let
-        r = g.topoOrderKahn acc;
+        r = g.topoOrderKahn { } acc;
       in
       if r.ok then r.order else r.cycles
     # The CONE RANK, both arms. `.order` is forced FIRST and cold, which is the read both
@@ -1355,9 +1355,9 @@ let
     # is dispatched through this same table AND calls gen-graph. It ignores `n`/`shape` by
     # design — see sentinelCells.
     else if arm == "sentinel" then
-      (g.topoOrder (mkFixtures 64).chain).order
+      (g.topoOrder { } (mkFixtures 64).chain).order
     else if arm == "sentinelPeerOrder" then
-      (g.topoOrder (mkFixtures 64).wide).order
+      (g.topoOrder { } (mkFixtures 64).wide).order
     else if arm == "sentinelPeerClosure" then
       (g.condensationClosure (mkFixtures 32).cycle).sccs
     else

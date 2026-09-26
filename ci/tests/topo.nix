@@ -292,8 +292,8 @@ in
         ];
       in
       {
-        expr = map (fx: (genGraph.topoOrder fx).order) fxs;
-        expected = map (fx: (genGraph.topoOrderKahn fx).order) fxs;
+        expr = map (fx: (genGraph.topoOrder { } fx).order) fxs;
+        expected = map (fx: (genGraph.topoOrderKahn { } fx).order) fxs;
       };
 
     # --- directDependents / directDependentsOf: DIRECT, not transitive ----------

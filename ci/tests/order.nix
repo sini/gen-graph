@@ -167,7 +167,7 @@ in
     # graph as `chain` produce the SAME order as the accessor surfaces.
     test-order-direction-surfaces-agree = {
       expr = {
-        topo = (topoOrder chain).order;
+        topo = (topoOrder { } chain).order;
         cone =
           (genGraph.coneRank chain [
             "a"
@@ -361,7 +361,7 @@ in
     # ← test-toposort-result: a total order sorts ascending.
     test-topo-total-order = {
       expr =
-        (topoOrder (totalOrder [
+        (topoOrder { } (totalOrder [
           "c"
           "a"
           "b"
@@ -374,7 +374,7 @@ in
     };
     # ← test-toposort-chain (byte-equality retired; the ordering property kept).
     test-topo-chain = {
-      expr = (topoOrder chain).order;
+      expr = (topoOrder { } chain).order;
       expected = [
         "d"
         "c"
@@ -385,7 +385,7 @@ in
     # ← test-toposort-dag: the [5 2 8 1 3] shape, string-keyed.
     test-topo-dag = {
       expr =
-        (topoOrder (totalOrder [
+        (topoOrder { } (totalOrder [
           "5"
           "2"
           "8"
@@ -402,13 +402,13 @@ in
     };
     # ← test-toposort-single.
     test-topo-single = {
-      expr = (topoOrder (acc [ "7" ] { })).order;
+      expr = (topoOrder { } (acc [ "7" ] { })).order;
       expected = [ "7" ];
     };
     # ← test-toposort-empty: the one retired case that was already type-agnostic, so it
     # re-expresses untouched. It retires on the byte-equality ground alone.
     test-topo-empty = {
-      expr = (topoOrder (acc [ ] { })).order;
+      expr = (topoOrder { } (acc [ ] { })).order;
       expected = [ ];
     };
     # The DOOR against the ARM on this file's own fixtures, each emitted sequence compared
@@ -429,14 +429,14 @@ in
         ];
       in
       {
-        expr = map (fx: (topoOrder fx).order) fxs;
-        expected = map (fx: (genGraph.topoOrderKahn fx).order) fxs;
+        expr = map (fx: (topoOrder { } fx).order) fxs;
+        expected = map (fx: (genGraph.topoOrderKahn { } fx).order) fxs;
       };
     # ← test-toposort-cycle-detected: the discriminant. A cycle is `ok = false`, not a
     # missing `result` attr.
     test-topo-cycle-discriminated = {
       expr =
-        (topoOrder (
+        (topoOrder { } (
           acc
             [
               "1"
@@ -452,7 +452,7 @@ in
     # ← test-toposort-cycle: the mutual 1↔2 cycle, now reporting its members.
     test-topo-cycle-members = {
       expr =
-        (topoOrder (
+        (topoOrder { } (
           acc
             [
               "1"
@@ -475,8 +475,8 @@ in
     # without a control that CAN report one is not a check.
     test-topo-acyclic-control = {
       expr = {
-        inherit ((topoOrder chain)) ok;
-        hasCycles = (topoOrder chain) ? cycles;
+        inherit ((topoOrder { } chain)) ok;
+        hasCycles = (topoOrder { } chain) ? cycles;
       };
       expected = {
         ok = true;
@@ -489,7 +489,7 @@ in
     # met the next. Two disjoint cycles are both named in one pass.
     test-topo-cycles-all-components = {
       expr =
-        (topoOrder (
+        (topoOrder { } (
           acc
             [
               "a"
@@ -523,7 +523,7 @@ in
     test-topo-self-loop = {
       expr =
         let
-          r = topoOrder (
+          r = topoOrder { } (
             acc [
               "a"
               "b"
@@ -544,7 +544,7 @@ in
     # cycle result must be an ordinary value. `phaseOrder` is the throwing layer.
     test-topo-cycle-does-not-throw = {
       expr = didThrow (
-        topoOrder (
+        topoOrder { } (
           acc
             [
               "a"
@@ -562,7 +562,7 @@ in
     # ── tie-break: caller-supplied, ascending key by default ──
     test-topo-tiebreak-default-ascending = {
       expr =
-        (topoOrder (
+        (topoOrder { } (
           acc [
             "q"
             "p"
@@ -582,33 +582,37 @@ in
     # requirement on this arm came from, and it outlived the library that stated it.
     test-topo-tiebreak-canonical-key = {
       expr =
-        (topoOrder {
-          nodes = [
-            "sink"
-            "s1"
-            "s2"
-            "s3"
-          ];
-          edges =
-            id:
-            if id == "sink" then
-              [
-                "s1"
-                "s2"
-                "s3"
-              ]
-            else
-              [ ];
-          keyOf =
-            id:
-            {
-              s1 = "3:s1";
-              s2 = "2:s2";
-              s3 = "1:s3";
-              sink = "9:sink";
-            }
-            .${id};
-        }).order;
+        (topoOrder
+          {
+            keyOf =
+              id:
+              {
+                s1 = "3:s1";
+                s2 = "2:s2";
+                s3 = "1:s3";
+                sink = "9:sink";
+              }
+              .${id};
+          }
+          {
+            nodes = [
+              "sink"
+              "s1"
+              "s2"
+              "s3"
+            ];
+            edges =
+              id:
+              if id == "sink" then
+                [
+                  "s1"
+                  "s2"
+                  "s3"
+                ]
+              else
+                [ ];
+          }
+        ).order;
       expected = [
         "s3"
         "s2"
@@ -620,7 +624,7 @@ in
     # `a` is emitted, `b` becomes ready and beats the still-unemitted `z`.
     test-topo-pick-is-global-min-ready = {
       expr =
-        (topoOrder (
+        (topoOrder { } (
           acc [
             "z"
             "a"
@@ -635,14 +639,13 @@ in
     };
     test-topo-tiebreak-lessThan = {
       expr =
-        (topoOrder {
+        (topoOrder { lessThan = a: b: a > b; } {
           nodes = [
             "p"
             "q"
             "r"
           ];
           edges = _: [ ];
-          lessThan = a: b: a > b;
         }).order;
       expected = [
         "r"
@@ -665,7 +668,7 @@ in
     # wrong ready set. This one does not.
     test-topo-discriminating-interleaves = {
       expr =
-        (topoOrder (
+        (topoOrder { } (
           acc
             [
               "m0"
@@ -736,8 +739,8 @@ in
       {
         expr = {
           inherit tailAppend;
-          real = (topoOrder (acc nodes deps)).order;
-          agrees = tailAppend == (topoOrder (acc nodes deps)).order;
+          real = (topoOrder { } (acc nodes deps)).order;
+          agrees = tailAppend == (topoOrder { } (acc nodes deps)).order;
         };
         expected = {
           tailAppend = [
@@ -776,7 +779,7 @@ in
             + toString (builtins.length xs);
         in
         ends
-          (topoOrder (
+          (topoOrder { } (
             acc
               [
                 "m0"
@@ -808,7 +811,7 @@ in
     # into two runs.
     test-topo-discriminating-reversed-comparator = {
       expr =
-        (topoOrder {
+        (topoOrder { lessThan = a: b: a > b; } {
           nodes = [
             "m0"
             "m1"
@@ -825,7 +828,6 @@ in
               a2 = [ "m2" ];
             }
             .${id} or [ ];
-          lessThan = a: b: a > b;
         }).order;
       expected = [
         "m2"
@@ -854,7 +856,7 @@ in
         let
           k = p: i: p + (if i < 10 then "0" else "") + toString i;
         in
-        (topoOrder (
+        (topoOrder { } (
           acc (builtins.genList (k "a") 25 ++ builtins.genList (k "b") 25) (
             builtins.listToAttrs (
               builtins.genList (i: {
@@ -878,7 +880,7 @@ in
         let
           k = p: i: p + (if i < 10 then "0" else "") + toString i;
         in
-        (topoOrder (
+        (topoOrder { } (
           acc (builtins.genList (k "p") 25 ++ builtins.genList (k "c") 25) (
             builtins.listToAttrs (
               builtins.genList (i: {
@@ -905,14 +907,13 @@ in
     # The projection is what keeps integer and record nodes expressible.
     test-topo-integer-nodes = {
       expr =
-        (topoOrder {
+        (topoOrder { keyOf = toString; } {
           nodes = [
             3
             1
             2
           ];
           edges = _: [ ];
-          keyOf = toString;
         }).order;
       expected = [
         1
@@ -923,7 +924,7 @@ in
     test-topo-record-nodes = {
       expr =
         map (r: r.name)
-          (topoOrder {
+          (topoOrder { keyOf = r: r.name; } {
             nodes = [
               {
                 name = "y";
@@ -940,7 +941,6 @@ in
                 name = d;
                 deps = [ ];
               }) r.deps;
-            keyOf = r: r.name;
           }).order;
       expected = [
         "x"
@@ -953,37 +953,105 @@ in
     # catch, so the caller loses the diagnostic entirely. Each of these three is a
     # `throw` naming the offence.
     test-topo-refuses-non-string-key = {
-      expr = didThrow (topoOrder {
-        nodes = [
-          1
-          2
-        ];
-        edges = _: [ ];
-      });
+      expr = didThrow (
+        topoOrder { } {
+          nodes = [
+            1
+            2
+          ];
+          edges = _: [ ];
+        }
+      );
       expected = true;
     };
     test-topo-refuses-key-collision = {
-      expr = didThrow (topoOrder {
-        nodes = [
-          "a"
-          "b"
-        ];
-        edges = _: [ ];
-        keyOf = _: "same";
-      });
+      expr = didThrow (
+        topoOrder { keyOf = _: "same"; } {
+          nodes = [
+            "a"
+            "b"
+          ];
+          edges = _: [ ];
+        }
+      );
       expected = true;
     };
     test-topo-refuses-dangling-edge = {
-      expr = didThrow (topoOrder {
-        nodes = [ "a" ];
-        edges = _: [ "ghost" ];
-      });
+      expr = didThrow (
+        topoOrder { } {
+          nodes = [ "a" ];
+          edges = _: [ "ghost" ];
+        }
+      );
       expected = true;
     };
     # LIVE CONTROL for the refusal arm: a well-formed call in the same run is NOT caught,
     # so `didThrow` is discriminating and not merely always-true.
+    # ── THE GRAPH RECORD IS OPEN (den-hoag-4308w) ──
+    # A gen-product pgraph is an accessor record carrying `parent`, `nodeData` and `product`
+    # beside `nodes` and `edges`. That width is lawful, and both doors order the record as it
+    # stands without reading the extra fields. `chain` itself is the control, in the same cell.
+    test-topo-width-extended-record-is-ordered =
+      let
+        wide = chain // {
+          parent = _: null;
+          nodeData = _: { };
+          product = { };
+        };
+        producersFirst = [
+          "d"
+          "c"
+          "b"
+          "a"
+        ];
+      in
+      {
+        expr = {
+          door = (topoOrder { } wide).order;
+          arm = (genGraph.topoOrderKahn { } wide).order;
+          caught = (builtins.tryEval (builtins.deepSeq (topoOrder { } wide) true)).success;
+          control = (topoOrder { } chain).order;
+        };
+        expected = {
+          door = producersFirst;
+          arm = producersFirst;
+          caught = true;
+          control = producersFirst;
+        };
+      };
+    # ★ THE PRICE OF THE OPEN RECORD (den-hoag-nvrl1, arm B): an option written on the graph
+    # record is IGNORED, not refused. The same comparator reverses the antichain as an option and
+    # changes nothing on the record, so a caller migrating from the one-record form moves `keyOf`
+    # and `lessThan` into the options or loses them without a word.
+    test-topo-option-on-the-graph-record-is-ignored =
+      let
+        antichain = acc [
+          "q"
+          "p"
+          "r"
+        ] { };
+        reversed = a: b: a > b;
+      in
+      {
+        expr = {
+          onRecord = (topoOrder { } (antichain // { lessThan = reversed; })).order;
+          asOption = (topoOrder { lessThan = reversed; } antichain).order;
+        };
+        expected = {
+          onRecord = [
+            "p"
+            "q"
+            "r"
+          ];
+          asOption = [
+            "r"
+            "q"
+            "p"
+          ];
+        };
+      };
     test-topo-refusal-control = {
-      expr = didThrow (topoOrder chain);
+      expr = didThrow (topoOrder { } chain);
       expected = false;
     };
 
@@ -1006,7 +1074,7 @@ in
               value = i;
             }) n
           );
-          r = topoOrder {
+          r = topoOrder { } {
             nodes = builtins.genList pad n;
             edges =
               id:
@@ -1034,7 +1102,7 @@ in
     # pays only once.
     test-topo-duplicate-edge-counted-once = {
       expr =
-        (topoOrder (
+        (topoOrder { } (
           acc
             [
               "a"
@@ -1067,7 +1135,7 @@ in
           ix = builtins.genList (i: i) 8;
           last = "a7";
         in
-        (topoOrder (
+        (topoOrder { } (
           acc (map (i: "a${toString i}") ix ++ map (i: "b${toString i}") ix) (
             builtins.listToAttrs (
               map (i: {
@@ -1109,7 +1177,7 @@ in
     # cheap one answer.
     test-topo-certificate-routes-a-forced-order = {
       expr =
-        (topoOrder (
+        (topoOrder { } (
           acc
             [
               "a"
@@ -1145,7 +1213,7 @@ in
     # this cell is what goes red.
     test-topo-certificate-refuses-a-valid-candidate-that-reorders = {
       expr =
-        (topoOrder (
+        (topoOrder { } (
           acc
             [
               "a0"
@@ -1169,7 +1237,7 @@ in
     # the candidate is not even a topological order and the certificate rejects it.
     test-topo-certificate-refuses-on-descending-keys = {
       expr =
-        (topoOrder (
+        (topoOrder { } (
           acc
             [
               "n0"
@@ -1195,7 +1263,7 @@ in
     test-topo-certificate-never-routes-a-cycle = {
       expr =
         let
-          r = topoOrder (
+          r = topoOrder { } (
             acc
               [
                 "x"
@@ -1228,7 +1296,7 @@ in
     test-topo-certificate-survives-a-non-total-lessThan = {
       expr = {
         forced =
-          (topoOrder {
+          (topoOrder { lessThan = _: _: false; } {
             nodes = [
               "a"
               "b"
@@ -1250,10 +1318,9 @@ in
                 c = [ "d" ];
               }
               .${id} or [ ];
-            lessThan = _: _: false;
           }).order;
         chain =
-          (topoOrder {
+          (topoOrder { lessThan = _: _: false; } {
             nodes = [
               "p"
               "q"
@@ -1266,7 +1333,6 @@ in
                 q = [ "r" ];
               }
               .${id} or [ ];
-            lessThan = _: _: false;
           }).order;
       };
       expected = {
@@ -1310,15 +1376,13 @@ in
         degenerate = _: _: false;
         kahn =
           nodes: cmp:
-          (genGraph.topoOrderKahn {
+          (genGraph.topoOrderKahn { lessThan = cmp; } {
             inherit nodes edges;
-            lessThan = cmp;
           }).order;
         door =
           nodes: cmp:
-          (topoOrder {
+          (topoOrder { lessThan = cmp; } {
             inherit nodes edges;
-            lessThan = cmp;
           }).order;
       in
       {
@@ -1369,10 +1433,9 @@ in
           .${a} or false;
         kahn =
           ns: cmp:
-          (genGraph.topoOrderKahn {
+          (genGraph.topoOrderKahn { lessThan = cmp; } {
             nodes = ns;
             edges = _: [ ];
-            lessThan = cmp;
           }).order;
         cyclicNodes = [
           "n0"
@@ -1402,13 +1465,12 @@ in
     test-topo-certificate-routes-under-keyOf = {
       expr =
         map (n: n.id)
-          (topoOrder {
+          (topoOrder { keyOf = n: n.id; } {
             nodes = [
               { id = "a"; }
               { id = "b"; }
               { id = "c"; }
             ];
-            keyOf = n: n.id;
             edges =
               n:
               if n.id == "a" then

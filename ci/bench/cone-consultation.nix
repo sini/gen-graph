@@ -73,7 +73,7 @@ let
       inConeProducers = id: builtins.filter (d: coneSet ? ${d}) (accessor.edges id);
 
       # Computed in EVERY arm. What varies is when its verdict is read, never whether it exists.
-      driver = g.topoOrderKahn {
+      driver = g.topoOrderKahn { } {
         nodes = builtins.attrNames coneSet;
         edges = inConeProducers;
       };

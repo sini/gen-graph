@@ -226,8 +226,8 @@ in
           sccs = (condensation plain4).sccs;
           dependentsOfA = dependentsOf plain4 "a";
           direct = directDependents plain4;
-          orderCyclic = topoOrder plain4;
-          orderAcyclic = (topoOrder plain3).order;
+          orderCyclic = topoOrder { } plain4;
+          orderAcyclic = (topoOrder { } plain3).order;
           rank = coneRank plain3 plain3.nodes;
         };
       expected = {

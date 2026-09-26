@@ -1422,7 +1422,7 @@ in
             b = "b";
             c = "c";
           };
-          topoOrder = genGraph.topoOrder (acc (acyclic e));
+          topoOrder = genGraph.topoOrder { } (acc (acyclic e));
           coneRank = genGraph.coneRank (acc (acyclic e)) nodes;
           expandPreorder = genGraph.expandPreorder {
             roots = [ "b" ];
@@ -1837,6 +1837,43 @@ in
             msg = "cannot compare a set with a set";
           };
         };
+      };
+
+    # ── THE ORDERING DOORS NAME THEMSELVES (den-hoag-4308w) ──
+    # `topoOrder` and `topoOrderKahn` are one binding, and a refusal from it names the door the
+    # caller invoked (den-hoag-7gp66, R6). The same refusal through the two doors is the pair:
+    # each cell is the other's control that the name is read off the door, not written in.
+    flake.testsError.topo-order-doors =
+      let
+        cell = msg: expr: {
+          inherit expr;
+          expectedError = {
+            type = "ThrownError";
+            inherit msg;
+          };
+        };
+        nonStringKey = {
+          nodes = [ 1 ];
+          edges = _: [ ];
+        };
+        keyMsg =
+          door:
+          "^gen-graph\\.${door}: keyOf returned a non-string key \\(type int\\) for the node at index 0; ordering keys must be strings$";
+        notAGraph =
+          door: "^gen-graph\\.${door}: the graph is a list, not an attribute set carrying nodes and edges$";
+      in
+      {
+        test-kahn-refusal-names-topoOrderKahn = cell (keyMsg "topoOrderKahn") (
+          genGraph.topoOrderKahn { } nonStringKey
+        );
+        test-door-refusal-names-topoOrder = cell (keyMsg "topoOrder") (genGraph.topoOrder { } nonStringKey);
+        # A graph argument that is not an attrset used to abort on the formals, uncatchably.
+        test-a-graph-that-is-not-a-record-refuses-by-name = cell (notAGraph "topoOrder") (
+          genGraph.topoOrder { } [ ]
+        );
+        test-kahn-a-graph-that-is-not-a-record-refuses-by-name = cell (notAGraph "topoOrderKahn") (
+          genGraph.topoOrderKahn { } [ ]
+        );
       };
   };
 }

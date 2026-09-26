@@ -94,8 +94,20 @@ let
   entryAfter = after: entryBetween [ ] after;
   entryBefore = before: entryBetween before [ ];
 
-  # topoOrder { nodes; edges; keyOf ? id; lessThan ? builtins.lessThan }
+  # topoOrder { keyOf ? id; lessThan ? builtins.lessThan } { nodes; edges; ... }
   #   => { ok = true; order = [ node ]; } | { ok = false; cycles = [ [ node ] ]; }
+  #
+  # OPTIONS FIRST, THEN THE GRAPH (den-hoag-4308w; the options-first order and the open data
+  # record are owner-ruled on den-hoag-7gp66 and den-hoag-nvrl1). The graph record is OPEN: an
+  # accessor record carrying more than `nodes` and `edges` — a gen-product pgraph's `parent`,
+  # `nodeData`, `product` — is ordered as it stands, and that width is lawful (ADR-0012 as
+  # amended). The options set is still NATIVELY closed: a misspelt option aborts uncatchably, as
+  # it did when it sat on the record. That is the interim; the shared options check that refuses
+  # it by name is held (den-hoag-7gp66 OQ1) and converts this set with the same accepted fields.
+  # ★ AN OPTION WRITTEN ON THE GRAPH RECORD IS IGNORED, not refused — the price of an open record
+  # (den-hoag-nvrl1, arm B). A graph argument that is not an attrset refuses by name, catchably;
+  # a record missing `nodes` or `edges` still aborts on the formals — the required-field check is
+  # derived from ADR-0025 item 1, not ruled, and lands with the shared check.
   #
   # NON-THROWING on a cycle: the consumers that drove this shape build their own diagnostic
   # from the cycle set (gen-pipe named the channels and the operators; gen-edge named the
@@ -150,22 +162,30 @@ let
   # already forced and nothing is computed twice. With `gated = false` the conjunction in
   # `routed` short-circuits before `degRaw`, so the ARM does not evaluate one binding of the
   # certificate — it is not merely unused there, it is unreached.
+  # `door` is the published name the caller invoked, and every refusal below names it.
   topoOrderCore =
-    gated:
+    door: gated:
     {
-      nodes,
-      edges,
       keyOf ? (node: node),
       lessThan ? builtins.lessThan,
     }:
+    data:
+    if builtins.isAttrs data then
+      topoOrderBody door gated keyOf lessThan data
+    else
+      throw "gen-graph.${door}: the graph is a ${builtins.typeOf data}, not an attribute set carrying nodes and edges";
+
+  topoOrderBody =
+    door: gated: keyOf: lessThan:
+    { nodes, edges, ... }:
     let
-      kf = callableAt "topoOrder" "keyOf" "a string" keyOf;
-      lt = callableAt "topoOrder" "lessThan" "a bool" lessThan;
+      kf = callableAt door "keyOf" "a string" keyOf;
+      lt = callableAt door "lessThan" "a bool" lessThan;
       notLessBool =
-        a: b: badResult "topoOrder" "lessThan" "on the keys ${renderId a} and ${renderId b}" "a bool";
+        a: b: badResult door "lessThan" "on the keys ${renderId a} and ${renderId b}" "a bool";
       # a comparator is applied one key at a time, so its first application must return a function
       notLessFn =
-        a: badResult "topoOrder" "lessThan" "on the key ${renderId a}" "a function from a key to a bool";
+        a: badResult door "lessThan" "on the key ${renderId a}" "a function from a key to a bool";
       keyed = prelude.imap0 (i: node: {
         inherit i node;
         key = kf node;
@@ -180,14 +200,14 @@ let
       byKey = builtins.groupBy (k: attrKey k.key) keyed;
       collisions = builtins.filter (g: builtins.length g > 1) (prelude.mapAttrsToList (_: g: g) byKey);
       nodeOf = prelude.mapAttrs (_: g: (builtins.head g).node) byKey;
-      e = edgesAccessor "topoOrder" edges;
+      e = edgesAccessor door edges;
       rawDepsOf = keyedAttrs keys (
         k:
         let
           node = nodeOf.${attrKey k};
           es = e node;
         in
-        if builtins.isList es then map kf es else throw (notEdgeList "topoOrder" node es)
+        if builtins.isList es then map kf es else throw (notEdgeList door node es)
       );
 
       # ── THE CERTIFICATE-GATED ARM ──
@@ -604,7 +624,7 @@ let
       );
     in
     if refusal != null then
-      throw "gen-graph.topoOrder: ${refusal}"
+      throw "gen-graph.${door}: ${refusal}"
     else if routed then
       {
         ok = true;
@@ -626,14 +646,14 @@ let
   # this name because correctness depends on WHICH algorithm answers gets indegrees, a ready
   # set and the residual cycle check — the contract stated at the arm's own header, unchanged
   # by the door gaining a second arm.
-  topoOrderKahn = topoOrderCore false;
+  topoOrderKahn = topoOrderCore "topoOrderKahn" false;
 
   # The FRONT DOOR, and it is no longer an identity. It selects: the certificate answers where
   # it can PROVE the answer is the arm's own, and the arm answers everywhere else. That is the
   # split this file already described before there was a second arm — "a default lives there,
   # and a selection between arms would be expressed there" — and it is expressed here rather
   # than inside the arm, so that binding the arm by name still means what it has always meant.
-  topoOrder = topoOrderCore true;
+  topoOrder = topoOrderCore "topoOrder" true;
 
   # Cone-local producers-first rank: depth id = 1 + max(depth of in-cone producers).
   # O(|cone| + edges_in_cone) via prelude.fix memoization; NOT whole-graph condensation.
@@ -747,7 +767,7 @@ let
       # redundant work rather than a cost class. The ceiling this arm was removing was a depth
       # problem in either case. Reading the keys off the membership set is the same answer for
       # the cost of the `attrNames` list.
-      driver = topoOrderKahn {
+      driver = topoOrderKahn { } {
         nodes = builtins.attrNames coneSet;
         edges = inConeProducers;
       };
@@ -831,7 +851,7 @@ let
         }) (entries.${n}.before or [ ])
       ) names;
       grouped = builtins.groupBy (x: attrKey x.from) arcs;
-      result = topoOrder {
+      result = topoOrder { } {
         nodes = names;
         edges = id: map (x: x.to) (grouped.${id} or [ ]);
       };
