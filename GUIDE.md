@@ -292,7 +292,7 @@ gen-graph is the **query layer** — it answers structural questions about graph
 
 ```
 gen-prelude →  pure nixpkgs-lib-free utility base
-gen-algebra →  pure primitives (record, search monad, either, intensional identity)
+gen-algebra →  pure primitives (record, either, intensional identity)
 gen-schema  →  defines what kinds of entities exist (types, instances)
 gen-scope   →  evaluates attributes on graph nodes (HOAG evaluator)
 gen-graph   →  queries the graph structure (reachability, cycles, impact, phaseOrder)
