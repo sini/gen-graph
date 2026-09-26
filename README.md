@@ -517,6 +517,20 @@ refuses, the door pays the check and nothing else: **`2n − 1`** `list.elements
 door documents and cannot afford to check — can only produce a candidate the gate REJECTS, so
 that precondition is guarded here rather than merely stated.
 
+**What the door promises.** (1) **TOPOLOGICALITY — PROMISED**: `ok = true` carries a linear
+extension of the dependency relation. (2) **PERMUTATION-INDEPENDENCE — PROMISED** while `lessThan`
+is a strict total order on distinct keys: the order is a function of the node set, the edges,
+`keyOf` and `lessThan`, never of the `nodes` list's permutation. (3) **WHICH LINEAR EXTENSION —
+DECLARED AND PINNED, NOT NORMATIVE**: today the door answers with the Kahn arm's pick, the
+smallest ready key under `lessThan` taken globally; the cells pinning it are named
+`…-change-detector` and are re-baselined deliberately, and ADR-0009's ruled default flip to the
+rank recurrence moves it. A consumer whose value depends on the order among incomparable nodes
+declares that order itself — as edges — rather than inheriting this one. **`topoOrderKahn`** is
+outside clause 3: it is the named algorithm, and its global min-key ready discipline is its own
+contract, pinned by the cells that bind the arm by name. The basis is the owner's reading on
+den-hoag-nz21 (2026-08-19) and the premise it rests on, OPEN 4.A (2026-08-05): *"a pinned,
+DECLARED order — not one specific order"*.
+
 **`topoOrder { } accessor`** does **not** throw on a cycle. It returns a producers-first
 ordering, or the cycles that prevented one — as strongly-connected-component member sets,
 sorted within each component, **all** of them, so a caller sees every cycle at once rather
@@ -532,9 +546,10 @@ and the operators forming each edge) need the members, not a throw.
   *partitions* nodes into share-classes, deliberately mapping many nodes to one key, while
   this one *identifies* a node and a collision in it is a refusal. (`query.nix` also binds
   a local `keyOf` internally; it is not part of any public surface.)
-- **`lessThan`** orders those keys. Incomparable nodes emit in ascending key order by
-  default; ordering them by a *frozen* key is what makes the result a function of the node
-  set rather than of the input permutation. It must be a **strict total order on distinct
+- **`lessThan`** orders those keys. Ordering by a *frozen* key is what makes the result a
+  function of the node set rather than of the input permutation (clause 2 below); which
+  order incomparable nodes take is clause 3's, declared and not normative, and `lessThan` is
+  not promised to order an antichain. It must be a **strict total order on distinct
   keys** — a documented precondition rather than a refusal, and the only requirement here
   that is not checked. The ready set is a heap and a heap is not stable, so a comparator
   that is not a strict total order can separate this ordering from the one a stable
@@ -672,8 +687,9 @@ contract gen-dispatch's `dag.nix` had.
 fine, with the constraint silently dropped: `phaseOrder { a = entryAfter [ "ghost" ]; b = entryAnywhere; }` returned an order treating `a` and `b` as independent. It now throws a
 named refusal. A constraint that cannot be honoured is a caller error, and dropping it
 returns a confidently wrong order rather than no order.
-For genuinely *independent* nodes the tie-break is
-ascending name, but treat the result as a valid order rather than a specific permutation —
+For genuinely *independent* nodes the tie-break is today
+ascending name, declared and not normative (`topoOrder`'s clause 3), so treat the result as
+a valid order rather than a specific permutation —
 a consumer that applies a phase's effect only *after* the phase (so later phases see
 earlier results, never the reverse) is output-invariant across any valid order.
 

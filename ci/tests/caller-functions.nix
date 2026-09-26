@@ -168,24 +168,27 @@ in
     # D1's gating oracle (den-hoag-hekcx P-D1): a lawful FUNCTOR as a binary caller function's
     # PARTIAL result is applied, not refused. `builtins.isFunction h || callable h` admits it;
     # reverting to bare `isFunction h` (contact 1's literal text) refuses both arms below, even
-    # though base answered them, which is the regression this cell exists to catch.
+    # though base answered them, which is the regression this cell exists to catch. The door's
+    # order on the antichain is sorted before comparison: which order it picks is not the
+    # subject, and is not normative (`lib/order.nix`, the door's clause 3).
     test-a-functor-partial-result-is-applied = {
       expr = {
         topoOrder =
-          (G.topoOrder
-            {
-              lessThan = a: {
-                __functor = _s: b: a < b;
-              };
-            }
-            {
-              nodes = [
-                "b"
-                "a"
-              ];
-              edges = _: [ ];
-            }
-          ).order;
+          builtins.sort builtins.lessThan
+            (G.topoOrder
+              {
+                lessThan = a: {
+                  __functor = _s: b: a < b;
+                };
+              }
+              {
+                nodes = [
+                  "b"
+                  "a"
+                ];
+                edges = _: [ ];
+              }
+            ).order;
         selectEdges = G.selectEdges (_: {
           __functor = _s: to: to == "b";
         }) E;

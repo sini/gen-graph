@@ -331,6 +331,9 @@ in
 {
   flake.tests.arms = {
     # ── door ≡ arm, element-wise, one cell per shape ──
+    # On a shape with more than one topological order the agreement pins WHICH order the door
+    # emits: declared and not normative (`lib/order.nix`, the door's clause 3), so those cells
+    # carry `-change-detector`, are not a contract, and are re-baselined deliberately.
     test-arm-door-chain = {
       expr = doorOrder shapes.chain;
       expected = armOrder shapes.chain;
@@ -339,15 +342,15 @@ in
       expr = doorOrder shapes.chainRev;
       expected = armOrder shapes.chainRev;
     };
-    test-arm-door-fleet = {
+    test-arm-door-fleet-change-detector = {
       expr = doorOrder shapes.fleet;
       expected = armOrder shapes.fleet;
     };
-    test-arm-door-discrim = {
+    test-arm-door-discrim-change-detector = {
       expr = doorOrder shapes.discrim;
       expected = armOrder shapes.discrim;
     };
-    test-arm-door-deepwide = {
+    test-arm-door-deepwide-change-detector = {
       expr = doorOrder shapes.deepwide;
       expected = armOrder shapes.deepwide;
     };
@@ -372,7 +375,7 @@ in
     # `swapDiff`/`swapTripleSame` are the armed control for the fold itself: transposing
     # the elements at 1 and 2 moves two positions, which the fold sees and the retired
     # triple does not.
-    test-arm-door-elementwise-bench-shapes = {
+    test-arm-door-elementwise-bench-shapes-change-detector = {
       expr = builtins.mapAttrs (_: fx: {
         diff = diffPositions (doorOrder fx) (armOrder fx);
         routed = certifies fx;
@@ -427,7 +430,9 @@ in
 
     # ── THE GATE-DEFEATED CONTROL, AND IT FIRES ──
     # The cell above says "these two agree"; it cannot say "the GATE is what makes them
-    # agree". `bareCandidate` is the same candidate with the certificate removed, and the
+    # agree". The Kahn order it is measured against is the ARM's, bound by name: the subject
+    # is the certificate, not the door's pick, so the cell holds whatever the door defaults
+    # to. `bareCandidate` is the same candidate with the certificate removed, and the
     # divergence is measured rather than asserted to exist: `fleet` 290 of 300, `discrim`
     # 298 of 300, `deepwide` 2 of 4002 — the counts at these sizes, pinned so a control
     # that stopped firing reds instead of passing quietly.
@@ -439,9 +444,9 @@ in
     # than assumed away.
     test-arm-door-bare-candidate-control = {
       expr = builtins.mapAttrs (_: fx: {
-        bareDiff = diffPositions (doorOrder fx) (bareCandidate fx);
+        bareDiff = diffPositions (armOrder fx) (bareCandidate fx);
         bareValid = isTopological fx (bareCandidate fx);
-        revValid = isTopological fx (reversed (doorOrder fx));
+        revValid = isTopological fx (reversed (armOrder fx));
       }) benchShapes;
       expected = {
         chain = {

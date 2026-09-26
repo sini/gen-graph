@@ -1079,17 +1079,35 @@ in
         ok = false;
       };
     };
-    # O1: the context node is last in `nodes` with a unique out-degree
+    # O1: the context node is last in `nodes` with a unique out-degree. `q` is free, so the graph
+    # has more than one order and the door's pick among them is not the subject (clause 3): the
+    # cell asserts membership and producers-first on the three edges.
     test-topo-order-over-a-context-carrying-node-listed-last = {
-      expr = topoOrder { } gLast;
+      expr =
+        let
+          r = topoOrder { } gLast;
+          prefixBefore =
+            k: xs:
+            if xs == [ ] || builtins.head xs == k then
+              [ ]
+            else
+              [ (builtins.head xs) ] ++ prefixBefore k (builtins.tail xs);
+          before = a: b: builtins.elem a (prefixBefore b r.order);
+        in
+        {
+          inherit (r) ok;
+          members = builtins.sort builtins.lessThan r.order;
+          producersFirst = before "b" "a" && before "a" "m" && before "b" "m";
+        };
       expected = {
         ok = true;
-        order = [
-          "b"
+        members = [
           "a"
+          "b"
           "m"
           "q"
         ];
+        producersFirst = true;
       };
     };
     # Q2's departure, pinned: an edge map holds a source only as an attribute name, so `dependents`

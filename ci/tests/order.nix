@@ -560,7 +560,12 @@ in
     };
 
     # ── tie-break: caller-supplied, ascending key by default ──
-    test-topo-tiebreak-default-ascending = {
+    # The door's order among incomparable nodes is declared and pinned, NOT normative
+    # (`lib/order.nix`, the door's clause 3; `lessThan` is not promised to order an
+    # antichain). The door cells pinning it carry `-change-detector` and are re-baselined
+    # deliberately; the ready-set mechanism's own cells bind the arm, `topoOrderKahn`, by
+    # name, and its min-key discipline is the arm's contract.
+    test-topo-tiebreak-default-ascending-change-detector = {
       expr =
         (topoOrder { } (
           acc [
@@ -580,7 +585,7 @@ in
     # trace a parity oracle. A hardcoded name tie-break could not reproduce this; a
     # caller-supplied key can. The law is cited, not depended on: it names where the
     # requirement on this arm came from, and it outlived the library that stated it.
-    test-topo-tiebreak-canonical-key = {
+    test-topo-tiebreak-canonical-key-change-detector = {
       expr =
         (topoOrder
           {
@@ -620,11 +625,11 @@ in
         "sink"
       ];
     };
-    # The pick is the smallest ready key GLOBALLY, not the smallest within a level: once
+    # The arm's pick is the smallest ready key GLOBALLY, not the smallest within a level: once
     # `a` is emitted, `b` becomes ready and beats the still-unemitted `z`.
     test-topo-pick-is-global-min-ready = {
       expr =
-        (topoOrder { } (
+        (genGraph.topoOrderKahn { } (
           acc [
             "z"
             "a"
@@ -637,7 +642,7 @@ in
         "z"
       ];
     };
-    test-topo-tiebreak-lessThan = {
+    test-topo-tiebreak-lessThan-change-detector = {
       expr =
         (topoOrder { lessThan = a: b: a > b; } {
           nodes = [
@@ -668,7 +673,7 @@ in
     # wrong ready set. This one does not.
     test-topo-discriminating-interleaves = {
       expr =
-        (topoOrder { } (
+        (genGraph.topoOrderKahn { } (
           acc
             [
               "m0"
@@ -739,8 +744,8 @@ in
       {
         expr = {
           inherit tailAppend;
-          real = (topoOrder { } (acc nodes deps)).order;
-          agrees = tailAppend == (topoOrder { } (acc nodes deps)).order;
+          real = (genGraph.topoOrderKahn { } (acc nodes deps)).order;
+          agrees = tailAppend == (genGraph.topoOrderKahn { } (acc nodes deps)).order;
         };
         expected = {
           tailAppend = [
@@ -766,7 +771,8 @@ in
     # ★ And this is why the case above asserts the WHOLE list. `first | last | length` is
     # the oracle a reordering passes: on this fixture the tail-append order `m0 m1 m2 a0 a1
     # a2` agrees with the true order on all three. An ordering assertion that reads only
-    # the ends certifies nothing about the middle, which is the entire ready-set contract.
+    # the ends certifies nothing about the middle, which is the entire contract of the arm's
+    # ready set.
     test-topo-discriminating-ends-cannot-discriminate = {
       expr =
         let
@@ -779,7 +785,7 @@ in
             + toString (builtins.length xs);
         in
         ends
-          (topoOrder { } (
+          (genGraph.topoOrderKahn { } (
             acc
               [
                 "m0"
@@ -811,7 +817,7 @@ in
     # into two runs.
     test-topo-discriminating-reversed-comparator = {
       expr =
-        (topoOrder { lessThan = a: b: a > b; } {
+        (genGraph.topoOrderKahn { lessThan = a: b: a > b; } {
           nodes = [
             "m0"
             "m1"
@@ -856,7 +862,7 @@ in
         let
           k = p: i: p + (if i < 10 then "0" else "") + toString i;
         in
-        (topoOrder { } (
+        (genGraph.topoOrderKahn { } (
           acc (builtins.genList (k "a") 25 ++ builtins.genList (k "b") 25) (
             builtins.listToAttrs (
               builtins.genList (i: {
@@ -880,7 +886,7 @@ in
         let
           k = p: i: p + (if i < 10 then "0" else "") + toString i;
         in
-        (topoOrder { } (
+        (genGraph.topoOrderKahn { } (
           acc (builtins.genList (k "p") 25 ++ builtins.genList (k "c") 25) (
             builtins.listToAttrs (
               builtins.genList (i: {
@@ -907,14 +913,15 @@ in
     # The projection is what keeps integer and record nodes expressible.
     test-topo-integer-nodes = {
       expr =
-        (topoOrder { keyOf = toString; } {
-          nodes = [
-            3
-            1
-            2
-          ];
-          edges = _: [ ];
-        }).order;
+        builtins.sort builtins.lessThan
+          (topoOrder { keyOf = toString; } {
+            nodes = [
+              3
+              1
+              2
+            ];
+            edges = _: [ ];
+          }).order;
       expected = [
         1
         2
@@ -1020,9 +1027,10 @@ in
         };
       };
     # ★ THE PRICE OF THE OPEN RECORD (den-hoag-nvrl1, arm B): an option written on the graph
-    # record is IGNORED, not refused. The same comparator reverses the antichain as an option and
-    # changes nothing on the record, so a caller migrating from the one-record form moves `keyOf`
-    # and `lessThan` into the options or loses them without a word.
+    # record is IGNORED, not refused. A `lessThan` that is not a function is refused as an option
+    # and never read on the record, so a caller migrating from the one-record form moves `keyOf`
+    # and `lessThan` into the options or loses them without a word. The subject is which field
+    # is read, so the cell asserts it without pinning the door's order (clause 3).
     test-topo-option-on-the-graph-record-is-ignored =
       let
         antichain = acc [
@@ -1030,24 +1038,18 @@ in
           "p"
           "r"
         ] { };
-        reversed = a: b: a > b;
+        # not a function: APPLIED it refuses by name, IGNORED it is never read
+        bad = 1;
+        ran = v: (builtins.tryEval (builtins.deepSeq v true)).success;
       in
       {
         expr = {
-          onRecord = (topoOrder { } (antichain // { lessThan = reversed; })).order;
-          asOption = (topoOrder { lessThan = reversed; } antichain).order;
+          onRecord = ran (topoOrder { } (antichain // { lessThan = bad; }));
+          asOption = ran (topoOrder { lessThan = bad; } antichain);
         };
         expected = {
-          onRecord = [
-            "p"
-            "q"
-            "r"
-          ];
-          asOption = [
-            "r"
-            "q"
-            "p"
-          ];
+          onRecord = true;
+          asOption = false;
         };
       };
     test-topo-refusal-control = {
@@ -1135,7 +1137,7 @@ in
           ix = builtins.genList (i: i) 8;
           last = "a7";
         in
-        (topoOrder { } (
+        (genGraph.topoOrderKahn { } (
           acc (map (i: "a${toString i}") ix ++ map (i: "b${toString i}") ix) (
             builtins.listToAttrs (
               map (i: {
@@ -1210,8 +1212,9 @@ in
     # answer, because the two source nodes are incomparable and the candidate stratifies them
     # while the door interleaves by key. The linkage witness refuses (`m0` is not a dependency
     # of `m1`), so the Kahn arm answers and the sequence is unchanged. Delete the witness and
-    # this cell is what goes red.
-    test-topo-certificate-refuses-a-valid-candidate-that-reorders = {
+    # this cell is what goes red. It pins the door's pick on a multi-order shape, so it is a
+    # change detector, not a contract (clause 3): re-baseline deliberately.
+    test-topo-certificate-refuses-a-valid-candidate-that-reorders-change-detector = {
       expr =
         (topoOrder { } (
           acc

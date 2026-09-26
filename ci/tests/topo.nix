@@ -282,8 +282,10 @@ in
     # by name, so the arm's verdict on these three graphs is part of this file's subject.
     # Element-wise on the whole emitted sequence; the armed reversal control is in
     # `arms.nix`. The accessors are projected to `{ nodes; edges; }` because `mkGraph` also
-    # carries `parent`/`nodeData`, which the ordering formal does not accept.
-    test-topo-door-agrees-with-arm =
+    # carries `parent`/`nodeData`, which the ordering formal does not accept. These shapes
+    # admit more than one order, so the agreement pins the door's pick: not a contract
+    # (`lib/order.nix`, the door's clause 3); re-baseline deliberately.
+    test-topo-door-agrees-with-arm-change-detector =
       let
         fxs = map (g: { inherit (g) nodes edges; }) [
           chain

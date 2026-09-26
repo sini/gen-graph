@@ -46,7 +46,9 @@
 # and its recursion stepped by one `genericClosure` loop.
 # The floor: emitting the ready set in min-key order under a caller-supplied comparator sorts
 # that set, so the loop inherits the comparison-sorting bound of Ω(m log m) comparisons. The
-# heap attains it, and no comparison-based container beats it without changing the contract.
+# heap attains it, and no comparison-based container beats it without changing the ARM's
+# min-key discipline — the arm's contract, not the door's (the door's pick is declared and not
+# normative, stated at `topoOrder` below).
 # The loop is driven by a bounded iteration over the key list, so its EVALUATOR FRAME cost
 # is constant in n — a self-applying step spends one frame per node, which caps ordering at
 # the interpreter's call depth with an abort no caller can catch. Cost is the only bound on
@@ -96,6 +98,24 @@ let
 
   # topoOrder { keyOf ? id; lessThan ? builtins.lessThan } { nodes; edges; ... }
   #   => { ok = true; order = [ node ]; } | { ok = false; cycles = [ [ node ] ]; }
+  #
+  # ── WHAT THE DOOR PROMISES (ADR-0009 as amended) ──
+  # (1) TOPOLOGICALITY — PROMISED. `ok = true` carries a linear extension of the dependency
+  #     relation: every node is emitted after everything it depends on.
+  # (2) PERMUTATION-INDEPENDENCE — PROMISED while `lessThan` is a strict total order on distinct
+  #     keys: the order is a function of the node set, the edges, `keyOf` and `lessThan`, and
+  #     never of the `nodes` list's permutation (scoped at `keyOf` below).
+  # (3) WHICH LINEAR EXTENSION — DECLARED AND PINNED, NOT NORMATIVE. Among the orders (1) and (2)
+  #     admit, the door answers with the Kahn arm's pick, the smallest ready key under `lessThan`
+  #     taken globally; the cells that pin it carry `change-detector` in their name and are not a
+  #     contract, re-baselined deliberately. ADR-0009's ruled default flip to the rank recurrence
+  #     moves it. A consumer whose value depends on the order among incomparable nodes declares
+  #     that order itself, as edges, rather than inheriting this one. `lessThan` is thereby not
+  #     promised to order an antichain: its promised role is canonicity, (2). The owner's reading
+  #     (den-hoag-nz21, 2026-08-19) and the premise it rests on (OPEN 4.A, 2026-08-05: "a pinned,
+  #     DECLARED order — not one specific order") are the basis.
+  # `topoOrderKahn` is outside (3): it is the named algorithm, and its ready discipline is the
+  # arm's own, stated at `step` and pinned by the cells that bind the arm by name.
   #
   # OPTIONS FIRST, THEN THE GRAPH (den-hoag-4308w; the options-first order and the open data
   # record are owner-ruled on den-hoag-7gp66 and den-hoag-nvrl1). The graph record is OPEN: an
