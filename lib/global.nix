@@ -40,6 +40,7 @@ let
     { edges, nodes, ... }:
     let
       e = edgesAccessor who edges;
+      toKey = attrKey who;
       allEdges = prelude.concatMap (
         from:
         map
@@ -54,7 +55,7 @@ let
             if builtins.isList es then es else throw (notEdgeList who from es)
           )
       ) nodes;
-      grouped = builtins.groupBy (e: attrKey e.name) allEdges;
+      grouped = builtins.groupBy (e: toKey e.name) allEdges;
     in
     builtins.mapAttrs (_: es: map (e: e.value) es) grouped;
 
@@ -62,8 +63,9 @@ let
   # Θ(|mat| + E) via groupBy instead of O(E²) via foldl'+// — the concatMap below visits every
   # key of `mat`, so a key with no targets still costs its visit.
   _transposeMat =
-    mat:
+    who: mat:
     let
+      toKey = attrKey who;
       allEdges = prelude.concatMap (
         from:
         map (to: {
@@ -71,7 +73,7 @@ let
           value = from;
         }) (mat.${from} or [ ])
       ) (builtins.attrNames mat);
-      grouped = builtins.groupBy (e: attrKey e.name) allEdges;
+      grouped = builtins.groupBy (e: toKey e.name) allEdges;
     in
     builtins.mapAttrs (_: es: map (e: e.value) es) grouped;
 
@@ -96,11 +98,11 @@ let
       # The closure class by name, so the ceiling refuses under THIS surface's name rather
       # than under the one it borrows the construction from (`fixpoint.nix`, `closureOf`).
       closure = fp.closureOf "dependents" args;
-      reversed = _transposeMat closure;
+      reversed = _transposeMat "dependents" closure;
     in
     builtins.seq (identifier "dependents" targetId) (
       builtins.sort builtins.lessThan (
-        builtins.filter (id: id != targetId) (reversed.${attrKey targetId} or [ ])
+        builtins.filter (id: id != targetId) (reversed.${attrKey "dependents" targetId} or [ ])
       )
     );
 
@@ -133,7 +135,8 @@ let
     targetId:
     let
       reverseIndex = _reverseIndex who { inherit edges nodes; };
-      revEdges = id: reverseIndex.${attrKey id} or [ ];
+      toKey = attrKey who;
+      revEdges = id: reverseIndex.${toKey id} or [ ];
     in
     builtins.seq (identifier who targetId) (
       builtins.sort builtins.lessThan (traverse.reachableFrom { edges = revEdges; } targetId)
@@ -159,7 +162,8 @@ let
     targetId: prune:
     let
       reverseIndex = _reverseIndex "dependentsFrontier" { inherit edges nodes; };
-      revOf = id: reverseIndex.${attrKey id} or [ ];
+      toKey = attrKey "dependentsFrontier";
+      revOf = id: reverseIndex.${toKey id} or [ ];
       keyed = map (k: {
         key = k;
       });
@@ -216,10 +220,11 @@ let
     }:
     let
       mat = edgeMaps.materialize { inherit edges nodes; };
-      rev = _transposeMat mat;
+      rev = _transposeMat "transpose" mat;
+      toKey = attrKey "transpose";
     in
     {
-      edges = id: rev.${attrKey id} or [ ];
+      edges = id: rev.${toKey id} or [ ];
       inherit nodes parent nodeData;
     };
 
@@ -295,13 +300,15 @@ let
       # The closure class by name (`fixpoint.nix`, `closureOf`): the ceiling below is this
       # arm's, and its refusal says so.
       closure = fp.closureOf "condensationClosure" args;
+      toKey = attrKey "condensationClosure";
+      keyedAttrs' = keyedAttrs "condensationClosure";
       # O(1) membership (mirrors transitiveReduction's closureSets) → O(n²), not O(n³).
-      closSets = prelude.mapAttrs (_: ts: keyedAttrs ts (_: true)) closure;
-      reaches = u: v: (closSets.${attrKey u} or { }) ? ${attrKey v};
+      closSets = prelude.mapAttrs (_: ts: keyedAttrs' ts (_: true)) closure;
+      reaches = u: v: (closSets.${toKey u} or { }) ? ${toKey v};
       # A cyclic node's closure includes itself; an acyclic node's does not, so the
       # u == v case is required to make every node co-SCC with itself.
       coSccPair = u: v: (u == v) || (reaches u v && reaches v u);
-      repOf = keyedAttrs nodes (
+      repOf = keyedAttrs' nodes (
         n: builtins.head (builtins.sort builtins.lessThan (builtins.filter (m: coSccPair n m) nodes))
       );
     in
@@ -320,7 +327,7 @@ let
   directDependentsOf =
     accessor: id:
     builtins.seq (identifier "directDependentsOf" id) (
-      (directDependents accessor).${attrKey id} or [ ]
+      (directDependents accessor).${attrKey "directDependentsOf" id} or [ ]
     );
 in
 {

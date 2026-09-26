@@ -224,6 +224,7 @@ let
     }:
     let
       kf = callableAt surface "key" "a node id (a string) or null" key;
+      toKey = attrKey surface;
       ex = callableAt surface "expand" "{ acc; children ? [ ]; }" expand;
       cell = h: t: builtins.seq h (builtins.seq t { inherit h t; });
       at = cs: i: builtins.seq i { inherit cs i; };
@@ -266,7 +267,7 @@ let
                 else
                   badResult surface "key" "on a frame" "a node id (a string) or null" k0;
             in
-            if k != null && (visited ? ${attrKey k} || levels.member s.marks (attrKey k)) then
+            if k != null && (visited ? ${toKey k} || levels.member s.marks (toKey k)) then
               state (s.key + 1) s.acc s.marks rest
             else
               let
@@ -289,7 +290,7 @@ let
                   in
                   if builtins.isList c then c else badResult surface "expand" "on a frame" "children as a list" c;
               in
-              state (s.key + 1) r.acc (if k == null then s.marks else levels.insert s.marks (attrKey k)) (
+              state (s.key + 1) r.acc (if k == null then s.marks else levels.insert s.marks (toKey k)) (
                 if cs == [ ] then rest else cell (at cs 0) rest
               );
       run = builtins.genericClosure {
@@ -403,6 +404,7 @@ let
     }:
     let
       ik = callableAt "foldReach" "itemKey" "a string or null" itemKey;
+      toKey = attrKey "foldReach";
       pj = callableAt "foldReach" "project" "a list of items" project;
       addItem =
         st: item:
@@ -416,11 +418,11 @@ let
             else
               badResult "foldReach" "itemKey" "on an item" "a string or null" k0;
         in
-        if k != null && (seen0 ? ${attrKey k} || levels.member st.seen (attrKey k)) then
+        if k != null && (seen0 ? ${toKey k} || levels.member st.seen (toKey k)) then
           st
         else
           let
-            seen = if k == null then st.seen else levels.insert st.seen (attrKey k);
+            seen = if k == null then st.seen else levels.insert st.seen (toKey k);
             nodes = {
               h = item;
               t = st.nodes;

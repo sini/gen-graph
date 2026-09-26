@@ -282,8 +282,11 @@ let
 
   compose =
     e1: e2:
+    let
+      toKey = attrKey "compose";
+    in
     prelude.mapAttrs (
-      _from: targets: prelude.unique (prelude.concatMap (mid: e2.${attrKey mid} or [ ]) targets)
+      _from: targets: prelude.unique (prelude.concatMap (mid: e2.${toKey mid} or [ ]) targets)
     ) e1;
 
   # ── THE CLOSURE CLASS, ENUMERATED ──
@@ -369,22 +372,24 @@ let
     let
       mat = edgeMaps.materialize { inherit edges nodes; };
       closure = closureOf "transitiveReduction" args;
+      toKey = attrKey "transitiveReduction";
+      keyedAttrs' = keyedAttrs "transitiveReduction";
       redundant = prelude.mapAttrs (
         _from: targets:
         let
           # Pre-convert closure lists to attrsets for O(1) membership
-          closureSets = keyedAttrs targets (
+          closureSets = keyedAttrs' targets (
             mid:
             builtins.listToAttrs (
               map (t: {
-                name = attrKey t;
+                name = toKey t;
                 value = true;
-              }) (closure.${attrKey mid} or [ ])
+              }) (closure.${toKey mid} or [ ])
             )
           );
         in
         builtins.filter (
-          to: builtins.any (mid: mid != to && (closureSets.${attrKey mid} or { }) ? ${attrKey to}) targets
+          to: builtins.any (mid: mid != to && (closureSets.${toKey mid} or { }) ? ${toKey to}) targets
         ) targets
       ) mat;
     in

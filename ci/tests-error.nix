@@ -423,16 +423,14 @@ in
             msg = "^gen-graph: fixpoint exceeded 5 iterations: the step neither converged nor shrank\\. `step` is the caller's, so this binding reports what it observed and names no cause\\.$";
           };
         };
-        # ★ THE CEILING THE SUBSET GUARD ADDS, ASSERTED AS A LOSS. `differenceEdges` keys an
-        # attrset by the target list's ELEMENTS, so `fixpoint`'s accumulator is now attrset of
-        # lists of STRINGS where the cardinality test was total over attrsets of lists. At HEAD
-        # this fixture got a NAMED gen-graph refusal; it now gets Nix's own type error, which
-        # names neither this library nor `step`. A door was rejected on price (a second O(E) pass
-        # on the happy path, for a domain `materialize`/`unionEdges`/`compose` cannot produce),
-        # so the loss is instrumented instead — the day `fixpoint` regains a named refusal over
-        # this domain, this cell reds and says so. The `msg` is UNANCHORED on purpose: the text
-        # is Nix's, not this library's, and anchoring would pin a message gen-graph does not own.
-        test-generic-fixpoint-non-string-edge-target-is-not-refused-by-name = {
+        # ★ THE CEILING THE SUBSET GUARD ADDS. `differenceEdges` keys an attrset by the target
+        # list's ELEMENTS, so `fixpoint`'s accumulator is an attrset of lists of STRINGS where the
+        # cardinality test was total over attrsets of lists. This fixture got Nix's own type error
+        # until the key former refused a non-string by name (den-hoag-2m5iy); it is now a named,
+        # catchable refusal, and it names `differenceEdges`, the door whose former it reached. A
+        # door called inside another keeps its own name; re-pinning it to `fixpoint` belongs to the
+        # door-name migration (den-hoag-7gp66, R6), and this cell reds the day that lands.
+        test-generic-fixpoint-non-string-edge-target-is-refused-by-name = {
           expr = genGraph.fixpoint {
             seed = {
               a = [
@@ -444,8 +442,8 @@ in
             maxIter = 5;
           };
           expectedError = {
-            type = "TypeError";
-            msg = "expected a string but found an integer";
+            type = "ThrownError";
+            msg = "^gen-graph\\.differenceEdges: got int, expected a node identifier \\(a string\\)$";
           };
         };
         # LIVE CONTROL on the claim the cause-free message makes: the step "never shrank" is an
@@ -1244,6 +1242,60 @@ in
         test-queryArrivals = cell (scalar "queryArrivals") (
           genGraph.queryArrivals (qa X // { advance = _: 1; })
         );
+      };
+
+    # THE KEY FORMER (den-hoag-2m5iy, ADR-0025 item 1): a non-string reaching a site that KEYS an
+    # attribute set is refused under the door's name, where it used to meet Nix's uncatchable
+    # "expected a string but found an integer". Catchability and the string controls are
+    # `tests/key-former.nix`.
+    flake.testsError.key-former-refusal =
+      let
+        cell = msg: expr: {
+          inherit expr;
+          expectedError = {
+            type = "ThrownError";
+            inherit msg;
+          };
+        };
+        node = who: type: "^gen-graph\\.${who}: got ${type}, expected a node identifier \\(a string\\)$";
+        label =
+          who: type:
+          "^gen-graph\\.${who}: got ${type}, expected a label \\(a letter of the query alphabet, a string\\)$";
+      in
+      {
+        test-directDependents-non-string-edge-target = cell (node "directDependents" "int") (
+          genGraph.directDependents {
+            nodes = [
+              "a"
+              "b"
+              "c"
+            ];
+            edges =
+              id:
+              if id == "a" then
+                [ "b" ]
+              else if id == "b" then
+                [ 1 ]
+              else
+                [ ];
+          }
+        );
+        test-hoistEdges-lookup-non-string = cell (node "hoistEdges" "int") (
+          genGraph.hoistEdges {
+            nodes = [ "a" ];
+            edges = _: [ ];
+          } 1
+        );
+        test-ranksOf-null-label = cell (label "ranksOf" "null") (
+          genGraph.ranksOf {
+            labels = [
+              "x"
+              null
+              "y"
+            ];
+          }
+        );
+        test-rankOf-null-label = cell (label "rankOf" "null") (genGraph.rankOf { labels = [ "x" ]; } null);
       };
 
     # THE PARTITION FAMILY'S DOMAIN IS A CLOSED ACCESSOR (ADR-0025 item 1). An edge to x ∉ `nodes`

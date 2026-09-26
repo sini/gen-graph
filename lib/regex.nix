@@ -88,12 +88,13 @@ let
   alt =
     rs:
     let
+      toKey = attrKey "regex.alt";
       flat = builtins.concatMap (r: if isT "alt" r then r.rs else [ r ]) rs;
       noEmpty = builtins.filter (r: !(isT "empty" r)) flat;
       # dedup + sort by canonical key (ACI: assoc by flatten, comm by sort, idem by dedup)
       byKey = builtins.listToAttrs (
         map (r: {
-          name = attrKey (stateKey r);
+          name = toKey (stateKey r);
           value = r;
         }) noEmpty
       );

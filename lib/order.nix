@@ -201,6 +201,8 @@ let
     let
       kf = callableAt door "keyOf" "a string" keyOf;
       lt = callableAt door "lessThan" "a bool" lessThan;
+      toKey = attrKey door;
+      keyedAttrs' = keyedAttrs door;
       notLessBool =
         a: b: badResult door "lessThan" "on the keys ${renderId a} and ${renderId b}" "a bool";
       # a comparator is applied one key at a time, so its first application must return a function
@@ -216,15 +218,15 @@ let
       # `builtins.isString` first: every later check indexes an attrset by the key, and a
       # non-string attribute name is the uncatchable abort this whole guard exists for.
       nonString = builtins.filter (k: !builtins.isString k.key) keyed;
-      keySet = keyedAttrs keys (_: true);
-      byKey = builtins.groupBy (k: attrKey k.key) keyed;
+      keySet = keyedAttrs' keys (_: true);
+      byKey = builtins.groupBy (k: toKey k.key) keyed;
       collisions = builtins.filter (g: builtins.length g > 1) (prelude.mapAttrsToList (_: g: g) byKey);
       nodeOf = prelude.mapAttrs (_: g: (builtins.head g).node) byKey;
       e = edgesAccessor door edges;
-      rawDepsOf = keyedAttrs keys (
+      rawDepsOf = keyedAttrs' keys (
         k:
         let
-          node = nodeOf.${attrKey k};
+          node = nodeOf.${toKey k};
           es = e node;
         in
         if builtins.isList es then map kf es else throw (notEdgeList door node es)
@@ -276,7 +278,7 @@ let
       #     order, so `builtins.sort` is exact and allocates one n-element list.
       cand = builtins.sort (
         a: b:
-        if degRaw.${attrKey a} == degRaw.${attrKey b} then
+        if degRaw.${toKey a} == degRaw.${toKey b} then
           (
             let
               h = lt a;
@@ -290,11 +292,11 @@ let
               notLessBool a b r
           )
         else
-          degRaw.${attrKey a} < degRaw.${attrKey b}
+          degRaw.${toKey a} < degRaw.${toKey b}
       ) keys;
       candPos = builtins.listToAttrs (
         prelude.imap0 (i: k: {
-          name = attrKey k;
+          name = toKey k;
           value = i;
         }) cand
       );
@@ -308,18 +310,18 @@ let
       #     bound is Θ(n) when the linking predecessor is early in it and Θ(E) worst case when it
       #     is last. The three allocation axes cannot see the difference — R§4.6.
       candLinked = builtins.all (
-        i: builtins.elem (builtins.elemAt cand i) rawDepsOf.${attrKey (builtins.elemAt cand (i + 1))}
+        i: builtins.elem (builtins.elemAt cand i) rawDepsOf.${toKey (builtins.elemAt cand (i + 1))}
       ) (builtins.genList (i: i) (if candN == 0 then 0 else candN - 1));
 
       # (3) THE CERTIFICATE — Θ(E) lookups, allocation-free. Every edge points strictly backwards.
       #     Validity over a total position map is ALSO the acyclicity proof.
       candValid = builtins.all (
-        k: builtins.all (d: candPos.${attrKey d} < candPos.${attrKey k}) rawDepsOf.${attrKey k}
+        k: builtins.all (d: candPos.${toKey d} < candPos.${toKey k}) rawDepsOf.${toKey k}
       ) keys;
 
       routed = gated && candLinked && candValid;
-      dangling = builtins.filter (d: !(builtins.isString d) || !(keySet ? ${attrKey d})) (
-        prelude.concatMap (k: rawDepsOf.${attrKey k}) keys
+      dangling = builtins.filter (d: !(builtins.isString d) || !(keySet ? ${toKey d})) (
+        prelude.concatMap (k: rawDepsOf.${toKey k}) keys
       );
 
       refusal =
@@ -349,7 +351,7 @@ let
       # An edge SET, so a repeated dependency counts once: `genAttrs` collapses duplicate
       # names, and an indegree that counts an arc the decrement only pays once would
       # never reach zero.
-      depsOf = prelude.mapAttrs (_: ds: builtins.attrNames (keyedAttrs ds (_: true))) rawDepsOf;
+      depsOf = prelude.mapAttrs (_: ds: builtins.attrNames (keyedAttrs' ds (_: true))) rawDepsOf;
       # Reverse index — the pick's successors, the only indegrees a pick may touch.
       # Θ(|keys| + E): the concatMap visits every key, so a key with no deps still costs its visit.
       dependentsOf = prelude.mapAttrs (_: es: map (e: e.value) es) (
@@ -359,7 +361,7 @@ let
             map (d: {
               name = d;
               value = k;
-            }) depsOf.${attrKey k}
+            }) depsOf.${toKey k}
           ) keys
         )
       );
@@ -515,15 +517,15 @@ let
         else
           let
             pick = st.ready.k;
-            succs = dependentsOf.${attrKey pick} or [ ];
+            succs = dependentsOf.${toKey pick} or [ ];
             # Read each loop-carried field once per step rather than once per successor.
             base = st.base;
             residue = st.residue;
-            dropped = keyedAttrs succs (s: (residue.${attrKey s} or base.${attrKey s}) - 1);
-            newly = builtins.filter (s: dropped.${attrKey s} == 0) succs;
-            waiting = builtins.filter (s: dropped.${attrKey s} != 0) succs;
-            entering = builtins.filter (s: !(residue ? ${attrKey s})) waiting;
-            satisfied = builtins.filter (s: residue ? ${attrKey s}) newly;
+            dropped = keyedAttrs' succs (s: (residue.${toKey s} or base.${toKey s}) - 1);
+            newly = builtins.filter (s: dropped.${toKey s} == 0) succs;
+            waiting = builtins.filter (s: dropped.${toKey s} != 0) succs;
+            entering = builtins.filter (s: !(residue ? ${toKey s})) waiting;
+            satisfied = builtins.filter (s: residue ? ${toKey s}) newly;
             # The residue's width EXACTLY, maintained incrementally: `entering` is what this
             # step adds to the residue and `satisfied` what it removes, the two are disjoint,
             # and nothing else changes the key set — so the count needs no pass over the
@@ -569,7 +571,7 @@ let
               else if waiting == [ ] && satisfied == [ ] then
                 residue
               else
-                removeAttrs (residue // keyedAttrs waiting (s: dropped.${attrKey s})) (map attrKey satisfied);
+                removeAttrs (residue // keyedAttrs' waiting (s: dropped.${toKey s})) (map toKey satisfied);
             width = if fold then 0 else width;
             ready = insertAll (mergeH st.ready.l st.ready.r) newly;
             emitted = pushRun st.count st.emitted pick;
@@ -617,7 +619,7 @@ let
         width = 0;
         # Heapified by repeated insert, Θ(m log m). Not sorted first: the heap orders what it
         # holds, so a sort feeding it would be discarded work.
-        ready = insertAll null (builtins.filter (k: indeg0.${attrKey k} == 0) keys);
+        ready = insertAll null (builtins.filter (k: indeg0.${toKey k} == 0) keys);
         emitted = [ ];
         count = 0;
       } keys;
@@ -635,12 +637,12 @@ let
       # door defaults to, and this consumer needs only the tag map.
       keyAccessor = {
         nodes = keys;
-        edges = k: depsOf.${attrKey k} or [ ];
+        edges = k: depsOf.${toKey k} or [ ];
       };
       cyclicKeys = partition.cycles keyAccessor;
       sccOf = (partition.lowlink keyAccessor).sccOf;
-      cycles = prelude.mapAttrsToList (_: g: map (k: nodeOf.${attrKey k}) g) (
-        builtins.groupBy (k: attrKey sccOf.${attrKey k}) cyclicKeys
+      cycles = prelude.mapAttrsToList (_: g: map (k: nodeOf.${toKey k}) g) (
+        builtins.groupBy (k: toKey sccOf.${toKey k}) cyclicKeys
       );
     in
     if refusal != null then
@@ -648,7 +650,7 @@ let
     else if routed then
       {
         ok = true;
-        order = map (k: nodeOf.${attrKey k}) cand;
+        order = map (k: nodeOf.${toKey k}) cand;
       }
     else if final.count < nodeCount then
       {
@@ -658,7 +660,7 @@ let
     else
       {
         ok = true;
-        order = map (k: nodeOf.${attrKey k}) (flushRuns final.emitted);
+        order = map (k: nodeOf.${toKey k}) (flushRuns final.emitted);
       };
 
   # ── THE ARM, and it is STILL exactly the algorithm its name promises ──
@@ -741,6 +743,7 @@ let
   coneRank =
     accessor: cone:
     let
+      toKey = attrKey "coneRank";
       # `all` rather than the arm's `filter`: the arm keeps its filtered list because it
       # reports the offending index and reuses `keyed` for four later passes, while this
       # check has no second reader — so it takes the allocation-free, short-circuiting
@@ -749,7 +752,7 @@ let
       idsAreStrings = builtins.all builtins.isString cone;
       badId = builtins.head (builtins.filter (id: !builtins.isString id) cone);
 
-      coneSet = keyedAttrs cone (_: true);
+      coneSet = keyedAttrs "coneRank" cone (_: true);
       e = edgesAccessor "coneRank" accessor.edges;
       # The membership test is TOTAL: a target that cannot be tested for cone membership
       # refuses by name AT THE SITE that used to abort on it. Guarding the predicate rather
@@ -763,7 +766,7 @@ let
           (
             d:
             if builtins.isString d then
-              coneSet ? ${attrKey d}
+              coneSet ? ${toKey d}
             else
               throw "gen-graph.coneRank: edge target of type ${builtins.typeOf d} on node ${builtins.toJSON id} is not a string; cone membership needs a string target"
           )
@@ -797,12 +800,12 @@ let
       # exponential) — this is what delivers the O(|cone| + edges_in_cone) bound.
       depth = prelude.fix (
         d:
-        keyedAttrs cone (
+        keyedAttrs "coneRank" cone (
           id:
           let
             ps = inConeProducers id;
           in
-          if ps == [ ] then 0 else 1 + prelude.foldl' (m: p: prelude.max m d.${attrKey p}) 0 ps
+          if ps == [ ] then 0 else 1 + prelude.foldl' (m: p: prelude.max m d.${toKey p}) 0 ps
         )
       );
 
@@ -816,10 +819,10 @@ let
 
       order = builtins.sort (
         a: b:
-        if warmDepth.${attrKey a} == warmDepth.${attrKey b} then
+        if warmDepth.${toKey a} == warmDepth.${toKey b} then
           a < b
         else
-          warmDepth.${attrKey a} < warmDepth.${attrKey b}
+          warmDepth.${toKey a} < warmDepth.${toKey b}
       ) cone;
     in
     # ── refusals, in the order that makes each one's own check safe to run ──
@@ -853,12 +856,13 @@ let
   phaseOrder =
     entries:
     let
+      toKey = attrKey "phaseOrder";
       names = builtins.attrNames entries;
       nameSet = prelude.genAttrs names (_: true);
       referenced = prelude.concatMap (
         n: (entries.${n}.after or [ ]) ++ (entries.${n}.before or [ ])
       ) names;
-      undeclared = builtins.filter (d: !(nameSet ? ${attrKey d})) referenced;
+      undeclared = builtins.filter (d: !(nameSet ? ${toKey d})) referenced;
       arcs = prelude.concatMap (
         n:
         map (d: {
@@ -870,7 +874,7 @@ let
           to = n;
         }) (entries.${n}.before or [ ])
       ) names;
-      grouped = builtins.groupBy (x: attrKey x.from) arcs;
+      grouped = builtins.groupBy (x: toKey x.from) arcs;
       result = topoOrder { } {
         nodes = names;
         edges = id: map (x: x.to) (grouped.${id} or [ ]);

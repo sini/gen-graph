@@ -19,14 +19,30 @@
 #
 # THE GUARD IS LOAD-BEARING. `unsafeDiscardStringContext` COERCES: an `outPath` attrset becomes
 # its string and a path is copied to the store. Unguarded, a forged non-string identifier would be
-# admitted silently as a key. A non-string passes through unchanged, so it meets exactly the
-# TypeError it met before this binding existed.
+# admitted silently as a key.
+#
+# A NON-STRING IS REFUSED HERE, BY THE DOOR'S NAME (den-hoag-2m5iy). Nix refuses every non-string
+# as an attribute name (int, bool, float, null, path, a set, an `outPath` set), and that refusal
+# escapes `builtins.tryEval`. The throw sits in the thunk the keying operation forces, so it refuses
+# exactly the values that operation would abort on, at the same point, and adds no check at any read
+# that does not key (ADR-0025 item 1: a value or a named refusal). The one attribute-name form that
+# admits a non-string is `{ ${null} = …; }`, which DROPS the binding; a former fed by caller data
+# refuses that null instead of losing it. "(a string)" is the site-relative rule `identifier` states
+# for a body that keys, not an answer to what an identifier is everywhere: the genericClosure doors
+# still take `nodeKey`'s scalars.
+#
+# `who` is the door the caller invoked. A door binds its former once, `toKey = attrKey who;`, so a
+# key formed costs one application, as it did before the refusal existed. A door called inside
+# another door keeps its own name.
 let
-  # `hasContext` first: on a context-free name the discard is the identity, so skipping it spares
+  # `hasContext` second: on a context-free name the discard is the identity, so skipping it spares
   # the string copy it would make on the path every existing caller is on.
   attrKey =
-    k:
-    if builtins.isString k && builtins.hasContext k then builtins.unsafeDiscardStringContext k else k;
+    who: k:
+    if builtins.isString k then
+      (if builtins.hasContext k then builtins.unsafeDiscardStringContext k else k)
+    else
+      throw (notAnIdentifier who k);
 
   # ── THE IDENTIFIER REFUSAL, WRITTEN ONCE FOR EVERY DOOR THAT TAKES A NODE ID ──
   # Names the type and never the value: the value is not a string, and interpolating it is the
@@ -123,14 +139,17 @@ in
     identifier
     nodeKey
     ;
-  # `genAttrs`, keyed by text: `f` receives the caller's ORIGINAL name, never the key. The guard is
+  # `genAttrs`, keyed by text: `f` receives the caller's ORIGINAL name, never the key. The former is
   # written out rather than called: this body runs once per key formed, and a call costs an Env.
   keyedAttrs =
-    names: f:
+    who: names: f:
     builtins.listToAttrs (
       map (n: {
         name =
-          if builtins.isString n && builtins.hasContext n then builtins.unsafeDiscardStringContext n else n;
+          if builtins.isString n then
+            (if builtins.hasContext n then builtins.unsafeDiscardStringContext n else n)
+          else
+            throw (notAnIdentifier who n);
         value = f n;
       }) names
     );

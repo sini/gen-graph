@@ -12,12 +12,13 @@ let
     { edges, nodes, ... }:
     let
       e = edgesAccessor "roots" edges;
+      toKey = attrKey "roots";
       allTargets = builtins.listToAttrs (
         prelude.concatMap (
           id:
           map
             (t: {
-              name = attrKey t;
+              name = toKey t;
               value = true;
             })
             (
@@ -29,7 +30,7 @@ let
         ) nodes
       );
     in
-    builtins.sort builtins.lessThan (builtins.filter (id: !(allTargets ? ${attrKey id})) nodes);
+    builtins.sort builtins.lessThan (builtins.filter (id: !(allTargets ? ${toKey id})) nodes);
 
   leaves =
     { edges, nodes, ... }:

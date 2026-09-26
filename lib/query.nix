@@ -136,6 +136,15 @@ let
   labelOf = fieldOf "label" "a label is a letter of the query alphabet, a string";
   targetOf = fieldOf "target" "a target is a node id, a string";
 
+  # A LABEL keys a rank table, so its former refuses a non-string in `labelOf`'s words. Inline,
+  # as `keyedAttrs` is: a door binds `labelKey who` once and pays one application per label.
+  labelKey =
+    who: l:
+    if builtins.isString l then
+      (if builtins.hasContext l then builtins.unsafeDiscardStringContext l else l)
+    else
+      throw "gen-graph.${who}: got ${builtins.typeOf l}, expected a label (a letter of the query alphabet, a string)";
+
   # ── EVERY OTHER CALLER FUNCTION'S RESULT IS A CLAIM TOO ──
   # `where`, `groupBy`, `advance`, `marksOf`, a mark's `admits` and `cyclicEdgesWhere`'s `p` are
   # applied by the surfaces below and their results read. Two checks, each where its failure
@@ -206,7 +215,8 @@ let
       ...
     }:
     let
-      incoming = builtins.groupBy (e: attrKey e.target) (
+      toKey = attrKey "labeledTranspose";
+      incoming = builtins.groupBy (e: toKey e.target) (
         builtins.concatMap (
           from:
           map (e: {
@@ -224,7 +234,7 @@ let
         map (e: {
           inherit (e) label;
           target = e.from;
-        }) (incoming.${attrKey id} or [ ]);
+        }) (incoming.${toKey id} or [ ]);
     };
 
   # ── THE BOUNDARY MARKS, AND THE DIAGNOSTIC THAT MAKES THEM VISIBLE ──
@@ -257,6 +267,7 @@ let
   boundedBy =
     graph: marksOf:
     let
+      toKey = attrKey "boundedBy";
       # A mark is read for `admits` wherever an edge is classified, so its shape is checked
       # there; its `name` is read only by `withheld`, and is checked there, carried unforced.
       markAt =
@@ -319,11 +330,11 @@ let
         };
       memo = builtins.listToAttrs (
         map (id: {
-          name = attrKey id;
+          name = toKey id;
           value = classify id;
         }) graph.nodes
       );
-      at = id: memo.${attrKey id} or (classify id);
+      at = id: memo.${toKey id} or (classify id);
     in
     builtins.seq (callableAt "boundedBy" "marksOf" "a list of marks { name; admits; }" marksOf) {
       inherit (graph) nodes;
@@ -390,6 +401,7 @@ let
   cyclicEdgesWhere =
     graph: p:
     let
+      toKey = attrKey "cyclicEdgesWhere";
       plain = forgetLabels graph;
       # The partition ARM by name, never the door: this consumer reads the tag map and
       # nothing else, so it has no stake in which algorithm the door defaults to.
@@ -415,7 +427,7 @@ let
                 else
                   badResult "cyclicEdgesWhere" "p" "on the label ${builtins.toJSON l}" "a bool" b
               )
-              && sccOf.${attrKey from} == sccOf.${attrKey (targetOf "cyclicEdgesWhere" from e)}
+              && sccOf.${toKey from} == sccOf.${toKey (targetOf "cyclicEdgesWhere" from e)}
             ) (edgesAt "cyclicEdgesWhere" graph from)
           )
       ) plain.nodes;
@@ -440,6 +452,7 @@ let
       where ? (_: true),
     }:
     let
+      toKey = attrKey "query";
       st0 = follow;
       # composite seen-key: JSON of the pair — collision-free by construction for ANY
       # node id / label content (no separator-character caveat to police)
@@ -491,7 +504,7 @@ let
       answers = builtins.listToAttrs (
         map
           (item: {
-            name = attrKey item.node;
+            name = toKey item.node;
             value = item.node;
           })
           (
@@ -776,6 +789,7 @@ let
       where ? (_: true),
     }:
     let
+      toKey = attrKey "query";
       go =
         visited: pathAcc: node: st:
         let
@@ -804,10 +818,10 @@ let
               st' = builtins.seq label (regex.deriv label st);
               target = targetOf "query" node e;
             in
-            if regex.stateKey st' == "0" || visited ? ${attrKey target} then
+            if regex.stateKey st' == "0" || visited ? ${toKey target} then
               [ ]
             else
-              go (visited // { ${attrKey target} = true; }) (
+              go (visited // { ${toKey target} = true; }) (
                 # witness step built in its final shape — no post-hoc strip
                 pathAcc
                 ++ [
@@ -823,7 +837,7 @@ let
         here ++ steps;
     in
     builtins.seq (callableAt "query" "where" "a bool" where) (
-      go { ${attrKey from} = true; } [ ] from follow
+      go { ${toKey from} = true; } [ ] from follow
     );
 
   # ── per-query label order: compare witness paths lexicographically on label ranks;
@@ -845,12 +859,15 @@ let
   # substitute one for the other. gen-view carries the same correction above its own
   # `rankLess`. ──
   ranksOf =
+    let
+      toKey = labelKey "ranksOf";
+    in
     order:
     (builtins.foldl'
       (acc: l: {
         i = acc.i + 1;
         m = acc.m // {
-          ${attrKey l} = acc.i;
+          ${toKey l} = acc.i;
         };
       })
       {
@@ -860,7 +877,11 @@ let
       (order.labels or [ ])
     ).m;
 
-  rankOf = order: label: (ranksOf order).${attrKey label} or (builtins.length (order.labels or [ ]));
+  rankOf =
+    let
+      toKey = labelKey "rankOf";
+    in
+    order: label: (ranksOf order).${toKey label} or (builtins.length (order.labels or [ ]));
 
   rankWordOf = order: path: map (p: rankOf order p.label) path;
 
@@ -921,6 +942,7 @@ let
       groupBy == null
       -> throw "gen-graph.queryVisible: groupBy is required and is never defaulted (den-hoag-l7af / ADR-0024 ruling 3); a caller wanting the per-node reading states `groupBy = ans: ans.node;` explicitly";
     let
+      toKey = attrKey "queryVisible";
       answers = queryPaths (
         builtins.removeAttrs args [
           "order"
@@ -933,7 +955,7 @@ let
           k = groupBy a;
         in
         if builtins.isString k then
-          attrKey k
+          toKey k
         else
           badResult "queryVisible" "groupBy" "on the answer at ${renderId a.node}"
             "a string, the answer's competition key"

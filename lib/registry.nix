@@ -61,6 +61,7 @@ let
       es = listAt who "edges" "a list of { from; to; } records" edges;
       ps = listAt who "parents" "a list of { from; to; } records" parents;
       nd = setAt who "nodeData" "an attrset from a node identifier to its data" nodeData;
+      toKey = attrKey who;
       # The keyed reads are written out at each site, as `key.nix` asks of a check run once per
       # element: a call costs an Env. The rendered refusal is reached only on the refusal path.
       allIds = builtins.attrValues (
@@ -69,7 +70,7 @@ let
             e:
             if builtins.isAttrs e && e ? from && builtins.isString e.from then
               {
-                name = attrKey e.from;
+                name = toKey e.from;
                 value = e.from;
               }
             else
@@ -79,7 +80,7 @@ let
             e:
             if builtins.isAttrs e && e ? to && builtins.isString e.to then
               {
-                name = attrKey e.to;
+                name = toKey e.to;
                 value = e.to;
               }
             else
@@ -89,7 +90,7 @@ let
             e:
             if builtins.isAttrs e && e ? from && builtins.isString e.from then
               {
-                name = attrKey e.from;
+                name = toKey e.from;
                 value = e.from;
               }
             else
@@ -99,7 +100,7 @@ let
             e:
             if builtins.isAttrs e && e ? to && builtins.isString e.to then
               {
-                name = attrKey e.to;
+                name = toKey e.to;
                 value = e.to;
               }
             else
@@ -117,7 +118,7 @@ let
           grouped = builtins.groupBy (
             e:
             if builtins.isAttrs e && e ? from && builtins.isString e.from then
-              attrKey e.from
+              toKey e.from
             else
               throw (endFinding who "edges" true "from" es)
           ) es;
@@ -131,7 +132,7 @@ let
           e:
           if builtins.isAttrs e && e ? from && builtins.isString e.from then
             {
-              name = attrKey e.from;
+              name = toKey e.from;
               value = if e ? to then e.to else throw (endFinding who "parents" false "to" ps);
             }
           else
@@ -140,10 +141,10 @@ let
       );
     in
     {
-      edges = id: prelude.unique (edgeIndex.${attrKey id} or [ ]);
-      parent = id: parentIndex.${attrKey id} or null;
+      edges = id: prelude.unique (edgeIndex.${toKey id} or [ ]);
+      parent = id: parentIndex.${toKey id} or null;
       nodes = allIds;
-      nodeData = id: nd.${attrKey id} or { };
+      nodeData = id: nd.${toKey id} or { };
     };
 
   self = {
@@ -158,6 +159,7 @@ let
           setAt "fromRegistry" "registry" "an attrset from a node identifier to its entry"
             registry;
         nodes = builtins.attrNames registry';
+        toKey = attrKey "fromRegistry";
         # Applied inside the accessor this returns, so a non-function is refused where it is first
         # applied; the result is the downstream surface's to read, and that surface checks it.
         e =
@@ -176,7 +178,7 @@ let
             h = e id;
           in
           if builtins.isFunction h || callable h then
-            h (registry'.${attrKey id} or { })
+            h (registry'.${toKey id} or { })
           else
             badResult "fromRegistry" "edges" (renderId id)
               "a function from a registry entry to a list of node ids"
@@ -190,12 +192,12 @@ let
             h = pa id;
           in
           if builtins.isFunction h || callable h then
-            h (registry'.${attrKey id} or { })
+            h (registry'.${toKey id} or { })
           else
             badResult "fromRegistry" "parent" (renderId id)
               "a function from a registry entry to a node id or null"
               h;
-        nodeData = id: registry'.${attrKey id} or { };
+        nodeData = id: registry'.${toKey id} or { };
       };
 
     # The name is the key the extractor reads, so it is checked once, at the first read.
@@ -569,7 +571,7 @@ let
               }
             ];
           }
-          .${attrKey id} or [ ];
+          .${attrKey "labeledFixtures" id} or [ ];
       };
       # labeled cycle: a -contains-> b -contains-> a, plus a -member-> m
       cyclic = {
@@ -598,7 +600,7 @@ let
               }
             ];
           }
-          .${attrKey id} or [ ];
+          .${attrKey "labeledFixtures" id} or [ ];
       };
       # poison: touching node "boom"'s edges throws — laziness witness. boom has
       # an incoming edge (label "other"), so only the derivative-empty prune (a
@@ -625,7 +627,7 @@ let
             b = [ ];
             boom = throw "poisoned accessor forced";
           }
-          .${attrKey id} or [ ];
+          .${attrKey "labeledFixtures" id} or [ ];
       };
     };
   };

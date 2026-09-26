@@ -36,6 +36,7 @@ let
     edgesAccessor
     identifier
     nodeKey
+    notAnIdentifier
     notEdgeList
     retiredMaxDepth
     ;
@@ -256,11 +257,12 @@ let
     startId: endId:
     let
       e = edgesAccessor "pathsBetween" edges;
+      toKey = attrKey "pathsBetween";
       dfs =
         depth: visited: current:
         if current == endId then
           [ [ endId ] ]
-        else if visited ? ${attrKey current} then
+        else if visited ? ${toKey current} then
           [ ]
         # After both terminating checks: neither descends, so neither can reach the evaluator's ceiling, and refusing on one would change the
         # answer for graphs that never approach the cap.
@@ -269,7 +271,7 @@ let
         else
           let
             newVisited = visited // {
-              ${attrKey current} = true;
+              ${toKey current} = true;
             };
             targets = (
               let
@@ -322,6 +324,7 @@ let
     { edges, nodes, ... }:
     let
       e = edgesAccessor "hoistEdges" edges;
+      toKey = attrKey "hoistEdges";
       wrap =
         id:
         map (t: { key = t; }) (
@@ -332,17 +335,17 @@ let
         );
       wrapped = builtins.listToAttrs (
         map (id: {
-          name = attrKey id;
+          name = toKey id;
           value = wrap id;
         }) nodes
       );
     in
     id:
     wrapped.${
-      if builtins.isString id && builtins.hasContext id then
-        builtins.unsafeDiscardStringContext id
+      if builtins.isString id then
+        (if builtins.hasContext id then builtins.unsafeDiscardStringContext id else id)
       else
-        id
+        throw (notAnIdentifier "hoistEdges" id)
     } or (wrap id);
 
   # `succ` is a hoisted successor function — `hoistEdges accessor`, or that composed with a

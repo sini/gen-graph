@@ -118,6 +118,9 @@ let
   # the whole point of the projection is that there is exactly one.
   _refName = ref: ref.id;
 
+  # The one door that keys a declared relation (`_normalize` and the returned `dependencies`).
+  toKey = attrKey "mkDeclaredEdges";
+
   _nodeRefFindings =
     isRegistered: id:
     if !(builtins.isString id) then
@@ -202,7 +205,7 @@ let
     relation:
     if builtins.isList relation then
       builtins.mapAttrs (_: es: map (e: _refName e.to) es) (
-        builtins.groupBy (e: attrKey (_refName e.from)) relation
+        builtins.groupBy (e: toKey (_refName e.from)) relation
       )
     else
       builtins.mapAttrs (_: refs: map _refName refs) relation;
@@ -304,7 +307,7 @@ in
         {
           _type = _edgeSetMarker;
           inherit index;
-          dependencies = id: index.${attrKey id} or [ ];
+          dependencies = id: index.${toKey id} or [ ];
         }
     );
 

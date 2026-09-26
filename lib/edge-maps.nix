@@ -15,7 +15,7 @@ let
     let
       e = edgesAccessor "materialize" edges;
     in
-    keyedAttrs nodes (
+    keyedAttrs "materialize" nodes (
       id:
       prelude.unique (
         let
@@ -29,11 +29,12 @@ let
     { parent, nodes, ... }:
     let
       pa = callableAt "materializeParents" "parent" "a node id or null" parent;
+      toKey = attrKey "materializeParents";
     in
     prelude.listToAttrs (
       builtins.filter (e: e.value != null) (
         map (id: {
-          name = attrKey id;
+          name = toKey id;
           value =
             let
               p = pa id;
@@ -48,10 +49,13 @@ let
 
   # Convert target list to attrset for O(1) membership
   _targetSet =
-    targets:
+    who: targets:
+    let
+      toKey = attrKey who;
+    in
     builtins.listToAttrs (
       map (t: {
-        name = attrKey t;
+        name = toKey t;
         value = true;
       }) targets
     );
@@ -69,25 +73,31 @@ let
 
   intersectEdges =
     a: b:
+    let
+      toKey = attrKey "intersectEdges";
+    in
     prelude.filterAttrs (_: targets: targets != [ ]) (
       prelude.mapAttrs (
         from: aTargets:
         let
-          bSet = _targetSet (b.${from} or [ ]);
+          bSet = _targetSet "intersectEdges" (b.${from} or [ ]);
         in
-        builtins.filter (to: bSet ? ${attrKey to}) aTargets
+        builtins.filter (to: bSet ? ${toKey to}) aTargets
       ) (prelude.filterAttrs (from: _: b ? ${from}) a)
     );
 
   differenceEdges =
     a: b:
+    let
+      toKey = attrKey "differenceEdges";
+    in
     prelude.filterAttrs (_: targets: targets != [ ]) (
       prelude.mapAttrs (
         from: aTargets:
         let
-          bSet = _targetSet (b.${from} or [ ]);
+          bSet = _targetSet "differenceEdges" (b.${from} or [ ]);
         in
-        builtins.filter (to: !(bSet ? ${attrKey to})) aTargets
+        builtins.filter (to: !(bSet ? ${toKey to})) aTargets
       ) a
     );
 

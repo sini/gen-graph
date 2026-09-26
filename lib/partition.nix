@@ -53,6 +53,7 @@ let
     edgesAccessor
     identifier
     keyedAttrs
+    notAnIdentifier
     notEdgeList
     renderId
     ;
@@ -170,7 +171,9 @@ let
     tagOf:
     let
       e = edgesAccessor who edges;
-      memberSet = keyedAttrs (map (identifier who) nodes) (_: true);
+      toKey = attrKey who;
+      keyedAttrs' = keyedAttrs who;
+      memberSet = keyedAttrs' (map (identifier who) nodes) (_: true);
       # `nodes` is validated BEFORE any target is read: the scan below short-circuits on a
       # non-string target without forcing `memberSet`, so a non-string NODE with an edge would
       # otherwise be reported as a target outside `nodes`.
@@ -182,13 +185,13 @@ let
         if !builtins.isList es then
           throw (notEdgeList who v es)
         else
-          builtins.all (d: builtins.isString d && memberSet ? ${attrKey d}) es
+          builtins.all (d: builtins.isString d && memberSet ? ${toKey d}) es
           || throw "gen-graph.${who}: edges ${renderId v} names a target outside `nodes`"
       ) nodes;
       membersOf = prelude.mapAttrs (_: es: builtins.sort builtins.lessThan (map (e: e.n) es)) (
-        builtins.groupBy (e: attrKey e.r) (
+        builtins.groupBy (e: toKey e.r) (
           map (n: {
-            r = tagOf.${attrKey n};
+            r = tagOf.${toKey n};
             n = n;
           }) nodes
         )
@@ -202,15 +205,15 @@ let
       # Tags are strings, so uniquing one tag per node would take the sorting path — a sort
       # over a set whose distinct members `membersOf` has already grouped, i.e. redundant work
       # rather than a quadratic. Same reading `coneRank` records for the same reason.
-      tags = map (ms: tagOf.${attrKey (builtins.head ms)}) (builtins.attrValues membersOf);
+      tags = map (ms: tagOf.${toKey (builtins.head ms)}) (builtins.attrValues membersOf);
       # Deduplicated the same way, and the targets come out SORTED rather than in accessor
       # order — so the condensation's edge lists are a function of the graph and not of the
       # order a caller's `edges` happens to enumerate.
-      condEdges = keyedAttrs tags (
+      condEdges = keyedAttrs' tags (
         r:
         builtins.filter (t: t != r) (
           builtins.attrValues (
-            keyedAttrs (map (m: tagOf.${attrKey m}) (
+            keyedAttrs' (map (m: tagOf.${toKey m}) (
               prelude.concatMap (
                 m:
                 (
@@ -219,7 +222,7 @@ let
                   in
                   if builtins.isList es then es else throw (notEdgeList "condensationOf" m es)
                 )
-              ) (membersOf.${attrKey r} or [ ])
+              ) (membersOf.${toKey r} or [ ])
             )) (t: t)
           )
         )
@@ -230,13 +233,13 @@ let
       # its emitted order IS a reverse-topological order: a class that points at another has
       # a strictly greater rank, so it sorts strictly later. The quotient is acyclic, so the
       # cyclic-cone refusal below it is unreachable from here.
-      ranked = order.coneRank { edges = r: condEdges.${attrKey r} or [ ]; } tags;
+      ranked = order.coneRank { edges = r: condEdges.${toKey r} or [ ]; } tags;
     in
     builtins.seq closed {
       reps = ranked.order;
       bottomUp = ranked.order;
       members = membersOf;
-      sccs = map (r: membersOf.${attrKey r} or [ ]) ranked.order;
+      sccs = map (r: membersOf.${toKey r} or [ ]) ranked.order;
       sccOf = tagOf;
       inherit condEdges;
       depth = builtins.foldl' prelude.max 0 (prelude.attrValues ranked.depth);
@@ -276,13 +279,16 @@ let
       rev = global.transpose accessor;
       succFwd = traverse.hoistEdges accessor;
       succBwd = traverse.hoistEdges rev;
-      forward = keyedAttrs nodes (v: traverse.reachableVia succFwd v);
-      backward = keyedAttrs nodes (v: prelude.genAttrs (traverse.reachableVia succBwd v) (_: true));
+      toKey = attrKey "fbNode";
+      forward = keyedAttrs "fbNode" nodes (v: traverse.reachableVia succFwd v);
+      backward = keyedAttrs "fbNode" nodes (
+        v: prelude.genAttrs (traverse.reachableVia succBwd v) (_: true)
+      );
     in
-    keyedAttrs nodes (
+    keyedAttrs "fbNode" nodes (
       v:
       let
-        bv = backward.${attrKey v};
+        bv = backward.${toKey v};
       in
       tagOfMembers (
         [ v ]
@@ -290,9 +296,12 @@ let
           u:
           bv
             ? ${
-              if builtins.isString u && builtins.hasContext u then builtins.unsafeDiscardStringContext u else u
+              if builtins.isString u then
+                (if builtins.hasContext u then builtins.unsafeDiscardStringContext u else u)
+              else
+                throw (notAnIdentifier "fbNode" u)
             }
-        ) forward.${attrKey v}
+        ) forward.${toKey v}
       )
     );
 
@@ -340,14 +349,16 @@ let
     let
       rev = global.transpose accessor;
       e = edgesAccessor "fbWork" edges;
+      toKey = attrKey "fbWork";
+      keyedAttrs' = keyedAttrs "fbWork";
       step =
         acc: v:
-        if acc.tags ? ${attrKey v} then
+        if acc.tags ? ${toKey v} then
           acc
         else
           let
-            live = id: !(acc.tags ? ${attrKey id});
-            forward = keyedAttrs (traverse.reachableFrom {
+            live = id: !(acc.tags ? ${toKey id});
+            forward = keyedAttrs' (traverse.reachableFrom {
               edges =
                 id:
                 builtins.filter live (
@@ -360,13 +371,13 @@ let
             component = [
               v
             ]
-            ++ builtins.filter (u: forward ? ${u}) (
+            ++ builtins.filter (u: forward ? ${toKey u}) (
               traverse.reachableFrom { edges = id: builtins.filter live (rev.edges id); } v
             );
             tag = tagOfMembers component;
           in
           {
-            tags = acc.tags // keyedAttrs component (_: tag);
+            tags = acc.tags // keyedAttrs' component (_: tag);
           };
     in
     (builtins.foldl' step { tags = { }; } nodes).tags;
@@ -411,7 +422,8 @@ let
     { edges, nodes, ... }:
     let
       e = edgesAccessor "lowlink" edges;
-      byKey = keyedAttrs (map (identifier "lowlink") nodes) (v: v);
+      toKey = attrKey "lowlink";
+      byKey = keyedAttrs "lowlink" (map (identifier "lowlink") nodes) (v: v);
       names = builtins.attrNames byKey;
       verts = builtins.attrValues byKey;
       n = builtins.length names;
@@ -423,8 +435,8 @@ let
       );
       ordinal =
         from: w:
-        if builtins.isString w && ordOf ? ${attrKey w} then
-          ordOf.${attrKey w}
+        if builtins.isString w && ordOf ? ${toKey w} then
+          ordOf.${toKey w}
         else
           throw "gen-graph.lowlink: edges ${renderId from} names a target outside `nodes`";
       succOf =
@@ -585,10 +597,11 @@ let
     let
       inherit (lowlink accessor) sccOf;
       e = edgesAccessor "cycles" edges;
+      toKey = attrKey "cycles";
       size = builtins.mapAttrs (_: builtins.length) (
-        builtins.groupBy (k: attrKey sccOf.${k}) (builtins.attrNames sccOf)
+        builtins.groupBy (k: toKey sccOf.${k}) (builtins.attrNames sccOf)
       );
-      onCycle = v: size.${attrKey sccOf.${attrKey v}} > 1 || builtins.elem v (e v);
+      onCycle = v: size.${toKey sccOf.${toKey v}} > 1 || builtins.elem v (e v);
     in
     {
       inherit sccOf;
@@ -621,11 +634,13 @@ let
     let
       c = cyclicOf accessor;
       e = edgesAccessor "cyclePaths" edges;
+      toKey = attrKey "cyclePaths";
+      keyedAttrs' = keyedAttrs "cyclePaths";
       witness =
         members:
         let
           u = builtins.head (builtins.sort builtins.lessThan members);
-          inC = keyedAttrs members (_: true);
+          inC = keyedAttrs' members (_: true);
           ks = builtins.attrNames inC;
           ordOf = builtins.listToAttrs (
             builtins.genList (i: {
@@ -634,7 +649,7 @@ let
             }) (builtins.length ks)
           );
           inherit (trieOf (builtins.length ks)) empty get set;
-          succ = v: builtins.filter (w: inC ? ${attrKey w}) (e v);
+          succ = v: builtins.filter (w: inC ? ${toKey w}) (e v);
           v0 = builtins.head (succ u);
           frame =
             v: es: i:
@@ -667,14 +682,14 @@ let
               in
               if w == u then
                 state (s.key + 1) s.vis rest true
-              else if get s.vis ordOf.${attrKey w} != 0 then
+              else if get s.vis ordOf.${toKey w} != 0 then
                 state (s.key + 1) s.vis rest false
               else
-                state (s.key + 1) (set s.vis ordOf.${attrKey w} 1) (cell (frame w (succ w) 0) rest) false
+                state (s.key + 1) (set s.vis ordOf.${toKey w} 1) (cell (frame w (succ w) 0) rest) false
             else
               state (s.key + 1) s.vis s.cs.t false;
           run = builtins.genericClosure {
-            startSet = [ (state 0 (set empty ordOf.${attrKey v0} 1) (cell (frame v0 (succ v0) 0) null) false) ];
+            startSet = [ (state 0 (set empty ordOf.${toKey v0} 1) (cell (frame v0 (succ v0) 0) null) false) ];
             operator = s: if s.done then [ ] else [ (step s) ];
           };
           stack = conses (builtins.elemAt run (builtins.length run - 1)).cs;
@@ -686,7 +701,7 @@ let
           [ u ] ++ builtins.genList (i: (builtins.elemAt stack (depth - 1 - i)).c.h.v) depth;
     in
     map witness (
-      prelude.mapAttrsToList (_: g: g) (builtins.groupBy (k: attrKey c.sccOf.${attrKey k}) c.cyclic)
+      prelude.mapAttrsToList (_: g: g) (builtins.groupBy (k: toKey c.sccOf.${toKey k}) c.cyclic)
     );
 
   # ── THE FRONT DOOR ──
