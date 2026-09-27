@@ -57,18 +57,21 @@ let
     k = builtins.hashString "sha256" "e";
     nu = true;
     h = 0;
+    sz = 1;
   };
   empty = {
     t = "empty";
     k = builtins.hashString "sha256" "0";
     nu = false;
     h = 0;
+    sz = 1;
   };
   any = {
     t = "any";
     k = builtins.hashString "sha256" "_";
     nu = false;
     h = 0;
+    sz = 1;
   };
   lit = l: {
     t = "lit";
@@ -76,6 +79,7 @@ let
     k = builtins.hashString "sha256" ("'" + l);
     nu = false;
     h = 0;
+    sz = 1;
   };
 
   isT = t: r: r.t == t;
@@ -89,6 +93,12 @@ let
       hs = builtins.sort builtins.lessThan (builtins.catAttrs "h" rs);
     in
     1 + builtins.elemAt hs (builtins.length hs - 1);
+
+  # the node count of the tree this term unfolds to, saturating past derivDirectSize: an upper
+  # bound on what one direct derivative walks, which reads a star's body, an alt's branches and a
+  # seq's elements through seqReach
+  sat = n: if n > derivDirectSize then derivDirectSize + 1 else n;
+  szOf = rs: sat (1 + builtins.foldl' builtins.add 0 (builtins.catAttrs "sz" rs));
 
   # canonical key; alt is sorted by this, making it a true canonical form
   stateKey = r: r.k or (throw notATerm);
@@ -115,14 +125,22 @@ let
             throw notATerm;
         nu = !(builtins.elem false (builtins.catAttrs "nu" noEps));
         h = above noEps;
+        sz = szOf noEps;
       in
       builtins.seq k (
         builtins.seq nu (
-          builtins.seq h {
-            t = "seq";
-            rs = noEps;
-            inherit k nu h;
-          }
+          builtins.seq h (
+            builtins.seq sz {
+              t = "seq";
+              rs = noEps;
+              inherit
+                k
+                nu
+                h
+                sz
+                ;
+            }
+          )
         )
       );
 
@@ -150,14 +168,22 @@ let
         k = builtins.hashString "sha256" ("|" + builtins.concatStringsSep "" keys);
         nu = builtins.elem true (builtins.catAttrs "nu" canon);
         h = above canon;
+        sz = szOf canon;
       in
       builtins.seq k (
         builtins.seq nu (
-          builtins.seq h {
-            t = "alt";
-            rs = canon;
-            inherit k nu h;
-          }
+          builtins.seq h (
+            builtins.seq sz {
+              t = "alt";
+              rs = canon;
+              inherit
+                k
+                nu
+                h
+                sz
+                ;
+            }
+          )
         )
       );
 
@@ -171,13 +197,21 @@ let
       let
         k = builtins.hashString "sha256" ("*" + r.k or (throw notATerm));
         h = 1 + hOf r;
+        sz = sat (1 + r.sz);
       in
       builtins.seq k (
-        builtins.seq h {
-          t = "star";
-          nu = true;
-          inherit r k h;
-        }
+        builtins.seq h (
+          builtins.seq sz {
+            t = "star";
+            nu = true;
+            inherit
+              r
+              k
+              h
+              sz
+              ;
+          }
+        )
       );
 
   opt =
@@ -282,14 +316,36 @@ let
   # frames, so a term of any height derives in bounded stack. Before this, `deriv` aborted at 417
   # nested levels and `nullable` at 2,500 (den-hoag-smn53).
   #
-  # `derivDirectHeight` is a cost switch, not a bound: always warming is ceiling-free too, and
-  # costs ×1.9 calls on `query`'s own workloads. It is set from three measured legs (nix):
-  # - stack: the direct arm needs ≤ ~14 frames per unit of height, 148-218 at h = 16;
-  # - sharing: the direct arm does not memoise, so a shared nullable subterm costs ~2^(T/2) calls
-  #   below T, and `parse` reaches it (`(`×k `a*` `)+`×k: 147.6 M calls at 62 characters under
-  #   T = 64, 41 k under T = 16);
+  # `deriv`'s arm is chosen by cost. Both switches are cost switches, not bounds: always warming is
+  # ceiling-free too, and costs ×2.0 calls on `query`'s own walks. The direct arm is a tree walk, so
+  # on a term whose subterms are shared it derives each one once per path to it: `plus r` holds r
+  # twice, and nested `(…?)+` doubles the walk at every level. `sz`, carried like `h`, counts the
+  # nodes the term unfolds to, saturating past `derivDirectSize`; past it the warmed arm steps each
+  # distinct subterm once (its memo is keyed on `k`, ORT 2009 §4.1's finite map with RE keys). A
+  # derivative therefore takes at most max(derivDirectSize, distinct subterms) steps; a step's cost
+  # still grows with its seq's width (den-hoag-naalo). Figures are nix; det agrees to +1 call.
+  #
+  # `derivDirectHeight` = 64 is set by the stack; sharing is `derivDirectSize`'s leg, not its own:
+  # - stack: the direct arm needs ~12 frames per unit of height, 773 at h = 64 (lix 772), against
+  #   the default `max-call-depth` of 10,000; the warmed arm needs 29;
+  # - sharing: a height bounds only what `parse` can share (`plus`'s two copies). One derivative of
+  #   `(`×k `a*` `)+`×k takes 79.7 M calls at k = 20 under T = 64 without `sz`, and does not return
+  #   at k = 32; with `sz` it takes 24,554 and 75,676. A caller of the constructors shares w ways per
+  #   level, which no height bounds: a 64-way fan of height 9 takes 16.6 M calls under T = 16, and
+  #   23,823 with `sz`;
   # - workloads: `query`'s patterns and their derivatives reach h ≤ 3, so T ≥ 4 is indifferent.
-  # T = 16 is paid on unshared terms of height 17-64, which take the warmed arm's constant.
+  # T = 16 with `sz` would remove the direct excess below the size cap (a DAG of height 21 and sz
+  # 1,017: 19,882 calls, 2,435 under T = 16) at +39% calls on every unshared term of height 17-64.
+  # T = 64 keeps the excess, a constant, over the percentage.
+  #
+  # `derivDirectSize` = 1024 is set from three legs:
+  # - DAG: below it the direct walk takes at most `derivDirectSize` steps, and the bound is tight:
+  #   that DAG of sz 1,017 takes 1,017 steps over 30 distinct subterms;
+  # - wide: an unshared alternation just past it pays the warmed arm, ×3.0 derivative calls (lix
+  #   ×4.3-4.7). Only the constructors build one: 1,000 characters of `parse` hold ≤ ~500 branches;
+  # - workloads: realistic patterns sit far below it; carrying `sz` costs +0.5-2.4% calls and
+  #   +2.7-5.0% thunks on `query`'s walks and `parse`.
+  # Lowering it trades the DAG excess for the wide penalty.
   derivWarmed =
     l: r:
     let
@@ -319,9 +375,14 @@ let
     in
     builtins.seq warmed memo.${r.k};
 
-  derivDirectHeight = 16;
+  derivDirectHeight = 64;
+  derivDirectSize = 1024;
   deriv =
-    l: r: if (r.h or (throw notATerm)) <= derivDirectHeight then derivDirect l r else derivWarmed l r;
+    l: r:
+    if (r.h or (throw notATerm)) <= derivDirectHeight && r.sz <= derivDirectSize then
+      derivDirect l r
+    else
+      derivWarmed l r;
 
   # ── string sugar ──────────────────────────────────────────────────────────
   # grammar:  expr := seqE ("|" seqE)*        (alternation binds loosest)

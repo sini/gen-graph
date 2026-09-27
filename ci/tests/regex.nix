@@ -8,6 +8,47 @@ let
   nested = k: (rep k "(") + "a" + (rep k ")");
   # `(`×k a `)+`×k, 3k+1 characters; `plus` holds its argument twice at every level
   plusNest = k: (rep k "(") + "a" + (rep k ")+");
+  # `(`×k a? `)+`×k: over a nullable argument the derivative reads both of plus's copies
+  optPlusNest = k: (rep k "(") + "a?" + (rep k ")+");
+  # x(k) = x(k-1)* a | x(k-1)* b, each level holding the one below twice, with d_a x(k) written
+  # out by the constructors alone: D(k) = D(k-1) x(k-1)* a | eps | D(k-1) x(k-1)* b
+  dag =
+    n:
+    builtins.foldl'
+      (
+        p: _:
+        let
+          x = r.alt [
+            (r.seq [
+              (r.star p.x)
+              (r.lit "a")
+            ])
+            (r.seq [
+              (r.star p.x)
+              (r.lit "b")
+            ])
+          ];
+          d = r.alt [
+            (r.seq [
+              p.d
+              (r.star p.x)
+              (r.lit "a")
+            ])
+            r.eps
+            (r.seq [
+              p.d
+              (r.star p.x)
+              (r.lit "b")
+            ])
+          ];
+        in
+        builtins.seq x (builtins.seq d { inherit x d; })
+      )
+      {
+        x = r.lit "a";
+        d = r.eps;
+      }
+      (builtins.genList (i: i) n);
   # `n` levels of `seq [ (lit "a") (star acc) ]`, built through the constructors alone
   chain =
     n:
@@ -508,6 +549,25 @@ in
       expected = [
         true
         true
+      ];
+    };
+
+    # ── deriv derives each shared subterm once ──
+    test-deriv-of-a-shared-dag-matches-its-written-out-derivative = {
+      expr = r.stateKey (r.deriv "a" (dag 12).x) == r.stateKey (dag 12).d;
+      expected = true;
+    };
+    test-deriv-of-a-nested-plus-over-an-optional-derives-each-subterm-once = {
+      expr = [
+        (accepts (r.parse (optPlusNest 30)) [
+          "a"
+          "a"
+        ])
+        (accepts (r.parse (optPlusNest 30)) [ "c" ])
+      ];
+      expected = [
+        true
+        false
       ];
     };
   };
