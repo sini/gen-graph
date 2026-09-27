@@ -1947,12 +1947,13 @@ in
             msg = "attempt to call something which is not a function but an integer";
           };
         };
-        # `succ`'s element is checked for `{ key; }`; the TYPE of `key` is den-hoag-3w9e7's.
-        test-a-non-string-succ-key-is-not-refused-by-name = {
+        # `succ`'s element is checked for `{ key; }`, and a key that is never a node id is refused
+        # by the door's name before the closure compares it (den-hoag-3w9e7).
+        test-a-non-scalar-succ-key-is-refused-by-name = {
           expr = G.reachableVia (_: [ { key = { }; } ]) "a";
           expectedError = {
-            type = "EvalError";
-            msg = "cannot compare a set with a set";
+            type = "ThrownError";
+            msg = "^gen-graph\\.reachableVia: got set, expected a node identifier \\(a string or another scalar\\)$";
           };
         };
       };
@@ -1993,5 +1994,103 @@ in
           genGraph.topoOrderKahn { } [ ]
         );
       };
+
+    # ── A CLOSURE TARGET THAT IS NEVER A NODE ID IS REFUSED BY NAME (den-hoag-3w9e7) ──
+    # The genericClosure doors send a non-string target through `nodeKey` before the closure
+    # compares it. A door reached through another keeps the inner door's name: `reachableWhere` and
+    # `fromRegistryDown` walk with `reachableFrom`, `coScc` with `canReach`. `ci/tests/closure-targets.nix`
+    # asserts the list, function and null targets refuse catchably too.
+    #
+    # ★ THE SCALAR RESIDUE, PINNED AS IT STANDS. Whether an int, bool or float is a node id is
+    # den-hoag-7gp66 OQ13's reading, so a scalar target still reaches the closure and still aborts
+    # when compared with a string. The `…-pending-OQ13` cells assert that abort; the reading flips
+    # them.
+    flake.testsError.closure-targets =
+      let
+        good =
+          id:
+          if id == "a" then
+            [ "b" ]
+          else if id == "b" then
+            [
+              "a"
+              "c"
+            ]
+          else
+            [ ];
+        acc = e: {
+          edges = e;
+          nodes = [
+            "a"
+            "b"
+            "c"
+          ];
+        };
+        at = v: id: if id == "b" then [ v ] else good id;
+        surfaces = e: {
+          reachableFrom = genGraph.reachableFrom (acc e) "a";
+          reachableWhere = genGraph.reachableWhere (acc e) "a" (_: true);
+          canReach = genGraph.canReach (acc e) "a" "c";
+          selfReachable = genGraph.selfReachable (acc e) "a";
+          reachableVia = genGraph.reachableVia (genGraph.hoistEdges (acc e)) "a";
+          selfReachableVia = genGraph.selfReachableVia (genGraph.hoistEdges (acc e)) "a";
+          coScc = genGraph.coScc (acc e) "a" "c";
+          fromRegistryDown = genGraph.reachableFrom (genGraph.fromRegistry {
+            registry = {
+              a = { };
+              b = { };
+              c = { };
+            };
+            edges = id: _entry: e id;
+          }) "a";
+        };
+        door = {
+          reachableWhere = "reachableFrom";
+          coScc = "canReach";
+          fromRegistryDown = "reachableFrom";
+        };
+        named = s: v: {
+          expr = builtins.deepSeq (surfaces (at v)).${s} true;
+          expectedError = {
+            type = "ThrownError";
+            msg = "^gen-graph\\.${door.${s} or s}: got ${builtins.typeOf v}, expected a node identifier \\(a string or another scalar\\)$";
+          };
+        };
+        pending = s: v: typeName: {
+          expr = builtins.deepSeq (surfaces (at v)).${s} true;
+          expectedError = {
+            type = "EvalError";
+            msg = "cannot compare ${typeName} with a string";
+          };
+        };
+        scalars = {
+          int = {
+            v = 1;
+            typeName = "an integer";
+          };
+          bool = {
+            v = true;
+            typeName = "a Boolean";
+          };
+          float = {
+            v = 1.5;
+            typeName = "a float";
+          };
+        };
+        names = builtins.attrNames (surfaces good);
+      in
+      builtins.listToAttrs (
+        map (s: {
+          name = "test-${s}-set-target-is-refused-by-name";
+          value = named s { };
+        }) names
+        ++ builtins.concatMap (
+          s:
+          map (k: {
+            name = "test-${s}-${k}-target-aborts-pending-OQ13";
+            value = pending s scalars.${k}.v scalars.${k}.typeName;
+          }) (builtins.attrNames scalars)
+        ) names
+      );
   };
 }
