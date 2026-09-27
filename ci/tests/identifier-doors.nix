@@ -118,9 +118,12 @@ in
         ]
       ];
     };
-    # den-hoag-bkdkg C1: these bodies are key-polymorphic, and the guard does not narrow them.
-    test-the-key-polymorphic-doors-still-answer-on-integer-ids = {
-      expr = [
+    # den-hoag-bkdkg C1 held these bodies key-polymorphic; den-hoag-7gp66 OQ13 (arm a, 2026-09-26)
+    # supersedes that reading for the `genericClosure`-keyed doors — a node id is a string
+    # everywhere, so an int now refuses here exactly as a set/list/function/null already did
+    # (den-hoag-3w9e7's rescope names these 8; the reason is `identifier` above, not a new guard).
+    test-the-string-only-doors-now-refuse-integer-ids-catchably = {
+      expr = map refused [
         (G.reachableFrom { edges = ie; } 0)
         (G.reachableWhere { edges = ie; } 0 (_: true))
         (G.canReach { edges = ie; } 0 3)
@@ -129,30 +132,17 @@ in
         (G.coScc { edges = ie; } 0 1)
         (G.reachableVia succ 0)
         (G.selfReachableVia succ 0)
+      ];
+      expected = builtins.genList (_: true) 8;
+    };
+    # `query`/`queryArrivals` key on `builtins.toJSON […]`, never the raw id (§ key.nix, `nodeKey`'s
+    # doc comment): bkdkg C1's reasoning still holds for these two, unreached by OQ13's ruling.
+    test-the-toJSON-keyed-doors-still-answer-on-integer-ids = {
+      expr = [
         (map (a: a.node) (G.queryArrivals (iq // { advance = _: 1; })))
         (G.query (iq // { mode = "series"; }))
       ];
       expected = [
-        [
-          1
-          2
-          3
-        ]
-        [
-          1
-          2
-          3
-        ]
-        true
-        false
-        false
-        false
-        [
-          1
-          2
-          3
-        ]
-        false
         [ 0 ]
         [ 0 ]
       ];

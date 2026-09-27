@@ -23,7 +23,6 @@ let
     keyedAttrs
     edgesAccessor
     identifier
-    nodeKey
     notEdgeList
     ;
   edgeMaps = import ./edge-maps.nix { inherit prelude; };
@@ -250,8 +249,8 @@ let
   coScc =
     { edges, ... }:
     u: v:
-    builtins.seq (nodeKey "coScc" u) (
-      builtins.seq (nodeKey "coScc" v) (
+    builtins.seq (identifier "coScc" u) (
+      builtins.seq (identifier "coScc" v) (
         (u == v) || (traverse.canReach { inherit edges; } u v && traverse.canReach { inherit edges; } v u)
       )
     );

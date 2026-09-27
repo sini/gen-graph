@@ -756,6 +756,10 @@ let
           ) (edgesAt "queryArrivals" graph item.node);
       };
     in
+    # `nodeKey`, not `identifier`: this closure keys on `builtins.toJSON […]` (above), never on the
+    # raw id, so a scalar `from` never reaches `genericClosure`'s native comparator and den-hoag-7gp66
+    # OQ13's string-only ruling does not reach this guard (den-hoag-3w9e7's rescope names the 8
+    # doors it does reach; this is not one of them).
     builtins.seq (nodeKey "queryArrivals" from) (
       builtins.seq (callableAt "queryArrivals" "where" "a bool" where) (
         builtins.seq (callableAt "queryArrivals" "advance" "an int" advance) (
@@ -1059,6 +1063,9 @@ let
         "groupBy"
       ];
     in
+    # `nodeKey`, not `identifier`, for the same reason as `queryArrivals` above: every mode's
+    # closure keys on a `toJSON […]` composite, not the raw id (`queryAll`'s `from` is re-checked by
+    # `identifier` regardless, at `queryAll`'s own door). Not one of OQ13's 8 doors.
     builtins.seq (if args ? from then nodeKey "query" args.from else null) (
       if mode == "all" then
         queryAll core

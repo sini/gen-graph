@@ -27,9 +27,14 @@
 # exactly the values that operation would abort on, at the same point, and adds no check at any read
 # that does not key (ADR-0025 item 1: a value or a named refusal). The one attribute-name form that
 # admits a non-string is `{ ${null} = …; }`, which DROPS the binding; a former fed by caller data
-# refuses that null instead of losing it. "(a string)" is the site-relative rule `identifier` states
-# for a body that keys, not an answer to what an identifier is everywhere: the genericClosure doors
-# still take `nodeKey`'s scalars.
+# refuses that null instead of losing it. "(a string)" is `identifier`'s rule, and den-hoag-7gp66
+# OQ13 ruled it the answer for a node id everywhere (arm a, 2026-09-26): the `genericClosure`
+# doors (`reachableFrom`, `reachableWhere`, `canReach`, `coScc`, `selfReachable`, `reachableVia`,
+# `selfReachableVia`, `fromRegistryDown`) route their targets through `identifier` now, not
+# `nodeKey`. `nodeKey` itself is UNCHANGED and still admits int/bool/float — it remains `query`'s
+# and `queryArrivals`'s own entry guard, whose closures key on `builtins.toJSON […]` rather than on
+# the raw id, so a scalar there never reaches `genericClosure`'s native comparator and the
+# type-heterogeneity abort this ruling closes does not arise for them (den-hoag-3w9e7's rescope).
 #
 # `who` is the door the caller invoked. A door binds its former once, `toKey = attrKey who;`, so a
 # key formed costs one application, as it did before the refusal existed. A door called inside
@@ -56,9 +61,14 @@ let
   # For a door whose body keys, indexes or `attrKey`s the id: only a string is a node id there.
   identifier = who: v: if builtins.isString v then v else throw (notAnIdentifier who v);
 
-  # For a door whose body only hands the id to the caller's accessor and to `genericClosure`/`==`:
-  # that body answers correctly on an integer id today, so the guard refuses only the shapes that
-  # are never a node id (den-hoag-bkdkg C1), and keeps every scalar the caller's accessor keys on.
+  # For a door whose body only hands the id to the caller's accessor, never to `genericClosure`'s
+  # own key comparator: `query`'s and `queryArrivals`' closures key on `builtins.toJSON […]`, not
+  # on the raw id, so a scalar id never reaches a native cross-type `<` there and this guard still
+  # refuses only the shapes that are never a node id (den-hoag-bkdkg C1), keeping every scalar. The
+  # `genericClosure` doors that key on the raw id (`reachableFrom` and its siblings) do NOT use this
+  # guard: den-hoag-7gp66 OQ13 ruled (arm a, 2026-09-26) that a node id is a string, so their target
+  # checks route through `identifier` above instead, and a scalar other than a string is refused
+  # there by name (den-hoag-3w9e7).
   # Callable is a function, or a set whose `__functor` is one: `f ? __functor` alone admits
   # `{ __functor = 1; }`, which aborts when applied. gen-view's `callable` (`lib/relation.nix`).
   # A per-application site tests `builtins.isFunction` inline first, so a plain function costs no call.

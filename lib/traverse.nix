@@ -35,7 +35,6 @@ let
     renderId
     edgesAccessor
     identifier
-    nodeKey
     notAnIdentifier
     notEdgeList
     retiredMaxDepth
@@ -58,18 +57,20 @@ let
   #
   # A TARGET BECOMES A CLOSURE KEY, and `genericClosure` compares keys with an abort on a type
   # mismatch (`cannot compare a set with a string`), which escapes `builtins.tryEval`. So `target`
-  # sends a non-string through `nodeKey` before the closure sees it, here, in `canReach` and in
-  # `selfReachable` (`closureVia` does the same for a `succ` result): a set, list, function or null
-  # is refused by the door's name (den-hoag-3w9e7). `target` is the lambda `map` already applied,
-  # so a string pays one `isString` and no call. A scalar passes unchanged: whether it is a node
-  # id is den-hoag-7gp66 OQ13's ruling, and one mixed with strings still aborts in the comparison.
+  # sends a non-string through `identifier` before the closure sees it, here, in `canReach` and in
+  # `selfReachable` (`closureVia` does the same for a `succ` result): a set, list, function, null
+  # or a scalar other than a string is refused by the door's name (den-hoag-3w9e7, den-hoag-7gp66
+  # OQ13 arm a: a node id is a string). `target` is the lambda `map` already applied, so a string
+  # pays one `isString` and no call; the refusal path pays `identifier`'s own retest, once, on the
+  # way to a throw that never returns.
   reachableFrom =
     { edges, ... }:
     startId:
-    builtins.seq (nodeKey "reachableFrom" startId) (
+    builtins.seq (identifier "reachableFrom" startId) (
       let
         e = edgesAccessor "reachableFrom" edges;
-        target = id: if builtins.isString id then { key = id; } else { key = nodeKey "reachableFrom" id; };
+        target =
+          id: if builtins.isString id then { key = id; } else { key = identifier "reachableFrom" id; };
         result = builtins.genericClosure {
           startSet = map target (
             let
@@ -94,7 +95,7 @@ let
   reachableWhere =
     { edges, ... }:
     startId: pred:
-    builtins.seq (nodeKey "reachableWhere" startId) (
+    builtins.seq (identifier "reachableWhere" startId) (
       let
         p = callableAt "reachableWhere" "pred" "a bool" pred;
       in
@@ -136,11 +137,11 @@ let
   canReach =
     { edges, ... }:
     fromId: toId:
-    builtins.seq (nodeKey "canReach" fromId) (
-      builtins.seq (nodeKey "canReach" toId) (
+    builtins.seq (identifier "canReach" fromId) (
+      builtins.seq (identifier "canReach" toId) (
         let
           e = edgesAccessor "canReach" edges;
-          target = id: if builtins.isString id then { key = id; } else { key = nodeKey "canReach" id; };
+          target = id: if builtins.isString id then { key = id; } else { key = identifier "canReach" id; };
         in
         builtins.any (r: r.key == toId) (
           builtins.genericClosure {
@@ -171,10 +172,10 @@ let
   selfReachable =
     { edges, ... }:
     id:
-    builtins.seq (nodeKey "selfReachable" id) (
+    builtins.seq (identifier "selfReachable" id) (
       let
         e = edgesAccessor "selfReachable" edges;
-        target = t: if builtins.isString t then { key = t; } else { key = nodeKey "selfReachable" t; };
+        target = t: if builtins.isString t then { key = t; } else { key = identifier "selfReachable" t; };
       in
       builtins.any (r: r.key == id) (
         builtins.genericClosure {
@@ -372,15 +373,14 @@ let
       s = callableAt who "succ" want succ;
       # The element shape is this library's own `succ` contract, and it is tested by primops alone,
       # so a visit costs no lambda call. A list of string keys passes on that test. Any other key
-      # goes through `nodeKey`, which refuses a set, list, function or null by name before the
-      # closure compares it (den-hoag-3w9e7). Whether a scalar other than a string is a node id is
-      # den-hoag-7gp66 OQ13's ruling, so a scalar key passes here unchanged.
+      # goes through `identifier`, which refuses a set, list, function, null or a scalar other than
+      # a string by name before the closure compares it (den-hoag-3w9e7, den-hoag-7gp66 OQ13 arm a).
       notSucc =
         id: xs: ks:
         if
           builtins.isList xs && builtins.all builtins.isAttrs xs && builtins.length ks == builtins.length xs
         then
-          builtins.deepSeq (map (nodeKey who) ks) xs
+          builtins.deepSeq (map (identifier who) ks) xs
         else if builtins.isList xs then
           throw "gen-graph.${who}: succ ${renderId id} returned a list holding an element that is not { key = <node id>; }"
         else
@@ -422,13 +422,13 @@ let
   # of the start, same self-reappearance test, with the wrapping lifted out of the operator.
   reachableVia =
     succ: startId:
-    builtins.seq (nodeKey "reachableVia" startId) (
+    builtins.seq (identifier "reachableVia" startId) (
       builtins.filter (id: id != startId) (map (r: r.key) (closureVia "reachableVia" succ startId))
     );
 
   selfReachableVia =
     succ: id:
-    builtins.seq (nodeKey "selfReachableVia" id) (
+    builtins.seq (identifier "selfReachableVia" id) (
       builtins.any (r: r.key == id) (closureVia "selfReachableVia" succ id)
     );
 in

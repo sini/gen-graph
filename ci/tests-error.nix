@@ -1208,6 +1208,10 @@ in
           follow = genGraph.regex.parse "l*";
         };
         str = who: "^gen-graph\\.${who}: got set, expected a node identifier \\(a string\\)$";
+        # `scalar` stays the message for `query`/`queryArrivals` only (den-hoag-7gp66 OQ13 does not
+        # reach them, `lib/query.nix`'s own comment says why); every `genericClosure` door OQ13 does
+        # reach (reachableFrom, reachableWhere, canReach, selfReachable, coScc, reachableVia,
+        # selfReachableVia) moved to `str` below (den-hoag-3w9e7).
         scalar =
           who: "^gen-graph\\.${who}: got set, expected a node identifier \\(a string or another scalar\\)$";
         cell = msg: expr: {
@@ -1219,11 +1223,11 @@ in
         };
       in
       {
-        test-reachableFrom = cell (scalar "reachableFrom") (genGraph.reachableFrom g X);
-        test-reachableWhere = cell (scalar "reachableWhere") (genGraph.reachableWhere g X (_: true));
-        test-canReach-from = cell (scalar "canReach") (genGraph.canReach g X "b");
-        test-canReach-to = cell (scalar "canReach") (genGraph.canReach g "a" X);
-        test-selfReachable = cell (scalar "selfReachable") (genGraph.selfReachable g X);
+        test-reachableFrom = cell (str "reachableFrom") (genGraph.reachableFrom g X);
+        test-reachableWhere = cell (str "reachableWhere") (genGraph.reachableWhere g X (_: true));
+        test-canReach-from = cell (str "canReach") (genGraph.canReach g X "b");
+        test-canReach-to = cell (str "canReach") (genGraph.canReach g "a" X);
+        test-selfReachable = cell (str "selfReachable") (genGraph.selfReachable g X);
         test-ancestorsOf = cell (str "ancestorsOf") (genGraph.ancestorsOf g X);
         test-pathsBetween = cell (str "pathsBetween") (genGraph.pathsBetween g X "b");
         test-dependents = cell (str "dependents") (genGraph.dependents g X);
@@ -1233,9 +1237,9 @@ in
         );
         test-impactOf = cell (str "impactOf") (genGraph.impactOf g X);
         test-directDependentsOf = cell (str "directDependentsOf") (genGraph.directDependentsOf g X);
-        test-coScc = cell (scalar "coScc") (genGraph.coScc g X "b");
-        test-reachableVia = cell (scalar "reachableVia") (genGraph.reachableVia (genGraph.hoistEdges g) X);
-        test-selfReachableVia = cell (scalar "selfReachableVia") (
+        test-coScc = cell (str "coScc") (genGraph.coScc g X "b");
+        test-reachableVia = cell (str "reachableVia") (genGraph.reachableVia (genGraph.hoistEdges g) X);
+        test-selfReachableVia = cell (str "selfReachableVia") (
           genGraph.selfReachableVia (genGraph.hoistEdges g) X
         );
         test-query = cell (scalar "query") (genGraph.query (qa X));
@@ -1953,7 +1957,7 @@ in
           expr = G.reachableVia (_: [ { key = { }; } ]) "a";
           expectedError = {
             type = "ThrownError";
-            msg = "^gen-graph\\.reachableVia: got set, expected a node identifier \\(a string or another scalar\\)$";
+            msg = "^gen-graph\\.reachableVia: got set, expected a node identifier \\(a string\\)$";
           };
         };
       };
@@ -1996,15 +2000,16 @@ in
       };
 
     # ── A CLOSURE TARGET THAT IS NEVER A NODE ID IS REFUSED BY NAME (den-hoag-3w9e7) ──
-    # The genericClosure doors send a non-string target through `nodeKey` before the closure
+    # The genericClosure doors send a non-string target through `identifier` before the closure
     # compares it. A door reached through another keeps the inner door's name: `reachableWhere` and
     # `fromRegistryDown` walk with `reachableFrom`, `coScc` with `canReach`. `ci/tests/closure-targets.nix`
-    # asserts the list, function and null targets refuse catchably too.
+    # asserts the list, function, null and scalar-other-than-string targets refuse catchably too.
     #
-    # ★ THE SCALAR RESIDUE, PINNED AS IT STANDS. Whether an int, bool or float is a node id is
-    # den-hoag-7gp66 OQ13's reading, so a scalar target still reaches the closure and still aborts
-    # when compared with a string. The `…-pending-OQ13` cells assert that abort; the reading flips
-    # them.
+    # ★ THE SCALAR RESIDUE IS CLOSED. den-hoag-7gp66 OQ13 ruled (arm a, 2026-09-26) that a node id
+    # is a string: an int, bool or float target is refused by name, the same as a set/list/function/
+    # null target, and no longer reaches the closure at all. What were the `…-pending-OQ13` cells
+    # (asserting the old `EvalError "cannot compare … with a string"` abort) are renamed below to
+    # assert the refusal instead.
     flake.testsError.closure-targets =
       let
         good =
@@ -2053,29 +2058,16 @@ in
           expr = builtins.deepSeq (surfaces (at v)).${s} true;
           expectedError = {
             type = "ThrownError";
-            msg = "^gen-graph\\.${door.${s} or s}: got ${builtins.typeOf v}, expected a node identifier \\(a string or another scalar\\)$";
+            msg = "^gen-graph\\.${door.${s} or s}: got ${builtins.typeOf v}, expected a node identifier \\(a string\\)$";
           };
         };
-        pending = s: v: typeName: {
-          expr = builtins.deepSeq (surfaces (at v)).${s} true;
-          expectedError = {
-            type = "EvalError";
-            msg = "cannot compare ${typeName} with a string";
-          };
-        };
+        # The scalar residue OQ13 closed: int, bool and float are refused the same way as the
+        # set-target cells above, by the same `named` helper — there is no separate expected shape
+        # left to state.
         scalars = {
-          int = {
-            v = 1;
-            typeName = "an integer";
-          };
-          bool = {
-            v = true;
-            typeName = "a Boolean";
-          };
-          float = {
-            v = 1.5;
-            typeName = "a float";
-          };
+          int = 1;
+          bool = true;
+          float = 1.5;
         };
         names = builtins.attrNames (surfaces good);
       in
@@ -2087,8 +2079,8 @@ in
         ++ builtins.concatMap (
           s:
           map (k: {
-            name = "test-${s}-${k}-target-aborts-pending-OQ13";
-            value = pending s scalars.${k}.v scalars.${k}.typeName;
+            name = "test-${s}-${k}-target-is-refused-by-name";
+            value = named s scalars.${k};
           }) (builtins.attrNames scalars)
         ) names
       );
