@@ -1186,8 +1186,9 @@ any depth. A value the constructors did not build has no key, and `stateKey` ref
 unfolded size of 1,024 nodes, memoises its subterms and forces them bottom-up, in a constant few
 dozen frames (measured to 100,000 nested levels). A term whose subterms are shared (nested
 `(…?)+`) is therefore not derived once per path: a derivative takes at most max(1,024, distinct
-subterms) steps, and a step's cost still grows with its seq's width. Both refuse a value the
-constructors did not build, by the same name.
+subterms) steps. A seq is a right-nested cons, so each of its suffixes is a term built once, and
+one step walks each suffix once: a step on a seq of width m costs linearly in m. Both refuse a
+value the constructors did not build, by the same name.
 
 **`query`** runs a labeled query in one of five modes:
 

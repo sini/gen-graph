@@ -82,6 +82,35 @@ let
     ]
   );
   wide = n: r.seq (builtins.genList (_: r.star (r.lit "a")) n);
+  optSeq = n: r.seq (builtins.genList (_: r.opt (r.lit "a")) n);
+  lits = n: r.seq (builtins.genList (i: r.lit "l${toString i}") n);
+  literalsOf =
+    x:
+    let
+      children =
+        n:
+        if n.t == "star" then
+          [ n.r ]
+        else if n.t == "seq" || n.t == "alt" then
+          n.rs
+        else
+          [ ];
+      reached = builtins.genericClosure {
+        startSet = [
+          {
+            key = r.stateKey x;
+            n = x;
+          }
+        ];
+        operator =
+          y:
+          map (c: {
+            key = r.stateKey c;
+            n = c;
+          }) (children y.n);
+      };
+    in
+    map (y: y.n.l) (builtins.filter (y: y.n.t == "lit") reached);
   # d_a (head n), written out by the constructors alone: d_a h(n) = (d_a h(n-1)) h(n-1)* a | eps
   headDeriv =
     n:
@@ -298,6 +327,7 @@ in
         );
       expected = true;
     };
+    # pins the seq's canonical form: a seq element is spliced into the right-nested cons
     test-seq-associates = {
       expr =
         r.stateKey (
@@ -569,6 +599,38 @@ in
         true
         false
       ];
+    };
+
+    # ── a seq is a right-nested cons, and one step walks each suffix once ──
+    # d_a (a?)^5 = (a?)^4 | (a?)^3 | (a?)^2 | a? | eps, written out by the constructors alone
+    test-deriv-of-a-wide-optional-seq-matches-its-written-out-derivative = {
+      expr = r.stateKey (r.deriv "a" (optSeq 5)) == r.stateKey (r.alt (builtins.genList optSeq 5));
+      expected = true;
+    };
+    # a seq still publishes its elements flat as `rs`, which gen-view's `literalsOf` reads. The
+    # reader below is a copy of gen-view `lib/carrier.nix` `literalsOf` at gen-view 7929a52; if
+    # gen-view's changes, this cell keeps testing the copy.
+    test-a-seq-publishes-its-elements-flat = {
+      expr = [
+        (builtins.length (lits 5000).rs)
+        (builtins.length (literalsOf (lits 5000)))
+      ];
+      expected = [
+        5000
+        5000
+      ];
+    };
+    test-a-seq-suffix-is-a-node = {
+      expr =
+        (r.seq [
+          (r.lit "a")
+          (r.lit "b")
+          (r.lit "c")
+        ]).tl.k or null == (r.seq [
+          (r.lit "b")
+          (r.lit "c")
+        ]).k;
+      expected = true;
     };
   };
 }

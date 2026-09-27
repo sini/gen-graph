@@ -15,7 +15,10 @@
 # Their Def 4.1 is a strict superset of Brzozowski's similarity — sequence
 # flattened with unit/zero absorption, star collapsed — together with the
 # smart-constructor strategy this file follows, normalizing on the way in
-# rather than canonicalizing after the fact. ORT credit the finiteness result
+# rather than canonicalizing after the fact. The flattening is right-nested:
+# ORT apply `(r · s) · t ≈ r · (s · t)` "as a reduction from left to right"
+# (§4.1), so a sequence is a cons whose head is never a sequence, and every
+# suffix of one is itself a term. ORT credit the finiteness result
 # to Brzozowski themselves (§3.3, §4.1) and state no termination theorem for
 # the enlarged set. That composite is folklore, and safely so: every added
 # identity is semantics-preserving and size-decreasing, so it can only merge
@@ -96,53 +99,90 @@ let
 
   # the node count of the tree this term unfolds to, saturating past derivDirectSize: an upper
   # bound on what one direct derivative walks, which reads a star's body, an alt's branches and a
-  # seq's elements through seqReach
+  # seq's head, and its tail past a nullable head
   sat = n: if n > derivDirectSize then derivDirectSize + 1 else n;
   szOf = rs: sat (1 + builtins.foldl' builtins.add 0 (builtins.catAttrs "sz" rs));
 
   # canonical key; alt is sorted by this, making it a true canonical form
   stateKey = r: r.k or (throw notATerm);
 
-  seq =
-    rs:
+  # A seq is a right-nested cons: `hd` is never a seq, and `tl` is the rest, itself a seq or a
+  # single term. Every suffix of a sequence is therefore a node, built and keyed once, so a
+  # derivative's continuation is a reference rather than a copy of the remaining elements.
+  hsOf = t: if t.t == "seq" then t.h else 1 + hOf t;
+  cons =
+    x: t:
     let
-      flat = builtins.concatMap (r: if isT "seq" r then r.rs else [ r ]) rs;
-      noEps = builtins.filter (r: !(isT "eps" r)) flat;
+      k = builtins.hashString "sha256" ("." + (x.k or (throw notATerm)) + (t.k or (throw notATerm)));
+      nu = x.nu && t.nu;
+      h =
+        let
+          a = 1 + x.h;
+          b = hsOf t;
+        in
+        if a < b then b else a;
+      sz = sat (x.sz + (if t.t == "seq" then t.sz else 1 + t.sz));
+      node = {
+        t = "seq";
+        hd = x;
+        tl = t;
+        # the flat element list, as a seq has always published it; read lazily, never by this file
+        rs = spine node;
+        inherit
+          k
+          nu
+          h
+          sz
+          ;
+      };
     in
-    if builtins.any (isT "empty") noEps then
-      empty
-    else if noEps == [ ] then
-      eps
-    else if builtins.length noEps == 1 then
-      builtins.head noEps
-    else
-      let
-        ks = builtins.catAttrs "k" noEps;
-        k =
-          if builtins.length ks == builtins.length noEps then
-            builtins.hashString "sha256" ("." + builtins.concatStringsSep "" ks)
+    builtins.seq k (builtins.seq nu (builtins.seq h (builtins.seq sz node)));
+  # a seq's elements in order, walked without recursion
+  spine =
+    s:
+    map (x: if isT "seq" x.n then x.n.hd else x.n) (
+      builtins.genericClosure {
+        startSet = [
+          {
+            key = 0;
+            n = s;
+          }
+        ];
+        operator =
+          x:
+          if isT "seq" x.n then
+            [
+              {
+                key = x.key + 1;
+                n = x.n.tl;
+              }
+            ]
           else
-            throw notATerm;
-        nu = !(builtins.elem false (builtins.catAttrs "nu" noEps));
-        h = above noEps;
-        sz = szOf noEps;
-      in
-      builtins.seq k (
-        builtins.seq nu (
-          builtins.seq h (
-            builtins.seq sz {
-              t = "seq";
-              rs = noEps;
-              inherit
-                k
-                nu
-                h
-                sz
-                ;
-            }
-          )
-        )
-      );
+            [ ];
+      }
+    );
+  reverse =
+    xs:
+    let
+      n = builtins.length xs;
+    in
+    builtins.genList (i: builtins.elemAt xs (n - 1 - i)) n;
+  # `x` in front of `t`: the one step every seq construction is made of
+  prepend =
+    x: t:
+    if x.t == "empty" || t.t == "empty" then
+      empty
+    else if x.t == "eps" then
+      t
+    else if t.t == "eps" then
+      x
+    else if x.t == "seq" then
+      builtins.foldl' (a: y: cons y a) t (reverse (spine x))
+    else
+      cons x t;
+  # built right to left with foldl', so a sequence of any width builds in constant stack; the last
+  # element's spine is reused whole, and an earlier seq element contributes its own spine
+  seq = rs: builtins.foldl' (acc: x: prepend x acc) eps (reverse rs);
 
   alt =
     rs:
@@ -229,33 +269,66 @@ let
 
   nullable = nuOf;
 
-  # the subterms one derivative step reads: a seq reads its elements up to and including the
-  # first that is not nullable
-  seqReach =
-    rs:
-    let
-      m = builtins.length rs;
-      stops = builtins.filter (i: !(nuOf (builtins.elemAt rs i))) (builtins.genList (i: i) m);
-    in
-    if stops == [ ] then m else builtins.head stops + 1;
+  # The terms one derivative step walks rather than derives: from the root, an alt's branches and a
+  # seq's tail past a nullable head, each distinct term once (by key). This is the derivative's
+  # sum unrolled across alts and nullable tails: Brzozowski 1964 (3.7) D(PQ) = (D P)Q + δ(P) D Q at
+  # each cons, and (3.8) D(P + Q) = D P + D Q at each alt, with R + R = R applied to the walk
+  # itself, so a suffix reached from many places is walked once. One step on a seq of width m is
+  # therefore O(m), where deriving each summand's suffix separately re-walked it, Θ(m³) per step on
+  # the alt of suffixes the first step leaves (den-hoag-6bh04).
+  lfReach =
+    r:
+    map (x: x.r) (
+      builtins.genericClosure {
+        startSet = [
+          {
+            key = r.k;
+            inherit r;
+          }
+        ];
+        operator =
+          x:
+          map
+            (c: {
+              key = c.k;
+              r = c;
+            })
+            (
+              if x.r.t == "alt" then
+                x.r.rs
+              else if x.r.t == "seq" && x.r.hd.nu then
+                [ x.r.tl ]
+              else
+                [ ]
+            );
+      }
+    );
+  # a step walks only where a nullable seq head is in reach: a seq led by one, or an alt holding one
+  nullHead = x: x.t == "seq" && x.hd.nu;
+  walks = r: nullHead r || (r.t == "alt" && builtins.any nullHead r.rs);
+  # the subterms one derivative step derives through `self`
   derivChildren =
     r:
     if r.t == "star" then
       [ r.r ]
+    else if walks r then
+      builtins.concatMap (
+        x:
+        if x.t == "seq" then
+          [ x.hd ]
+        else if x.t == "alt" then
+          [ ]
+        else
+          [ x ]
+      ) (lfReach r)
+    else if r.t == "seq" then
+      [ r.hd ]
     else if r.t == "alt" then
       r.rs
-    else if r.t == "seq" then
-      (
-        if nuOf (builtins.head r.rs) then
-          builtins.genList (builtins.elemAt r.rs) (seqReach r.rs)
-        else
-          [ (builtins.head r.rs) ]
-      )
     else
       [ ];
 
-  # One Brzozowski step, with `self` deriving the children. seq: d(r1…rm) = |_{i<=j} (d ri) r(i+1)…rm,
-  # j the first element that is not nullable (Brzozowski 1964 Thm 3.1, the sum unrolled).
+  # One Brzozowski step, with `self` deriving the children: one summand per walked term, and one alt.
   derivStep =
     self: l: r:
     if r.t == "eps" || r.t == "empty" then
@@ -265,38 +338,23 @@ let
     else if r.t == "lit" then
       (if r.l == l then eps else empty)
     else if r.t == "star" then
-      seq [
-        (self r.r)
-        r
-      ]
-    else if r.t == "alt" then
-      alt (map self r.rs)
+      prepend (self r.r) r
+    else if !(walks r) then
+      (if r.t == "seq" then prepend (self r.hd) r.tl else alt (map self r.rs))
     else
-      let
-        rs = r.rs;
-        m = builtins.length rs;
-        hd = builtins.head rs;
-      in
-      if !(nuOf hd) then
-        seq ([ (self hd) ] ++ builtins.tail rs)
-      else if m == 2 then
-        alt [
-          (seq [
-            (self hd)
-            (builtins.elemAt rs 1)
-          ])
-          (self (builtins.elemAt rs 1))
-        ]
-      else
-        alt (
-          builtins.genList (
-            i:
-            seq (
-              [ (self (builtins.elemAt rs i)) ]
-              ++ builtins.genList (x: builtins.elemAt rs (x + i + 1)) (m - i - 1)
-            )
-          ) (seqReach rs)
-        );
+      alt (
+        builtins.concatMap (
+          x:
+          if x.t == "seq" then
+            [
+              (prepend (self x.hd) x.tl)
+            ]
+          else if x.t == "alt" then
+            [ ]
+          else
+            [ (self x) ]
+        ) (lfReach r)
+      );
 
   derivDirect =
     l:
@@ -322,8 +380,8 @@ let
   # twice, and nested `(…?)+` doubles the walk at every level. `sz`, carried like `h`, counts the
   # nodes the term unfolds to, saturating past `derivDirectSize`; past it the warmed arm steps each
   # distinct subterm once (its memo is keyed on `k`, ORT 2009 §4.1's finite map with RE keys). A
-  # derivative therefore takes at most max(derivDirectSize, distinct subterms) steps; a step's cost
-  # still grows with its seq's width (den-hoag-naalo). Figures are nix; det agrees to +1 call.
+  # derivative therefore takes at most max(derivDirectSize, distinct subterms) steps (den-hoag-naalo),
+  # and a step walks each suffix of a seq once (`lfReach`). Figures are nix; det agrees to +1 call.
   #
   # `derivDirectHeight` = 64 is set by the stack; sharing is `derivDirectSize`'s leg, not its own:
   # - stack: the direct arm needs ~12 frames per unit of height, 773 at h = 64 (lix 772), against
