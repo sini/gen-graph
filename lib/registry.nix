@@ -47,9 +47,12 @@ let
       "${at} has no '${field}'"
     else
       "${at}: '${field}' is a ${builtins.typeOf e.${field}}, not a node identifier (a string)";
-  # Bound by the door's name, so `fromScan` refuses a malformed `parents` under its own. The
-  # FORMALS stay on each published binding: Nix names the lambda that owns them in its own
-  # unexpected-argument message, and that message must keep naming the door.
+  # Bound by the door's name, so `fromScan` refuses a malformed `parents` under its own. `mkGraphAs`
+  # itself keeps a native `{ edges, parents, nodeData }:` formal, but that formal is never a
+  # caller's refusal path: `mkGraph` and `fromScan` (den-hoag-7gp66 P1, §v1.2) are `args:` doors
+  # that validate with `checkOptions`/`checkRequired` at their OWN site before ever calling
+  # `mkGraphAs`, so an unknown or missing field is refused catchably, naming the door the caller
+  # called — and `mkGraphAs` always receives a complete, closed record.
   mkGraphAs =
     who:
     {

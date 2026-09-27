@@ -291,6 +291,53 @@ in
         "where"
       ];
     };
+    # `queryAll`/`queryPaths` are not doors: they are reached only through `query` (modes `all` and
+    # `paths`, plus `visible`/`layers`/`fixpoint` which thread through them internally) and through
+    # `queryFold` (den-hoag-7gp66 P1, P-1). The formals check now runs at `query`/`queryFold`
+    # themselves, so an unknown or missing field is refused catchably naming the door the caller
+    # called, never the private function behind it.
+    query = {
+      door = G.query;
+      good = {
+        graph = labeled;
+        from = "a";
+        follow = G.regex.parse "x*";
+      };
+      drop = "follow";
+      required = [
+        "graph"
+        "from"
+        "follow"
+      ];
+      accepted = [
+        "graph"
+        "from"
+        "follow"
+        "where"
+      ];
+    };
+    queryFold = {
+      door = G.queryFold;
+      good = {
+        empty = 0;
+        combine = a: _: a;
+        graph = labeled;
+        from = "a";
+        follow = G.regex.parse "x*";
+      };
+      drop = "graph";
+      required = [
+        "graph"
+        "from"
+        "follow"
+      ];
+      accepted = [
+        "graph"
+        "from"
+        "follow"
+        "where"
+      ];
+    };
   };
 
   # R6 (§v1.7 "a primitive refusal naming the door"; spec cell 5): a door that reaches a shared

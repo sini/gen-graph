@@ -1416,7 +1416,8 @@ in
           };
           # the door names the arm it is bound to, so these cells are the binding's discriminator
           condensation = {
-            who = "lowlink";
+            who = "condensation";
+            prim = "lowlink";
             f = g: genGraph.condensation g;
           };
           condensationClosure = {

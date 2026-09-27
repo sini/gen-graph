@@ -711,17 +711,21 @@ let
     );
 
   # ── THE FRONT DOOR ──
-  # The default is the `lowlink` arm, and the delegation is an IDENTITY rather than a wrapper,
-  # which is the only spelling that cannot drift from what it delegates to. Changing the
-  # default changes this line and nothing a caller of an arm by name depends on.
+  # The default is the `lowlink` arm, reached through `lowlinkAs (within "condensation"
+  # "lowlink")` rather than the bare `lowlink` binding (den-hoag-7gp66 P1, P-2), so the finisher's
+  # own name is what a caller depending on the delegation's cost/behaviour actually sees —
+  # `condensation` is a distinct binding, not an alias, but it delegates the WORK unchanged: same
+  # finisher, same tag map, same accessor. Changing the default changes this line and nothing a
+  # caller of an arm by name depends on.
   #
   # The default sits on an arm with no accumulator whose forcing is deferred, no recursion and
   # no capped fixpoint, so the default path has no iteration cap to inherit and no refusal that
   # names something other than the caller's graph. Of the three arms it is the one whose cost
   # is Θ((n + m) · log₈ n) on every shape; the per-node arm it replaced is quadratic in the size
   # of one large component (README, *When each arm wins*). The door refuses an open accessor
-  # under `lowlink`'s name, which is the one observable that says which arm it is bound to.
-  condensation = lowlink;
+  # under ITS OWN name (R6): `gen-graph.condensation: … (in lowlink)`, which says both which arm
+  # it is bound to and that the caller reached it through `condensation`.
+  condensation = lowlinkAs (within "condensation" "lowlink");
 in
 {
   inherit

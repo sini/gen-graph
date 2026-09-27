@@ -453,14 +453,33 @@ let
 
   # `all` mode: the (node × derivative-state) product automaton, closed via
   # genericClosure. A node answers when its state is nullable.
+  # NOT A DOOR (den-hoag-7gp66 P1, P-1): `queryAll` is reached only through `query` (mode `all`,
+  # and mode `fixpoint` via `queryFold`) and through `queryFold` directly, so a native closed/
+  # required formal here would abort past `tryEval` naming a callee the caller never mentioned.
+  # `door` is the caller's own name, already `gen-graph.`-qualified, supplied at each of those
+  # call sites; MIXED-shaped like `queryArrivals`: `checkOptions` over `checkRequired`, closed
+  # over the whole set — an unknown or missing field is refused by name, catchably, naming the
+  # door the caller called, when the record is applied.
   queryAll =
-    {
-      graph,
-      from,
-      follow,
-      where ? (_: true),
-    }:
+    door: args:
     let
+      checked =
+        prelude.checkOptions door
+          [
+            "graph"
+            "from"
+            "follow"
+            "where"
+          ]
+          (
+            prelude.checkRequired door [
+              "graph"
+              "from"
+              "follow"
+            ] args
+          );
+      inherit (checked) graph from follow;
+      where = checked.where or (_: true);
       toKey = attrKey "query";
       st0 = follow;
       # composite seen-key: JSON of the pair — collision-free by construction for ANY
@@ -530,8 +549,10 @@ let
           )
       );
     in
-    builtins.seq (identifier "query" from) (
-      builtins.seq (callableAt "query" "where" "a bool" where) (builtins.attrValues answers)
+    builtins.seq checked (
+      builtins.seq (identifier "query" from) (
+        builtins.seq (callableAt "query" "where" "a bool" where) (builtins.attrValues answers)
+      )
     );
 
   # ── `series` MODE: THE ANSWERS AS A SEQUENCE, IN VISITATION ORDER ──
@@ -816,14 +837,30 @@ let
   # pathsBetween precedent) with derivative pruning; enumeration-priced —
   # use `all` for scale, `paths` when the witness itself is the product
   # (resolution traces, shadowing explanations).
+  # NOT A DOOR (den-hoag-7gp66 P1, P-1): `queryPaths` is reached only through `query` (modes
+  # `paths`, `visible` and `layers`, the latter two via `queryVisible`/`queryLayers`), so the
+  # same reasoning as `queryAll`'s applies — `door` is the caller's own name, supplied at each
+  # call site, never `queryPaths`'s own.
   queryPaths =
-    {
-      graph,
-      from,
-      follow,
-      where ? (_: true),
-    }:
+    door: args:
     let
+      checked =
+        prelude.checkOptions door
+          [
+            "graph"
+            "from"
+            "follow"
+            "where"
+          ]
+          (
+            prelude.checkRequired door [
+              "graph"
+              "from"
+              "follow"
+            ] args
+          );
+      inherit (checked) graph from follow;
+      where = checked.where or (_: true);
       toKey = attrKey "query";
       go =
         visited: pathAcc: node: st:
@@ -871,8 +908,10 @@ let
         in
         here ++ steps;
     in
-    builtins.seq (callableAt "query" "where" "a bool" where) (
-      go { ${toKey from} = true; } [ ] from follow
+    builtins.seq checked (
+      builtins.seq (callableAt "query" "where" "a bool" where) (
+        go { ${toKey from} = true; } [ ] from follow
+      )
     );
 
   # ── per-query label order: compare witness paths lexicographically on label ranks;
@@ -978,7 +1017,9 @@ let
       -> throw "gen-graph.queryVisible: groupBy is required and is never defaulted (den-hoag-l7af / ADR-0024 ruling 3); a caller wanting the per-node reading states `groupBy = ans: ans.node;` explicitly";
     let
       toKey = attrKey "queryVisible";
-      answers = queryPaths (
+      # `queryVisible` is itself reached only through `query` (mode `visible`), so the door
+      # blamed at `queryPaths`'s formals is `query`'s, not this function's own.
+      answers = queryPaths "gen-graph.query" (
         builtins.removeAttrs args [
           "order"
           "groupBy"
@@ -1023,7 +1064,9 @@ let
       ...
     }:
     let
-      answers = queryPaths (builtins.removeAttrs args [ "order" ]);
+      # `queryLayers` is itself reached only through `query` (mode `layers`); same reasoning
+      # as `queryVisible`'s above.
+      answers = queryPaths "gen-graph.query" (builtins.removeAttrs args [ "order" ]);
       # layer key = the rank word as JSON (parses back losslessly; no digit-string fragility)
       keyed = builtins.groupBy (ans: builtins.toJSON (rankWordOf order ans.path)) answers;
       words = builtins.attrNames keyed;
@@ -1067,7 +1110,10 @@ let
         )
         empty
         (
-          queryAll (
+          # den-hoag-7gp66 P1, P-1: `queryFold` is a published door — called directly or via
+          # `query { mode = "fixpoint"; … }`, either way it is the door that named itself here,
+          # so `queryAll`'s formals check blames `queryFold`, never `queryAll`.
+          queryAll "gen-graph.queryFold" (
             builtins.removeAttrs args [
               "empty"
               "combine"
@@ -1096,11 +1142,11 @@ let
     # `identifier` regardless, at `queryAll`'s own door). Not one of OQ13's 8 doors.
     builtins.seq (if args ? from then nodeKey "query" args.from else null) (
       if mode == "all" then
-        queryAll core
+        queryAll "gen-graph.query" core
       else if mode == "series" then
         querySeries core
       else if mode == "paths" then
-        queryPaths core
+        queryPaths "gen-graph.query" core
       else if mode == "visible" then
         queryVisible (builtins.removeAttrs args [ "mode" ])
       else if mode == "layers" then
