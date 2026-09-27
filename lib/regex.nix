@@ -55,22 +55,40 @@ let
   eps = {
     t = "eps";
     k = builtins.hashString "sha256" "e";
+    nu = true;
+    h = 0;
   };
   empty = {
     t = "empty";
     k = builtins.hashString "sha256" "0";
+    nu = false;
+    h = 0;
   };
   any = {
     t = "any";
     k = builtins.hashString "sha256" "_";
+    nu = false;
+    h = 0;
   };
   lit = l: {
     t = "lit";
     inherit l;
     k = builtins.hashString "sha256" ("'" + l);
+    nu = false;
+    h = 0;
   };
 
   isT = t: r: r.t == t;
+  nuOf = r: r.nu or (throw notATerm);
+  hOf = r: r.h or (throw notATerm);
+  # 1 + the tallest child; children are values by the time a parent is built
+  # the constructors have already refused a child with no `k`, so every child carries `nu` and `h`
+  above =
+    rs:
+    let
+      hs = builtins.sort builtins.lessThan (builtins.catAttrs "h" rs);
+    in
+    1 + builtins.elemAt hs (builtins.length hs - 1);
 
   # canonical key; alt is sorted by this, making it a true canonical form
   stateKey = r: r.k or (throw notATerm);
@@ -95,12 +113,18 @@ let
             builtins.hashString "sha256" ("." + builtins.concatStringsSep "" ks)
           else
             throw notATerm;
+        nu = !(builtins.elem false (builtins.catAttrs "nu" noEps));
+        h = above noEps;
       in
-      builtins.seq k {
-        t = "seq";
-        rs = noEps;
-        inherit k;
-      };
+      builtins.seq k (
+        builtins.seq nu (
+          builtins.seq h {
+            t = "seq";
+            rs = noEps;
+            inherit k nu h;
+          }
+        )
+      );
 
   alt =
     rs:
@@ -124,12 +148,18 @@ let
     else
       let
         k = builtins.hashString "sha256" ("|" + builtins.concatStringsSep "" keys);
+        nu = builtins.elem true (builtins.catAttrs "nu" canon);
+        h = above canon;
       in
-      builtins.seq k {
-        t = "alt";
-        rs = canon;
-        inherit k;
-      };
+      builtins.seq k (
+        builtins.seq nu (
+          builtins.seq h {
+            t = "alt";
+            rs = canon;
+            inherit k nu h;
+          }
+        )
+      );
 
   star =
     r:
@@ -140,11 +170,15 @@ let
     else
       let
         k = builtins.hashString "sha256" ("*" + r.k or (throw notATerm));
+        h = 1 + hOf r;
       in
-      builtins.seq k {
-        t = "star";
-        inherit r k;
-      };
+      builtins.seq k (
+        builtins.seq h {
+          t = "star";
+          nu = true;
+          inherit r k h;
+        }
+      );
 
   opt =
     r:
@@ -159,20 +193,37 @@ let
       (star r)
     ];
 
-  nullable =
-    r:
-    if r.t == "eps" || r.t == "star" then
-      true
-    else if r.t == "lit" || r.t == "any" || r.t == "empty" then
-      false
-    else if r.t == "seq" then
-      builtins.all nullable r.rs
-    else
-      builtins.any nullable r.rs;
+  nullable = nuOf;
 
-  # Brzozowski derivative with respect to one label
-  deriv =
-    l: r:
+  # the subterms one derivative step reads: a seq reads its elements up to and including the
+  # first that is not nullable
+  seqReach =
+    rs:
+    let
+      m = builtins.length rs;
+      stops = builtins.filter (i: !(nuOf (builtins.elemAt rs i))) (builtins.genList (i: i) m);
+    in
+    if stops == [ ] then m else builtins.head stops + 1;
+  derivChildren =
+    r:
+    if r.t == "star" then
+      [ r.r ]
+    else if r.t == "alt" then
+      r.rs
+    else if r.t == "seq" then
+      (
+        if nuOf (builtins.head r.rs) then
+          builtins.genList (builtins.elemAt r.rs) (seqReach r.rs)
+        else
+          [ (builtins.head r.rs) ]
+      )
+    else
+      [ ];
+
+  # One Brzozowski step, with `self` deriving the children. seq: d(r1…rm) = |_{i<=j} (d ri) r(i+1)…rm,
+  # j the first element that is not nullable (Brzozowski 1964 Thm 3.1, the sum unrolled).
+  derivStep =
+    self: l: r:
     if r.t == "eps" || r.t == "empty" then
       empty
     else if r.t == "any" then
@@ -181,25 +232,96 @@ let
       (if r.l == l then eps else empty)
     else if r.t == "star" then
       seq [
-        (deriv l r.r)
+        (self r.r)
         r
       ]
     else if r.t == "alt" then
-      alt (map (deriv l) r.rs)
+      alt (map self r.rs)
     else
-      # seq: d(r1 r2…) = (d r1) r2… | [r1 nullable] d(r2…)
       let
-        hd = builtins.head r.rs;
-        tl = builtins.tail r.rs;
-        first = seq ([ (deriv l hd) ] ++ tl);
+        rs = r.rs;
+        m = builtins.length rs;
+        hd = builtins.head rs;
       in
-      if nullable hd then
+      if !(nuOf hd) then
+        seq ([ (self hd) ] ++ builtins.tail rs)
+      else if m == 2 then
         alt [
-          first
-          (deriv l (seq tl))
+          (seq [
+            (self hd)
+            (builtins.elemAt rs 1)
+          ])
+          (self (builtins.elemAt rs 1))
         ]
       else
-        first;
+        alt (
+          builtins.genList (
+            i:
+            seq (
+              [ (self (builtins.elemAt rs i)) ]
+              ++ builtins.genList (x: builtins.elemAt rs (x + i + 1)) (m - i - 1)
+            )
+          ) (seqReach rs)
+        );
+
+  derivDirect =
+    l:
+    let
+      go = derivStep go l;
+    in
+    go;
+
+  # ── the derivative, warmed past a height ─────────────────────────────────
+  # Brzozowski's derivative (1964 Thm 3.1) and ν (Def 3.2; Owens, Reppy & Turon 2009 §3.1) are
+  # structural recursions, and their result does not depend on the order they are evaluated in.
+  # `nullable` is carried: every node is built with `nu` already a value, so reading it walks
+  # nothing. `deriv` is one step (`derivStep`) tied two ways: directly, which is the plain
+  # recursion, and warmed, where the subterms the step reads are enumerated by `genericClosure`
+  # and their memo cells are forced in ascending `h`, so every cell finds its children already
+  # evaluated (the `coneRank` construction in order.nix). The warmed arm needs a constant 19-29
+  # frames, so a term of any height derives in bounded stack. Before this, `deriv` aborted at 417
+  # nested levels and `nullable` at 2,500 (den-hoag-smn53).
+  #
+  # `derivDirectHeight` is a cost switch, not a bound: always warming is ceiling-free too, and
+  # costs ×1.9 calls on `query`'s own workloads. It is set from three measured legs (nix):
+  # - stack: the direct arm needs ≤ ~14 frames per unit of height, 148-218 at h = 16;
+  # - sharing: the direct arm does not memoise, so a shared nullable subterm costs ~2^(T/2) calls
+  #   below T, and `parse` reaches it (`(`×k `a*` `)+`×k: 147.6 M calls at 62 characters under
+  #   T = 64, 41 k under T = 16);
+  # - workloads: `query`'s patterns and their derivatives reach h ≤ 3, so T ≥ 4 is indifferent.
+  # T = 16 is paid on unshared terms of height 17-64, which take the warmed arm's constant.
+  derivWarmed =
+    l: r:
+    let
+      nodes = builtins.genericClosure {
+        startSet = [
+          {
+            key = stateKey r;
+            inherit r;
+          }
+        ];
+        operator =
+          x:
+          map (c: {
+            key = stateKey c;
+            r = c;
+          }) (derivChildren x.r);
+      };
+      memo = builtins.listToAttrs (
+        map (x: {
+          name = x.key;
+          value = derivStep (c: memo.${c.k}) l x.r;
+        }) nodes
+      );
+      warmed = builtins.foldl' (acc: x: builtins.seq memo.${x.key} acc) true (
+        builtins.sort (a: b: a.r.h < b.r.h) nodes
+      );
+    in
+    builtins.seq warmed memo.${r.k};
+
+  derivDirectHeight = 16;
+  deriv =
+    l: r: if (r.h or (throw notATerm)) <= derivDirectHeight then derivDirect l r else derivWarmed l r;
 
   # ── string sugar ──────────────────────────────────────────────────────────
   # grammar:  expr := seqE ("|" seqE)*        (alternation binds loosest)

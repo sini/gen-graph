@@ -20,6 +20,56 @@ let
     ) (r.lit "a") (builtins.genList (i: i) n);
   # a key's width, whichever authority computes the digest
   keyWidth = builtins.stringLength (r.stateKey (r.lit "a"));
+  # n levels built bottom-up by the constructors: `head` nests where `deriv` descends, `altseq`
+  # where `nullable` does, and `wide` is one seq of n nullable elements
+  build = step: n: builtins.foldl' (acc: _: step acc) (r.lit "a") (builtins.genList (i: i) n);
+  head = build (
+    acc:
+    r.seq [
+      (r.star acc)
+      (r.lit "a")
+    ]
+  );
+  altseq = build (
+    acc:
+    r.alt [
+      (r.lit "b")
+      (r.seq [
+        acc
+        (r.lit "a")
+      ])
+    ]
+  );
+  wide = n: r.seq (builtins.genList (_: r.star (r.lit "a")) n);
+  # d_a (head n), written out by the constructors alone: d_a h(n) = (d_a h(n-1)) h(n-1)* a | eps
+  headDeriv =
+    n:
+    (builtins.foldl'
+      (
+        p: _:
+        let
+          h = r.seq [
+            (r.star p.h)
+            (r.lit "a")
+          ];
+          d = r.alt [
+            (r.seq [
+              p.d
+              (r.star p.h)
+              (r.lit "a")
+            ])
+            r.eps
+          ];
+        in
+        # both fields forced per step, or reading `d` unwinds an n-deep thunk chain
+        builtins.seq h (builtins.seq d { inherit h d; })
+      )
+      {
+        h = r.lit "a";
+        d = r.eps;
+      }
+      (builtins.genList (i: i) n)
+    ).d;
 in
 {
   flake.tests.regex = {
@@ -393,6 +443,72 @@ in
     test-the-deep-chain-key-is-a-function-of-its-depth = {
       expr = r.stateKey (chain 5000) == r.stateKey (chain 4999);
       expected = false;
+    };
+
+    # ── deriv and nullable hold no depth ceiling on a constructor-built term ──
+    test-deriv-of-a-deep-head-nesting-past-the-old-ceiling = {
+      expr = r.stateKey (r.deriv "a" (head 5000)) == r.stateKey (headDeriv 5000);
+      expected = true;
+    };
+    test-control-deriv-of-a-head-nesting-below-the-old-ceiling = {
+      expr = r.stateKey (r.deriv "a" (head 300)) == r.stateKey (headDeriv 300);
+      expected = true;
+    };
+    test-deriv-of-a-deep-head-nesting-rejects-an-absent-label = {
+      expr = r.nullable (r.deriv "b" (head 5000));
+      expected = false;
+    };
+    test-deriv-of-a-wide-nullable-seq-past-the-old-ceiling = {
+      expr = [
+        (r.nullable (r.deriv "a" (wide 2000)))
+        (r.nullable (r.deriv "b" (wide 2000)))
+      ];
+      expected = [
+        true
+        false
+      ];
+    };
+    test-nullable-of-a-deep-term-past-the-old-ceiling = {
+      expr = [
+        (r.nullable (altseq 5000))
+        (r.nullable (r.deriv "b" (altseq 5000)))
+      ];
+      expected = [
+        false
+        true
+      ];
+    };
+    # d_b (x* b c) = c, the unrolled seq sum stopping at its first non-nullable element: the
+    # first term takes the direct arm (h 2), the second the warmed arm (h 82)
+    test-deriv-of-a-seq-past-its-nullable-prefix = {
+      expr = [
+        (
+          r.stateKey (
+            r.deriv "b" (
+              r.seq [
+                (r.star (r.lit "a"))
+                (r.lit "b")
+                (r.lit "c")
+              ]
+            )
+          ) == r.stateKey (r.lit "c")
+        )
+        (
+          r.stateKey (
+            r.deriv "b" (
+              r.seq [
+                (r.star (head 40))
+                (r.lit "b")
+                (r.lit "c")
+              ]
+            )
+          ) == r.stateKey (r.lit "c")
+        )
+      ];
+      expected = [
+        true
+        true
+      ];
     };
   };
 }

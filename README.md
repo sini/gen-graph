@@ -1181,6 +1181,11 @@ injective, so a `lit` label carrying `* | . ( )` keys apart from any composite. 
 computed as terms are built, so reading one on a term already built costs constant stack at
 any depth. A value the constructors did not build has no key, and `stateKey` refuses it by name.
 
+`regex.nullable r` and `regex.deriv l r` hold no depth ceiling on a constructor-built term:
+`nullable` is carried on every node as it is built, and `deriv` past a height of 16 memoises
+its subterms and forces them bottom-up, in a constant few dozen frames (measured to 100,000
+nested levels). Both refuse a value the constructors did not build, by the same name.
+
 **`query`** runs a labeled query in one of five modes:
 
 ```
