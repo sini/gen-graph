@@ -10,20 +10,23 @@ let
     keyedAttrs
     notEdgeList
     ;
-  materialize =
+  # `who` is `within <door> "materialize"` when another door reaches it (R6, `key.nix`).
+  materializeAs =
+    who:
     { edges, nodes, ... }:
     let
-      e = edgesAccessor "materialize" edges;
+      e = edgesAccessor who edges;
     in
-    keyedAttrs "materialize" nodes (
+    keyedAttrs who nodes (
       id:
       prelude.unique (
         let
           es = e id;
         in
-        if builtins.isList es then es else throw (notEdgeList "materialize" id es)
+        if builtins.isList es then es else throw (notEdgeList who id es)
       )
     );
+  materialize = materializeAs "materialize";
 
   materializeParents =
     { parent, nodes, ... }:
@@ -86,20 +89,22 @@ let
       ) (prelude.filterAttrs (from: _: b ? ${from}) a)
     );
 
-  differenceEdges =
-    a: b:
+  # `who` is `within <door> "differenceEdges"` when another door reaches it (R6, `key.nix`).
+  differenceEdgesAs =
+    who: a: b:
     let
-      toKey = attrKey "differenceEdges";
+      toKey = attrKey who;
     in
     prelude.filterAttrs (_: targets: targets != [ ]) (
       prelude.mapAttrs (
         from: aTargets:
         let
-          bSet = _targetSet "differenceEdges" (b.${from} or [ ]);
+          bSet = _targetSet who (b.${from} or [ ]);
         in
         builtins.filter (to: !(bSet ? ${toKey to})) aTargets
       ) a
     );
+  differenceEdges = differenceEdgesAs "differenceEdges";
 
   selectEdges =
     pred: edgeMap:
@@ -135,4 +140,9 @@ in
     differenceEdges
     selectEdges
     ;
+  # R6: not published — `lib/default.nix` strips it from the surface.
+  threaded = {
+    materialize = materializeAs;
+    differenceEdges = differenceEdgesAs;
+  };
 }

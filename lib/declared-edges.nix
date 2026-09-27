@@ -62,6 +62,7 @@
 # which is a different thing from silence. `mkGraph` next door does default its `edges`, deliberately —
 # it takes an edge set a caller already holds and derives a graph from it, and asserts nothing about
 # the caller's obligation to have one.
+{ prelude }:
 let
   _refMarker = "gen-graph/node-ref";
   _edgeSetMarker = "gen-graph/declared-edges";
@@ -225,31 +226,41 @@ in
   # and this library has no evaluator and must not acquire one — its single input is gen-prelude. A
   # private copy of the node set kept here would be correct exactly as long as someone kept two copies
   # in step, and the failure when they stop agreeing is silent.
+  # RECORD door (den-hoag-7gp66 P1, R5): every field required and none closed — a missing one is
+  # refused by name, catchably, and an extra one is admitted. The check is seq'd onto the result, so
+  # it fires when the record is applied.
   mkNodeRef =
-    { isRegistered }:
+    args:
     let
-      ir = callableAt "mkNodeRef" "isRegistered" "a bool" isRegistered;
+      checked = prelude.checkRequired "gen-graph.mkNodeRef" [ "isRegistered" ] args;
+      ir = callableAt "mkNodeRef" "isRegistered" "a bool" checked.isRegistered;
     in
-    id:
-    let
-      findings = _nodeRefFindings ir id;
-    in
-    if findings == [ ] then
-      {
-        _type = _refMarker;
-        inherit id;
-      }
-    else
-      throw (builtins.head findings);
+    builtins.seq checked (
+      id:
+      let
+        findings = _nodeRefFindings ir id;
+      in
+      if findings == [ ] then
+        {
+          _type = _refMarker;
+          inherit id;
+        }
+      else
+        throw (builtins.head findings)
+    );
 
   # nodeRefFindings : { isRegistered } -> id -> [string] — the same contract as a VALUE, so a caller
   # or an oracle reads the message the constructor would throw.
+  # RECORD door (den-hoag-7gp66 P1, R5): every field required and none closed — a missing one is
+  # refused by name, catchably, and an extra one is admitted. The check is seq'd onto the result, so
+  # it fires when the record is applied.
   nodeRefFindings =
-    { isRegistered }:
+    args:
     let
-      ir = callableAt "nodeRefFindings" "isRegistered" "a bool" isRegistered;
+      checked = prelude.checkRequired "gen-graph.nodeRefFindings" [ "isRegistered" ] args;
+      ir = callableAt "nodeRefFindings" "isRegistered" "a bool" checked.isRegistered;
     in
-    id: _nodeRefFindings ir id;
+    builtins.seq checked (id: _nodeRefFindings ir id);
 
   # mkSpawnedNodeRef : id -> <nodeRef>   (ROUTE 2, substrate-minted at spawn time)
   #

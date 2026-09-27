@@ -183,17 +183,25 @@ let
   # `routed` short-circuits before `degRaw`, so the ARM does not evaluate one binding of the
   # certificate — it is not merely unused there, it is unreached.
   # `door` is the published name the caller invoked, and every refusal below names it.
+  # OPTIONS door (den-hoag-7gp66 P1, §v1.2): closed — an unknown option is refused by name,
+  # catchably, when the options are applied, before the graph is.
   topoOrderCore =
-    door: gated:
-    {
-      keyOf ? (node: node),
-      lessThan ? builtins.lessThan,
-    }:
-    data:
-    if builtins.isAttrs data then
-      topoOrderBody door gated keyOf lessThan data
-    else
-      throw "gen-graph.${door}: the graph is a ${builtins.typeOf data}, not an attribute set carrying nodes and edges";
+    door: gated: opts:
+    let
+      checked = prelude.checkOptions "gen-graph.${door}" [
+        "keyOf"
+        "lessThan"
+      ] opts;
+      keyOf = checked.keyOf or (node: node);
+      lessThan = checked.lessThan or builtins.lessThan;
+    in
+    builtins.seq checked (
+      data:
+      if builtins.isAttrs data then
+        topoOrderBody door gated keyOf lessThan data
+      else
+        throw "gen-graph.${door}: the graph is a ${builtins.typeOf data}, not an attribute set carrying nodes and edges"
+    );
 
   topoOrderBody =
     door: gated: keyOf: lessThan:

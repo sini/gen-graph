@@ -148,13 +148,29 @@ let
     };
 
   self = {
+    # MIXED door (den-hoag-7gp66 P1, §v1.2): `checkOptions` over `checkRequired`, closed over the whole
+    # set — a missing field or an unknown one is refused by name, catchably, when the record is applied.
     fromRegistry =
-      {
-        registry,
-        edges,
-        parent ? _id: _entry: null,
-      }:
+      args:
       let
+        checked =
+          prelude.checkOptions "gen-graph.fromRegistry"
+            [
+              "registry"
+              "edges"
+              "parent"
+            ]
+            (
+              prelude.checkRequired "gen-graph.fromRegistry" [
+                "registry"
+                "edges"
+              ] args
+            );
+        inherit (checked)
+          registry
+          edges
+          ;
+        parent = checked.parent or (_id: _entry: null);
         registry' =
           setAt "fromRegistry" "registry" "an attrset from a node identifier to its entry"
             registry;
@@ -168,7 +184,7 @@ let
           else
             throw "gen-graph.fromRegistry: edges is a ${builtins.typeOf edges}, not a function from a node id and its registry entry to a list of node ids";
       in
-      {
+      builtins.seq checked {
         inherit nodes;
         # both are applied to the id and then to its entry, so the first application must return a
         # function; its final result is the downstream surface's to read
@@ -229,13 +245,24 @@ let
       in
       _id: entry: builtins.concatLists (map (name: entry.${name} or [ ]) ns);
 
+    # OPTIONS door (den-hoag-7gp66 P1, §v1.2): closed — an unknown option is refused by name,
+    # catchably, when the record is applied.
     mkGraph =
-      {
-        edges ? [ ],
-        parents ? [ ],
-        nodeData ? { },
-      }:
-      mkGraphAs "mkGraph" { inherit edges parents nodeData; };
+      args:
+      let
+        checked = prelude.checkOptions "gen-graph.mkGraph" [
+          "edges"
+          "parents"
+          "nodeData"
+        ] args;
+      in
+      builtins.seq checked (
+        mkGraphAs "mkGraph" {
+          edges = checked.edges or [ ];
+          parents = checked.parents or [ ];
+          nodeData = checked.nodeData or { };
+        }
+      );
 
     # fromScan — the graph a REFERENCE SCAN derives. Given a collection of scannable items, a
     # scan reading the references out of an item's value, and a projection from a reference to the
@@ -273,15 +300,34 @@ let
     # would be unrecoverable without a second scan. `field`/`fields` are edge extractors reading a
     # DECLARED list off an entry — a declaration is what a derivation replaces — and they hand
     # back no reference either.
+    # MIXED door (den-hoag-7gp66 P1, §v1.2): `checkOptions` over `checkRequired`, closed over the whole
+    # set — a missing field or an unknown one is refused by name, catchably, when the record is applied.
     fromScan =
-      {
-        items,
-        scan,
-        project,
-        nodeData ? { },
-        parents ? [ ],
-      }:
+      args:
       let
+        checked =
+          prelude.checkOptions "gen-graph.fromScan"
+            [
+              "items"
+              "scan"
+              "project"
+              "nodeData"
+              "parents"
+            ]
+            (
+              prelude.checkRequired "gen-graph.fromScan" [
+                "items"
+                "scan"
+                "project"
+              ] args
+            );
+        inherit (checked)
+          items
+          scan
+          project
+          ;
+        nodeData = checked.nodeData or { };
+        parents = checked.parents or [ ];
         sc = callableAt "fromScan" "scan" "a list of references" scan;
         pj = callableAt "fromScan" "project" "a node id (a string)" project;
         its = listAt "fromScan" "items" "a list of { id; value; } items" items;
@@ -360,13 +406,15 @@ let
           ) n
         );
       in
-      mkGraphAs "fromScan" {
-        edges = keyedEdges;
-        inherit nodeData parents;
-      }
-      // {
-        inherit derivedEdges;
-      };
+      builtins.seq checked (
+        mkGraphAs "fromScan" {
+          edges = keyedEdges;
+          inherit nodeData parents;
+        }
+        // {
+          inherit derivedEdges;
+        }
+      );
 
     fixtures = {
       diamond = self.mkGraph {

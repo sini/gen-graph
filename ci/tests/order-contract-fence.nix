@@ -113,22 +113,30 @@ let
         ra > rb
     ) order;
 
+  # The stand-in moves the door's PICK and nothing else: the real door is applied to `opts` first, so
+  # its options refusal fires where the door's own does — when the options are applied (den-hoag-7gp66).
   perturbed = mode: {
     topoOrder =
-      opts: data:
+      opts:
       let
-        r = genGraph.topoOrder opts data;
-        keyOf = opts.keyOf or (n: n);
+        door = genGraph.topoOrder opts;
       in
-      if r.ok or false then
-        r
-        // {
-          order = perturb mode keyOf (opts.lessThan or builtins.lessThan) (
-            n: map keyOf (data.edges n)
-          ) r.order;
-        }
-      else
-        r;
+      builtins.seq door (
+        data:
+        let
+          r = door data;
+          keyOf = opts.keyOf or (n: n);
+        in
+        if r.ok or false then
+          r
+          // {
+            order = perturb mode keyOf (opts.lessThan or builtins.lessThan) (
+              n: map keyOf (data.edges n)
+            ) r.order;
+          }
+        else
+          r
+      );
     phaseOrder =
       entries:
       let

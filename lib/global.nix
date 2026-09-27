@@ -24,6 +24,7 @@ let
     edgesAccessor
     identifier
     notEdgeList
+    within
     ;
   edgeMaps = import ./edge-maps.nix { inherit prelude; };
   fp = import ./fixpoint.nix { inherit prelude; };
@@ -218,7 +219,7 @@ let
       ...
     }:
     let
-      mat = edgeMaps.materialize { inherit edges nodes; };
+      mat = edgeMaps.threaded.materialize (within "transpose" "materialize") { inherit edges nodes; };
       rev = _transposeMat "transpose" mat;
       toKey = attrKey "transpose";
     in
@@ -251,7 +252,10 @@ let
     u: v:
     builtins.seq (identifier "coScc" u) (
       builtins.seq (identifier "coScc" v) (
-        (u == v) || (traverse.canReach { inherit edges; } u v && traverse.canReach { inherit edges; } v u)
+        let
+          canReach = traverse.threaded.canReach (within "coScc" "canReach") { inherit edges; };
+        in
+        (u == v) || (canReach u v && canReach v u)
       )
     );
 
@@ -311,7 +315,9 @@ let
         n: builtins.head (builtins.sort builtins.lessThan (builtins.filter (m: coSccPair n m) nodes))
       );
     in
-    partition.condensationOf { inherit edges nodes; } repOf;
+    partition.threaded.condensationOf (within "condensationClosure" "condensationOf") {
+      inherit edges nodes;
+    } repOf;
 
   # Impact analysis alias (uses efficient single-target path).
   impactOf = _dependentsOfAs "impactOf";
@@ -326,7 +332,8 @@ let
   directDependentsOf =
     accessor: id:
     builtins.seq (identifier "directDependentsOf" id) (
-      (directDependents accessor).${attrKey "directDependentsOf" id} or [ ]
+      (_reverseIndex (within "directDependentsOf" "directDependents") accessor)
+      .${attrKey "directDependentsOf" id} or [ ]
     );
 in
 {

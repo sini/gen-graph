@@ -6,7 +6,7 @@ let
   edgeMaps = import ./edge-maps.nix { inherit prelude; };
   fixpoint = import ./fixpoint.nix { inherit prelude; };
   registry = import ./registry.nix { inherit prelude; };
-  declaredEdges = import ./declared-edges.nix;
+  declaredEdges = import ./declared-edges.nix { inherit prelude; };
   endpoints = import ./endpoints.nix { inherit prelude; };
   order = import ./order.nix { inherit prelude; };
   partition = import ./partition.nix { inherit prelude; };
@@ -14,16 +14,18 @@ let
   regex = import ./regex.nix { inherit prelude; };
   queryLib = import ./query.nix { inherit prelude; };
 in
-traverse
+# `threaded` is each file's R6 primitives by `who` (`key.nix`), for the doors of another file; it is
+# not published.
+builtins.removeAttrs traverse [ "threaded" ]
 // global
 // enumerate
-// edgeMaps
+// builtins.removeAttrs edgeMaps [ "threaded" ]
 // fixpoint
 // registry
 // declaredEdges
 // endpoints
 // order
-// partition
+// builtins.removeAttrs partition [ "threaded" ]
 // preorder
 // queryLib
 // {

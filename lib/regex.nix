@@ -459,11 +459,17 @@ let
   # contract and meets the uncatchable abort this cap exists to replace.
   parseMaxLength = 1000;
 
+  # OPTIONS door (den-hoag-7gp66 P1, §v1.2): closed — an unknown option is refused by name,
+  # catchably, when the options are applied, before the pattern is.
   parseWith =
-    {
-      maxLength ? parseMaxLength,
-    }:
-    s:
+    opts:
+    let
+      checked = prelude.checkOptions "gen-graph.regex.parseWith" [ "maxLength" ] opts;
+      maxLength = checked.maxLength or parseMaxLength;
+    in
+    builtins.seq checked (parseWithMax maxLength);
+  parseWithMax =
+    maxLength: s:
     let
       err =
         m:

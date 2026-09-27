@@ -56,6 +56,8 @@ let
     notAnIdentifier
     notEdgeList
     renderId
+    say
+    within
     ;
   traverse = import ./traverse.nix;
   global = import ./global.nix { inherit prelude; };
@@ -186,7 +188,7 @@ let
           throw (notEdgeList who v es)
         else
           builtins.all (d: builtins.isString d && memberSet ? ${toKey d}) es
-          || throw "gen-graph.${who}: edges ${renderId v} names a target outside `nodes`"
+          || throw (say who "edges ${renderId v} names a target outside `nodes`")
       ) nodes;
       membersOf = prelude.mapAttrs (_: es: builtins.sort builtins.lessThan (map (e: e.n) es)) (
         builtins.groupBy (e: toKey e.r) (
@@ -419,11 +421,12 @@ let
   # graph, so it has no SCC partition. A `nodes` entry that is not a string is refused by name
   # too; it cannot be keyed.
   lowlinkTags =
+    who:
     { edges, nodes, ... }:
     let
-      e = edgesAccessor "lowlink" edges;
-      toKey = attrKey "lowlink";
-      byKey = keyedAttrs "lowlink" (map (identifier "lowlink") nodes) (v: v);
+      e = edgesAccessor who edges;
+      toKey = attrKey who;
+      byKey = keyedAttrs who (map (identifier who) nodes) (v: v);
       names = builtins.attrNames byKey;
       verts = builtins.attrValues byKey;
       n = builtins.length names;
@@ -438,14 +441,14 @@ let
         if builtins.isString w && ordOf ? ${toKey w} then
           ordOf.${toKey w}
         else
-          throw "gen-graph.lowlink: edges ${renderId from} names a target outside `nodes`";
+          throw (say who "edges ${renderId from} names a target outside `nodes`");
       succOf =
         v:
         let
           id = builtins.elemAt verts v;
           es = e id;
         in
-        if builtins.isList es then map (ordinal id) es else throw (notEdgeList "lowlink" id es);
+        if builtins.isList es then map (ordinal id) es else throw (notEdgeList who id es);
 
       inherit (trieOf n) empty get set;
       frame =
@@ -581,7 +584,9 @@ let
   # string context can come back as its text, depending on node order. `fbNode` keeps it.
   fbNode = accessor: finish "fbNode" accessor (nodeTags accessor);
   fbWork = accessor: finish "fbWork" accessor (workTags accessor);
-  lowlink = accessor: finish "lowlink" accessor (lowlinkTags accessor);
+  # The arm reached through another door (R6): `who` is `within <door> "lowlink"`.
+  lowlinkAs = who: accessor: finish who accessor (lowlinkTags who accessor);
+  lowlink = lowlinkAs "lowlink";
 
   # ── THE PARTITION'S CONSUMERS: WHICH NODES LIE ON A CYCLE, AND ONE WALK PER CYCLIC COMPONENT ──
   # A node lies on a cycle iff its strongly connected component has two or more members, or it
@@ -593,11 +598,12 @@ let
   # they are partition consumers now, as `coneRank` moved to the ordering family; the export set
   # is unchanged. Their DOMAIN is the arm's: a closed accessor, refused by name otherwise.
   cyclicOf =
+    door:
     accessor@{ edges, nodes, ... }:
     let
-      inherit (lowlink accessor) sccOf;
-      e = edgesAccessor "cycles" edges;
-      toKey = attrKey "cycles";
+      inherit (lowlinkAs (within door "lowlink") accessor) sccOf;
+      e = edgesAccessor (within door "cycles") edges;
+      toKey = attrKey (within door "cycles");
       size = builtins.mapAttrs (_: builtins.length) (
         builtins.groupBy (k: toKey sccOf.${k}) (builtins.attrNames sccOf)
       );
@@ -607,7 +613,7 @@ let
       inherit sccOf;
       cyclic = builtins.sort builtins.lessThan (builtins.filter onCycle nodes);
     };
-  cycles = accessor: (cyclicOf accessor).cyclic;
+  cycles = accessor: (cyclicOf "cycles" accessor).cyclic;
 
   # One representative simple cycle per cyclic component, as an ORDERED node list rotated to
   # begin at the component's smallest key; every consecutive pair is an edge, closing back on the
@@ -632,7 +638,7 @@ let
   cyclePaths =
     accessor@{ edges, nodes, ... }:
     let
-      c = cyclicOf accessor;
+      c = cyclicOf "cyclePaths" accessor;
       e = edgesAccessor "cyclePaths" edges;
       toKey = attrKey "cyclePaths";
       keyedAttrs' = keyedAttrs "cyclePaths";
@@ -727,4 +733,10 @@ in
     fbWork
     lowlink
     ;
+  # R6: the primitives by their `who`, for a door in another file that reaches them. NOT
+  # published — `lib/default.nix` strips it from the surface.
+  threaded = {
+    lowlink = lowlinkAs;
+    condensationOf = finish;
+  };
 }

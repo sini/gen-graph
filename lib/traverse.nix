@@ -38,6 +38,7 @@ let
     notAnIdentifier
     notEdgeList
     retiredMaxDepth
+    within
     ;
   # A variable, not `builtins.isString`: as an argument a select is a thunk, and `closureVia` passes
   # it once per visit.
@@ -63,20 +64,21 @@ let
   # OQ13 arm a: a node id is a string). `target` is the lambda `map` already applied, so a string
   # pays one `isString` and no call; the refusal path pays `identifier`'s own retest, once, on the
   # way to a throw that never returns.
-  reachableFrom =
+  # `who` is `within <door> "reachableFrom"` when another door reaches it (R6, `key.nix`).
+  reachableFromAs =
+    who:
     { edges, ... }:
     startId:
-    builtins.seq (identifier "reachableFrom" startId) (
+    builtins.seq (identifier who startId) (
       let
-        e = edgesAccessor "reachableFrom" edges;
-        target =
-          id: if builtins.isString id then { key = id; } else { key = identifier "reachableFrom" id; };
+        e = edgesAccessor who edges;
+        target = id: if builtins.isString id then { key = id; } else { key = identifier who id; };
         result = builtins.genericClosure {
           startSet = map target (
             let
               es = e startId;
             in
-            if builtins.isList es then es else throw (notEdgeList "reachableFrom" startId es)
+            if builtins.isList es then es else throw (notEdgeList who startId es)
           );
           operator =
             item:
@@ -84,12 +86,13 @@ let
               let
                 es = e item.key;
               in
-              if builtins.isList es then es else throw (notEdgeList "reachableFrom" item.key es)
+              if builtins.isList es then es else throw (notEdgeList who item.key es)
             );
         };
       in
       builtins.filter (id: id != startId) (map (r: r.key) result)
     );
+  reachableFrom = reachableFromAs "reachableFrom";
 
   # Follow edges transitively, filter results by predicate on id.
   reachableWhere =
@@ -105,7 +108,7 @@ let
           b = p id;
         in
         if builtins.isBool b then b else badResult "reachableWhere" "pred" (renderId id) "a bool" b
-      ) (reachableFrom { inherit edges; } startId)
+      ) (reachableFromAs (within "reachableWhere" "reachableFrom") { inherit edges; } startId)
     );
 
   # Point query: can fromId reach toId? The operator STOPS EXPANDING AT THE TARGET, so the
@@ -134,14 +137,16 @@ let
   # ★ STRICTLY MORE DEFINED THAN A FULL WALK, AND NEVER DIFFERENTLY VALUED. An accessor that
   # throws for toId's out-edges is never asked for them once toId is reached, so this answers
   # where a full walk propagates the throw. It never returns the other boolean.
-  canReach =
+  # `who` is `within <door> "canReach"` when another door reaches it (R6, `key.nix`).
+  canReachAs =
+    who:
     { edges, ... }:
     fromId: toId:
-    builtins.seq (identifier "canReach" fromId) (
-      builtins.seq (identifier "canReach" toId) (
+    builtins.seq (identifier who fromId) (
+      builtins.seq (identifier who toId) (
         let
-          e = edgesAccessor "canReach" edges;
-          target = id: if builtins.isString id then { key = id; } else { key = identifier "canReach" id; };
+          e = edgesAccessor who edges;
+          target = id: if builtins.isString id then { key = id; } else { key = identifier who id; };
         in
         builtins.any (r: r.key == toId) (
           builtins.genericClosure {
@@ -149,7 +154,7 @@ let
               let
                 es = e fromId;
               in
-              if builtins.isList es then es else throw (notEdgeList "canReach" fromId es)
+              if builtins.isList es then es else throw (notEdgeList who fromId es)
             );
             operator =
               item:
@@ -160,12 +165,13 @@ let
                   let
                     es = e item.key;
                   in
-                  if builtins.isList es then es else throw (notEdgeList "canReach" item.key es)
+                  if builtins.isList es then es else throw (notEdgeList who item.key es)
                 );
           }
         )
       )
     );
+  canReach = canReachAs "canReach";
 
   # Is a node reachable from itself? (cycle detection for one node)
   # genericClosure naturally includes the start if it's in a cycle.
@@ -444,4 +450,9 @@ in
     reachableVia
     selfReachableVia
     ;
+  # R6: not published — `lib/default.nix` strips it from the surface.
+  threaded = {
+    reachableFrom = reachableFromAs;
+    canReach = canReachAs;
+  };
 }

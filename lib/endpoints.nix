@@ -128,52 +128,64 @@ in
   #
   # The published projection. Refuses by name on a governed attribute that is not a list of node
   # ids, and emits a SET.
+  # RECORD door (den-hoag-7gp66 P1, R5): every field required and none closed — a missing one is
+  # refused by name, catchably, and an extra one is admitted. The check is seq'd onto the result, so
+  # it fires when the record is applied.
   mkEndpointProjection =
-    { childBearing, isNode }:
-    structuralAttributesOf:
+    args:
     let
-      who = "mkEndpointProjection";
-      cb = callableAt who "childBearing" "a bool" childBearing;
-      isN = callableAt who "isNode" "a bool" isNode;
-      saF =
-        callableAt who "structuralAttributesOf" "a set of structural attributes"
-          structuralAttributesOf;
+      checked = prelude.checkRequired "gen-graph.mkEndpointProjection" [
+        "childBearing"
+        "isNode"
+      ] args;
+      inherit (checked) childBearing isNode;
     in
-    id:
-    let
-      sa =
-        let
-          s = saF id;
-        in
-        if builtins.isAttrs s then
-          s
-        else
-          badResult who "structuralAttributesOf" (renderId id) "a set of structural attributes" s;
-      endpointsOf =
-        name:
-        let
-          b = cb name;
-          v = sa.${name};
-        in
-        if !builtins.isBool b then
-          badResult who "childBearing" (renderId name) "a bool" b
-        else if b then
-          (
-            if builtins.isAttrs v then
-              builtins.attrNames v
-            else
-              badResult who "structuralAttributesOf"
-                "${renderId id}, at its child-bearing attribute ${renderId name},"
-                "a set of children"
-                v
-          )
-        else
+    builtins.seq checked (
+      structuralAttributesOf:
+      let
+        who = "mkEndpointProjection";
+        cb = callableAt who "childBearing" "a bool" childBearing;
+        isN = callableAt who "isNode" "a bool" isNode;
+        saF =
+          callableAt who "structuralAttributesOf" "a set of structural attributes"
+            structuralAttributesOf;
+      in
+      id:
+      let
+        sa =
           let
-            findings = _family2Findings isN id name v;
+            s = saF id;
           in
-          if findings == [ ] then v else throw (builtins.head findings);
-    in
-    prelude.unique (builtins.concatMap endpointsOf (builtins.attrNames sa));
+          if builtins.isAttrs s then
+            s
+          else
+            badResult who "structuralAttributesOf" (renderId id) "a set of structural attributes" s;
+        endpointsOf =
+          name:
+          let
+            b = cb name;
+            v = sa.${name};
+          in
+          if !builtins.isBool b then
+            badResult who "childBearing" (renderId name) "a bool" b
+          else if b then
+            (
+              if builtins.isAttrs v then
+                builtins.attrNames v
+              else
+                badResult who "structuralAttributesOf"
+                  "${renderId id}, at its child-bearing attribute ${renderId name},"
+                  "a set of children"
+                  v
+            )
+          else
+            let
+              findings = _family2Findings isN id name v;
+            in
+            if findings == [ ] then v else throw (builtins.head findings);
+      in
+      prelude.unique (builtins.concatMap endpointsOf (builtins.attrNames sa))
+    );
 
   # mkProjectionFindings : { childBearing, isNode } -> (id -> structuralRecord) -> id -> [string]
   #
@@ -182,27 +194,39 @@ in
   # attribute of this node that violates the codomain contract, and `[ ]` when none does. An
   # assertion belongs on this returned message rather than on a caught throw — a caught throw
   # proves only that something refused, never that it refused for the reason under test.
+  # RECORD door (den-hoag-7gp66 P1, R5): every field required and none closed — a missing one is
+  # refused by name, catchably, and an extra one is admitted. The check is seq'd onto the result, so
+  # it fires when the record is applied.
   mkProjectionFindings =
-    { childBearing, isNode }:
-    structuralAttributesOf:
+    args:
     let
-      who = "mkProjectionFindings";
-      cb = callableAt who "childBearing" "a bool" childBearing;
-      isN = callableAt who "isNode" "a bool" isNode;
-      saF =
-        callableAt who "structuralAttributesOf" "a set of structural attributes"
-          structuralAttributesOf;
+      checked = prelude.checkRequired "gen-graph.mkProjectionFindings" [
+        "childBearing"
+        "isNode"
+      ] args;
+      inherit (checked) childBearing isNode;
     in
-    id:
-    let
-      sa =
-        let
-          s = saF id;
-        in
-        if builtins.isAttrs s then
-          s
-        else
-          badResult who "structuralAttributesOf" (renderId id) "a set of structural attributes" s;
-    in
-    builtins.concatMap (name: _family2Findings isN id name sa.${name}) (_governed cb sa);
+    builtins.seq checked (
+      structuralAttributesOf:
+      let
+        who = "mkProjectionFindings";
+        cb = callableAt who "childBearing" "a bool" childBearing;
+        isN = callableAt who "isNode" "a bool" isNode;
+        saF =
+          callableAt who "structuralAttributesOf" "a set of structural attributes"
+            structuralAttributesOf;
+      in
+      id:
+      let
+        sa =
+          let
+            s = saF id;
+          in
+          if builtins.isAttrs s then
+            s
+          else
+            badResult who "structuralAttributesOf" (renderId id) "a set of structural attributes" s;
+      in
+      builtins.concatMap (name: _family2Findings isN id name sa.${name}) (_governed cb sa)
+    );
 }

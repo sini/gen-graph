@@ -212,17 +212,39 @@ let
   #    `maxDepth` is retired (the header) and refused by name; `surface` is the name that
   #    refusal and every caller-function refusal carry, so a specialization written outside
   #    this library (a framework's `forwardExpand`) names itself.
+  # MIXED door (den-hoag-7gp66 P1, §v1.2): `checkOptions` over `checkRequired`, closed over the whole
+  # set — a missing field or an unknown one is refused by name, catchably, when the record is applied.
   foldPreorder =
-    {
-      roots,
-      key,
-      expand,
-      acc,
-      visited ? { },
-      maxDepth ? null,
-      surface ? "foldPreorder",
-    }:
+    args:
     let
+      checked =
+        prelude.checkOptions "gen-graph.foldPreorder"
+          [
+            "roots"
+            "key"
+            "expand"
+            "acc"
+            "visited"
+            "maxDepth"
+            "surface"
+          ]
+          (
+            prelude.checkRequired "gen-graph.foldPreorder" [
+              "roots"
+              "key"
+              "expand"
+              "acc"
+            ] args
+          );
+      inherit (checked)
+        roots
+        key
+        expand
+        acc
+        ;
+      visited = checked.visited or { };
+      maxDepth = checked.maxDepth or null;
+      surface = checked.surface or "foldPreorder";
       kf = callableAt surface "key" "a node id (a string) or null" key;
       toKey = attrKey surface;
       ex = callableAt surface "expand" "{ acc; children ? [ ]; }" expand;
@@ -304,7 +326,7 @@ let
       };
       last = builtins.elemAt run (builtins.length run - 1);
     in
-    if maxDepth != null then
+    if builtins.seq checked (maxDepth != null) then
       throw (retiredMaxDepth surface)
     else
       {
@@ -321,18 +343,40 @@ let
   #    ONE key set: `key frame` both cycle-guards and dedups (each frame is one
   #    witness). `seen0` seeds that set (drop-pruning), `nodes0` seeds the witness list.
   #    `emit` defaults to the payload itself. Returns `{ nodes; seen }`.
+  # MIXED door (den-hoag-7gp66 P1, §v1.2): `checkOptions` over `checkRequired`, closed over the whole
+  # set — a missing field or an unknown one is refused by name, catchably, when the record is applied.
   expandPreorder =
-    {
-      roots,
-      key,
-      edges,
-      resolve ? (frame: frame),
-      emit ? (_frame: payload: payload),
-      seen0 ? { },
-      nodes0 ? [ ],
-      maxDepth ? null,
-    }:
+    args:
     let
+      checked =
+        prelude.checkOptions "gen-graph.expandPreorder"
+          [
+            "roots"
+            "key"
+            "edges"
+            "resolve"
+            "emit"
+            "seen0"
+            "nodes0"
+            "maxDepth"
+          ]
+          (
+            prelude.checkRequired "gen-graph.expandPreorder" [
+              "roots"
+              "key"
+              "edges"
+            ] args
+          );
+      inherit (checked)
+        roots
+        key
+        edges
+        ;
+      resolve = checked.resolve or (frame: frame);
+      emit = checked.emit or (_frame: payload: payload);
+      seen0 = checked.seen0 or { };
+      nodes0 = checked.nodes0 or [ ];
+      maxDepth = checked.maxDepth or null;
       e = edgesAccessor "expandPreorder" edges;
       # applied, never read: a door each, and `emit`'s first application must return a function
       rs = callableAt "expandPreorder" "resolve" "a payload" resolve;
@@ -369,7 +413,7 @@ let
           };
       };
     in
-    if maxDepth != null then
+    if builtins.seq checked (maxDepth != null) then
       throw (retiredMaxDepth "expandPreorder")
     else
       {
@@ -390,19 +434,44 @@ let
   #    first-occurrence-dedups the witness list ACROSS vertices (`seen0`; a `null` item
   #    key is never deduped — always kept, the conservative NULL-KEEP direction).
   #    `nodes0` seeds the witness list. Returns `{ nodes; seen; visited }`.
+  # MIXED door (den-hoag-7gp66 P1, §v1.2): `checkOptions` over `checkRequired`, closed over the whole
+  # set — a missing field or an unknown one is refused by name, catchably, when the record is applied.
   foldReach =
-    {
-      roots,
-      edges,
-      target,
-      project,
-      itemKey,
-      visited0 ? { },
-      seen0 ? { },
-      nodes0 ? [ ],
-      maxDepth ? null,
-    }:
+    args:
     let
+      checked =
+        prelude.checkOptions "gen-graph.foldReach"
+          [
+            "roots"
+            "edges"
+            "target"
+            "project"
+            "itemKey"
+            "visited0"
+            "seen0"
+            "nodes0"
+            "maxDepth"
+          ]
+          (
+            prelude.checkRequired "gen-graph.foldReach" [
+              "roots"
+              "edges"
+              "target"
+              "project"
+              "itemKey"
+            ] args
+          );
+      inherit (checked)
+        roots
+        edges
+        target
+        project
+        itemKey
+        ;
+      visited0 = checked.visited0 or { };
+      seen0 = checked.seen0 or { };
+      nodes0 = checked.nodes0 or [ ];
+      maxDepth = checked.maxDepth or null;
       ik = callableAt "foldReach" "itemKey" "a string or null" itemKey;
       toKey = attrKey "foldReach";
       pj = callableAt "foldReach" "project" "a list of items" project;
@@ -455,7 +524,7 @@ let
         };
       };
     in
-    if maxDepth != null then
+    if builtins.seq checked (maxDepth != null) then
       throw (retiredMaxDepth "foldReach")
     else
       {

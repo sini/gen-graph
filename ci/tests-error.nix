@@ -1387,7 +1387,8 @@ in
               target = x;
             }) (g.edges id);
         };
-        # surface -> the name its refusal carries
+        # surface -> the name its refusal carries, and the primitive it names after the message when
+        # it is reached through another door (R6, den-hoag-7gp66: `gen-graph.<door>: … (in <prim>)`)
         surfaces = {
           fbNode = {
             who = "fbNode";
@@ -1419,24 +1420,31 @@ in
             f = g: genGraph.condensation g;
           };
           condensationClosure = {
-            who = "condensationOf";
+            who = "condensationClosure";
+            prim = "condensationOf";
             f = g: genGraph.condensationClosure g;
           };
           cycles = {
-            who = "lowlink";
+            who = "cycles";
+            prim = "lowlink";
             f = g: genGraph.cycles g;
           };
           cyclePaths = {
-            who = "lowlink";
+            who = "cyclePaths";
+            prim = "lowlink";
             f = g: genGraph.cyclePaths g;
           };
           cyclicEdgesWhere = {
-            who = "lowlink";
+            who = "cyclicEdgesWhere";
+            prim = "lowlink";
             f = g: genGraph.cyclicEdgesWhere (lab g) (_: true);
           };
         };
-        outside = who: from: "^gen-graph\\.${who}: edges \"${from}\" names a target outside `nodes`$";
-        notString = who: "^gen-graph\\.${who}: got int, expected a node identifier \\(a string\\)$";
+        inPrim = sv: if sv ? prim then " \\(in ${sv.prim}\\)" else "";
+        outside =
+          sv: from: "^gen-graph\\.${sv.who}: edges \"${from}\" names a target outside `nodes`${inPrim sv}$";
+        notString =
+          sv: "^gen-graph\\.${sv.who}: got int, expected a node identifier \\(a string\\)${inPrim sv}$";
         cell = msg: expr: {
           expr = builtins.deepSeq expr expr;
           expectedError = {
@@ -1465,13 +1473,13 @@ in
       grid (
         s: sv: fx: from: {
           name = "test-${s}-${fx}";
-          value = cell (outside sv.who from) (sv.f open.${fx});
+          value = cell (outside sv from) (sv.f open.${fx});
         }
       )
       // builtins.listToAttrs (
         map (s: {
           name = "test-${s}-non-string-node-with-an-edge";
-          value = cell (notString surfaces.${s}.who) (surfaces.${s}.f intNode);
+          value = cell (notString surfaces.${s}) (surfaces.${s}.f intNode);
         }) (builtins.attrNames surfaces)
       )
       // {
@@ -2049,16 +2057,22 @@ in
             edges = id: _entry: e id;
           }) "a";
         };
+        # the name the refusal carries where it is not the surface's own; `prim` is the primitive a
+        # door reaches (R6, den-hoag-7gp66: `gen-graph.<door>: … (in <prim>)`)
         door = {
+          fromRegistryDown = "reachableFrom";
+        };
+        prim = {
           reachableWhere = "reachableFrom";
           coScc = "canReach";
-          fromRegistryDown = "reachableFrom";
         };
         named = s: v: {
           expr = builtins.deepSeq (surfaces (at v)).${s} true;
           expectedError = {
             type = "ThrownError";
-            msg = "^gen-graph\\.${door.${s} or s}: got ${builtins.typeOf v}, expected a node identifier \\(a string\\)$";
+            msg = "^gen-graph\\.${door.${s} or s}: got ${builtins.typeOf v}, expected a node identifier \\(a string\\)${
+              if prim ? ${s} then " \\(in ${prim.${s}}\\)" else ""
+            }$";
           };
         };
         # The scalar residue OQ13 closed: int, bool and float are refused the same way as the
@@ -2083,6 +2097,79 @@ in
             value = named s scalars.${k};
           }) (builtins.attrNames scalars)
         ) names
+      );
+
+    # ── THE RECORD DOORS (den-hoag-7gp66 P1, spec §v1.2) ──
+    # Every published door taking a record composes gen-prelude's `checkRequired` (a RECORD door, open
+    # past its required set, R5) or `checkOptions` over it (an OPTIONS or MIXED door, closed). Each
+    # refusal names the door, the field and the accepted set. The shared cases are
+    # `tests/_fixtures/doors.nix`; `ci/tests/doors.nix` asserts the same refusals catchable.
+    flake.testsError.door-refusals =
+      let
+        F = import ./tests/_fixtures/doors.nix { inherit genGraph; };
+        quoted = fs: builtins.concatStringsSep ", " (map (f: "'${f}'") fs);
+        # the message is the door's text, not prelude's: an anchored literal, so a grown or reordered
+        # accepted set turns the cell red
+        exactly = m: "^" + builtins.replaceStrings [ "." "(" ")" ] [ "\\." "\\(" "\\)" ] m + "$";
+        cell = d: r: m: {
+          expr = builtins.seq (d.door r) true;
+          expectedError = {
+            type = "ThrownError";
+            msg = exactly m;
+          };
+        };
+        missing =
+          n: d:
+          cell d (builtins.removeAttrs d.good [ d.drop ])
+            "gen-graph.${n}: required field '${d.drop}' is missing (required: ${quoted d.required}) (in prelude.checkRequired)";
+        unknown =
+          n: d:
+          cell d (d.good // { ${F.unknown} = 1; })
+            "gen-graph.${n}: '${F.unknown}' is not an option of this door; the options are closed (accepted: ${quoted d.accepted}) (in prelude.checkOptions)";
+        family =
+          suffix: f: doors:
+          builtins.listToAttrs (
+            map (n: {
+              name = "test-${n}-${suffix}";
+              value = f n doors.${n};
+            }) (builtins.attrNames doors)
+          );
+      in
+      family "missing-field-is-refused-by-name" missing (F.records // F.mixed)
+      // family "unknown-option-is-refused-by-name" unknown (F.options // F.mixed);
+
+    # ── R6: A PRIMITIVE REACHED THROUGH A DOOR REFUSES UNDER THE DOOR'S NAME (den-hoag-7gp66 P1) ──
+    # `gen-graph.<door>: … (in <primitive>)` (spec R6 construction; cell 5 is `cycles`). Each door is
+    # driven on an accessor whose `edges` returns an int, or (`-on-a-target`) an int target, so the
+    # primitive's own check refuses.
+    flake.testsError.door-naming =
+      let
+        F = import ./tests/_fixtures/doors.nix { inherit genGraph; };
+        esc = builtins.replaceStrings [ "." "(" ")" ] [ "\\." "\\(" "\\)" ];
+        cells =
+          table: input: says:
+          map (
+            n:
+            let
+              r = table.${n};
+            in
+            {
+              name = "test-${n}-names-itself-in-${r.prim}";
+              value = {
+                expr = builtins.deepSeq (r.run input) true;
+                expectedError = {
+                  type = "ThrownError";
+                  msg = "^" + esc "gen-graph.${n}: ${says} (in ${r.prim})" + "$";
+                };
+              };
+            }
+          ) (builtins.attrNames table);
+      in
+      builtins.listToAttrs (
+        cells F.reached F.bad F.says
+        ++ map (c: c // { name = c.name + "-on-a-target"; }) (
+          cells F.reachedByTarget F.badTarget F.saysTarget
+        )
       );
   };
 }

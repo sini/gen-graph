@@ -154,11 +154,12 @@ let
   ];
 
   # The live counterpart to `forbidden`: the name this library reaches for where a tether would
-  # reach for nixpkgs. Every gen-graph source but THREE carries it, and all three exclusions are modules
+  # reach for nixpkgs. Every gen-graph source but TWO carries it, and both exclusions are modules
   # that depend on nothing: `lib/traverse.nix` is the `genericClosure`-based BFS core written in
-  # `builtins` alone, `lib/declared-edges.nix` is the declared relation's vocabulary — its accept-list,
-  # force and tag are all `builtins`, so it takes no prelude parameter at all — and `lib/key.nix` is
-  # the text key a caller's name is filed under, two `builtins` bindings. Those exclusions are what give
+  # `builtins` alone, and `lib/key.nix` is the text key a caller's name is filed under, two `builtins`
+  # bindings. `lib/declared-edges.nix` takes prelude for its two doors' shared record check
+  # (`checkRequired`, den-hoag-7gp66 P1); its accept-list, force and tag are still `builtins` alone.
+  # Those exclusions are what give
   # the assertion its teeth: the expected
   # list is a PROPER subset of the manifest, so a read returning one fixed text for every file
   # lands outside it either way — without the token the list collapses toward empty, with it the
@@ -217,6 +218,7 @@ in
   flake.tests.purity.test-scan-reads-are-live = {
     expr = liveReads;
     expected = [
+      "lib/declared-edges.nix"
       "lib/default.nix"
       "lib/edge-maps.nix"
       "lib/endpoints.nix"

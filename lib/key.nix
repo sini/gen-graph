@@ -37,9 +37,33 @@
 # type-heterogeneity abort this ruling closes does not arise for them (den-hoag-3w9e7's rescope).
 #
 # `who` is the door the caller invoked. A door binds its former once, `toKey = attrKey who;`, so a
-# key formed costs one application, as it did before the refusal existed. A door called inside
-# another door keeps its own name.
+# key formed costs one application, as it did before the refusal existed.
+#
+# ★ A SHARED PRIMITIVE REACHED THROUGH ANOTHER DOOR REFUSES UNDER THAT DOOR'S NAME (R6, den-hoag-7gp66):
+# the door passes `within door prim` where the primitive takes its `who`, and the refusal reads
+# `gen-graph.<door>: … (in <prim>)` — the caller is told the door they called, and where it failed.
+# Every refusal below renders `who` through `say`, which is the identity on a plain door name.
 let
+  within =
+    who: prim:
+    let
+      door = if builtins.isString who then who else who.door;
+    in
+    if door == prim then
+      prim
+    else
+      {
+        inherit door prim;
+        # A site that interpolates `who` directly still reads door-first, never a coercion abort.
+        __toString = s: "${s.door} (in ${s.prim})";
+      };
+  say =
+    who: text:
+    if builtins.isString who then
+      "gen-graph.${who}: ${text}"
+    else
+      "gen-graph.${who.door}: ${text} (in ${who.prim})";
+
   # `hasContext` second: on a context-free name the discard is the identity, so skipping it spares
   # the string copy it would make on the path every existing caller is on.
   attrKey =
@@ -55,8 +79,7 @@ let
   # abort. A door `seq`s its guard ahead of its body, because a body that only compares the id with
   # `==` never forces it into a type error and would answer a plausible wrong value instead
   # (ADR-0025 item 1: a value or a named refusal, never an interpreter error).
-  notAnIdentifier =
-    who: v: "gen-graph.${who}: got ${builtins.typeOf v}, expected a node identifier (a string)";
+  notAnIdentifier = who: v: say who "got ${builtins.typeOf v}, expected a node identifier (a string)";
 
   # For a door whose body keys, indexes or `attrKey`s the id: only a string is a node id there.
   identifier = who: v: if builtins.isString v then v else throw (notAnIdentifier who v);
@@ -92,16 +115,16 @@ let
     if callable f then
       f
     else
-      throw "gen-graph.${surface}: ${name} is a ${builtins.typeOf f}, not a function returning ${want}";
+      throw (say surface "${name} is a ${builtins.typeOf f}, not a function returning ${want}");
   badResult =
     surface: name: subject: want: v:
-    throw "gen-graph.${surface}: ${name} ${subject} returned a ${builtins.typeOf v}, not ${want}";
+    throw (say surface "${name} ${subject} returned a ${builtins.typeOf v}, not ${want}");
 
   # The same text for caller DATA a constructor reads (den-hoag-ndte): a field, or an element
   # named by its position, that is not the shape the read needs.
   notA =
     surface: what: want: v:
-    "gen-graph.${surface}: ${what} is a ${builtins.typeOf v}, not ${want}";
+    say surface "${what} is a ${builtins.typeOf v}, not ${want}";
 
   # ── THE PLAIN ACCESSOR'S RESULT IS A CLAIM TOO (den-hoag-0mqv1) ──
   # A surface taking `{ edges, ... }` applies `edges` and reads its result as a list. Callability is
@@ -114,10 +137,12 @@ let
     if builtins.isFunction f || callable f then
       f
     else
-      throw "gen-graph.${who}: the accessor's edges is a ${builtins.typeOf f}, not a function from a node id to a list of node ids";
+      throw (
+        say who "the accessor's edges is a ${builtins.typeOf f}, not a function from a node id to a list of node ids"
+      );
   notEdgeList =
     who: id: v:
-    "gen-graph.${who}: edges ${renderId id} returned a ${builtins.typeOf v}, not a list of node ids";
+    say who "edges ${renderId id} returned a ${builtins.typeOf v}, not a list of node ids";
 
   # A RETIRED argument is still accepted and refused by name (ADR-0025 item 1): dropping it from
   # closed formals would meet a stale caller with an uncatchable `unexpected argument`, and
@@ -136,6 +161,8 @@ let
 in
 {
   inherit
+    within
+    say
     attrKey
     callable
     callableAt

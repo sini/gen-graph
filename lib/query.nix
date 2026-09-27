@@ -22,6 +22,7 @@ let
     nodeKey
     notA
     renderId
+    within
     ;
   regex = import ./regex.nix { inherit prelude; };
   # The key of the empty language: a step deriving it can reach no accepting state, so the
@@ -46,12 +47,17 @@ let
   # would answer, and answer about a domain the caller never stated. A required formal makes
   # the omission report itself at the constructor, naming the missing argument, which is the
   # loudest thing the substrate offers.
+  # RECORD door (den-hoag-7gp66 P1, R5): every field required and none closed — a missing one is
+  # refused by name, catchably, and an extra one is admitted. The check is seq'd onto the result, so
+  # it fires when the record is applied.
   labeledFrom =
-    {
-      perLabel,
-      nodes,
-    }:
+    args:
     let
+      checked = prelude.checkRequired "gen-graph.labeledFrom" [
+        "perLabel"
+        "nodes"
+      ] args;
+      inherit (checked) perLabel nodes;
       perLabel' =
         if builtins.isAttrs perLabel then
           perLabel
@@ -64,7 +70,7 @@ let
         label: f: callableAt "labeledFrom" "perLabel.${label}" "a list of node ids" f
       ) perLabel';
     in
-    {
+    builtins.seq checked {
       inherit nodes;
       labeledEdges =
         id:
@@ -400,7 +406,7 @@ let
   # every `p`: `fbNode`'s per-endpoint cost depends on reach, so no threshold on the number of
   # p-edges bounds it, and routing between arms by that count inside the binder would be a
   # second default beside the door's (README, *The partition routing contract*). `p` never true
-  # costs 50,021 either way. A target outside `nodes` is refused by name under `lowlink`'s name.
+  # costs 50,021 either way. A target outside `nodes` is refused by this door's name, `(in lowlink)`.
   cyclicEdgesWhere =
     graph: p:
     let
@@ -408,7 +414,7 @@ let
       plain = forgetLabels graph;
       # The partition ARM by name, never the door: this consumer reads the tag map and
       # nothing else, so it has no stake in which algorithm the door defaults to.
-      inherit (partition.lowlink plain) sccOf;
+      inherit (partition.threaded.lowlink (within "cyclicEdgesWhere" "lowlink") plain) sccOf;
       hits = builtins.concatMap (
         from:
         map
@@ -686,15 +692,35 @@ let
   # `admission` is the canonical key of the residual follow expression at the arrival: the
   # admission policy that remains in force there, and the component a caller needs to state
   # a ⟨node, derivative-state⟩ collapse of its own.
+  # MIXED door (den-hoag-7gp66 P1, §v1.2): `checkOptions` over `checkRequired`, closed over the whole
+  # set — a missing field or an unknown one is refused by name, catchably, when the record is applied.
   queryArrivals =
-    {
-      graph,
-      from,
-      follow,
-      advance,
-      where ? (_: true),
-    }:
+    args:
     let
+      checked =
+        prelude.checkOptions "gen-graph.queryArrivals"
+          [
+            "graph"
+            "from"
+            "follow"
+            "advance"
+            "where"
+          ]
+          (
+            prelude.checkRequired "gen-graph.queryArrivals" [
+              "graph"
+              "from"
+              "follow"
+              "advance"
+            ] args
+          );
+      inherit (checked)
+        graph
+        from
+        follow
+        advance
+        ;
+      where = checked.where or (_: true);
       closure = builtins.genericClosure {
         startSet = [
           {
@@ -760,26 +786,28 @@ let
     # raw id, so a scalar `from` never reaches `genericClosure`'s native comparator and den-hoag-7gp66
     # OQ13's string-only ruling does not reach this guard (den-hoag-3w9e7's rescope names the 8
     # doors it does reach; this is not one of them).
-    builtins.seq (nodeKey "queryArrivals" from) (
-      builtins.seq (callableAt "queryArrivals" "where" "a bool" where) (
-        builtins.seq (callableAt "queryArrivals" "advance" "an int" advance) (
-          map
-            (item: {
-              inherit (item) node distance via;
-              admission = regex.stateKey item.st;
-            })
-            (
-              builtins.filter (
-                item:
-                regex.nullable item.st
-                && (
-                  let
-                    w = where item.node;
-                  in
-                  if builtins.isBool w then w else badResult "queryArrivals" "where" (renderId item.node) "a bool" w
-                )
-              ) closure
-            )
+    builtins.seq checked (
+      builtins.seq (nodeKey "queryArrivals" from) (
+        builtins.seq (callableAt "queryArrivals" "where" "a bool" where) (
+          builtins.seq (callableAt "queryArrivals" "advance" "an int" advance) (
+            map
+              (item: {
+                inherit (item) node distance via;
+                admission = regex.stateKey item.st;
+              })
+              (
+                builtins.filter (
+                  item:
+                  regex.nullable item.st
+                  && (
+                    let
+                      w = where item.node;
+                    in
+                    if builtins.isBool w then w else badResult "queryArrivals" "where" (renderId item.node) "a bool" w
+                  )
+                ) closure
+              )
+          )
         )
       )
     );
