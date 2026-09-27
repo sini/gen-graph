@@ -24,6 +24,9 @@ let
     renderId
     ;
   regex = import ./regex.nix { inherit prelude; };
+  # The key of the empty language: a step deriving it can reach no accepting state, so the
+  # walks prune there. Compared as a key, never as a rendering — `stateKey` is a digest.
+  emptyKey = regex.stateKey regex.empty;
   global = import ./global.nix { inherit prelude; };
   partition = import ./partition.nix { inherit prelude; };
 
@@ -483,7 +486,7 @@ let
               k = regex.stateKey st';
               target = targetOf "query" item.node e;
             in
-            if k == "0" then
+            if k == emptyKey then
               [ ]
             else
               [
@@ -591,7 +594,7 @@ let
               k = regex.stateKey st';
               target = targetOf "query" item.node e;
             in
-            if k == "0" then
+            if k == emptyKey then
               [ ]
             else
               [
@@ -720,7 +723,7 @@ let
                 inherit label;
               };
             in
-            if k == "0" then
+            if k == emptyKey then
               [ ]
             else
               [
@@ -818,7 +821,7 @@ let
               st' = builtins.seq label (regex.deriv label st);
               target = targetOf "query" node e;
             in
-            if regex.stateKey st' == "0" || visited ? ${toKey target} then
+            if regex.stateKey st' == emptyKey || visited ? ${toKey target} then
               [ ]
             else
               go (visited // { ${toKey target} = true; }) (

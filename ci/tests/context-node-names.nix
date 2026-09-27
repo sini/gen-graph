@@ -746,7 +746,13 @@ in
           (regex.lit "include")
         ]
       );
-      expected = "('include|'parent)";
+      # keyed exactly as its context-free twin: context is not part of a label's key
+      expected = regex.stateKey (
+        regex.alt [
+          (regex.lit "parent")
+          (regex.lit "include")
+        ]
+      );
     };
     # Pr1
     test-fold-preorder-keyed-by-a-context-carrying-node = {

@@ -4,6 +4,22 @@ let
   r = regex;
   # acceptance oracle: fold derivatives over a word, check nullability
   accepts = re: word: r.nullable (builtins.foldl' (st: l: r.deriv l st) re word);
+  rep = n: c: builtins.concatStringsSep "" (builtins.genList (_: c) n);
+  nested = k: (rep k "(") + "a" + (rep k ")");
+  # `(`×k a `)+`×k, 3k+1 characters; `plus` holds its argument twice at every level
+  plusNest = k: (rep k "(") + "a" + (rep k ")+");
+  # `n` levels of `seq [ (lit "a") (star acc) ]`, built through the constructors alone
+  chain =
+    n:
+    builtins.foldl' (
+      acc: _:
+      r.seq [
+        (r.lit "a")
+        (r.star acc)
+      ]
+    ) (r.lit "a") (builtins.genList (i: i) n);
+  # a key's width, whichever authority computes the digest
+  keyWidth = builtins.stringLength (r.stateKey (r.lit "a"));
 in
 {
   flake.tests.regex = {
@@ -311,6 +327,71 @@ in
     };
     test-parse-dangling-alt-throws = {
       expr = (builtins.tryEval (r.stateKey (r.parse "a |"))).success;
+      expected = false;
+    };
+
+    # ── the length cap, armed both sides of it ──
+    test-parse-length-cap-refuses-by-name = {
+      expr = (builtins.tryEval (r.stateKey (r.parse (rep 1001 "a")))).success;
+      expected = false;
+    };
+    test-control-parse-at-the-cap-still-parses = {
+      expr = r.stateKey (r.parse (rep 1000 "a")) == r.stateKey (r.lit (rep 1000 "a"));
+      expected = true;
+    };
+
+    # ── nothing inside the accept band aborts ──
+    # 91 characters, 30 levels of `(…)+`: the rendered key was 5·2^30 − 2 characters and `alt`
+    # interned it as an attribute name, an uncatchable `Size of symbol exceeds 4GiB` abort.
+    test-parse-plus-family-keys-in-bounded-space = {
+      expr = builtins.stringLength (r.stateKey (r.parse (plusNest 30)));
+      expected = keyWidth;
+    };
+    # 624 nested groups are one level past the parser's call-depth boundary (623 returns).
+    test-parse-deep-nesting-refuses-before-the-uncatchable-abort = {
+      expr = (builtins.tryEval (r.stateKey (r.parse (nested 624)))).success;
+      expected = false;
+    };
+
+    # ── the cap is a parameter a nested caller can lower ──
+    test-parse-maxLength-is-a-parameter = {
+      expr = (builtins.tryEval (r.stateKey (r.parseWith { maxLength = 500; } (rep 600 "a")))).success;
+      expected = false;
+    };
+
+    # ── the key is injective on constructed terms, and exists only on them ──
+    test-a-label-carrying-metacharacters-keys-apart-from-a-composite = {
+      expr = r.stateKey (r.lit "a*") == r.stateKey (r.star (r.lit "a"));
+      expected = false;
+    };
+    test-a-hand-built-term-is-refused-by-name = {
+      expr =
+        (builtins.tryEval (
+          r.stateKey (
+            r.star {
+              t = "lit";
+              l = "a";
+            }
+          )
+        )).success;
+      expected = false;
+    };
+
+    # ── a constructor-built term keys at any depth (den-hoag-regex-statekey-ceiling-4ok8y) ──
+    # `chain n` nests n levels through the constructors, no parse, folded strictly. Each node's
+    # key is forced when the node is built, so reading the root's key walks nothing: before
+    # that, forcing it walked the chain and met the call-depth ceiling (near 2,500 levels under
+    # a sha256 key, 3,333 under Lix; near 450 under a minted key), an abort tryEval cannot catch.
+    test-a-constructor-chain-past-the-old-ceiling-keys = {
+      expr = builtins.stringLength (r.stateKey (chain 5000)) == keyWidth;
+      expected = true;
+    };
+    test-control-a-constructor-chain-below-the-old-ceiling-keys = {
+      expr = builtins.stringLength (r.stateKey (chain 300)) == keyWidth;
+      expected = true;
+    };
+    test-the-deep-chain-key-is-a-function-of-its-depth = {
+      expr = r.stateKey (chain 5000) == r.stateKey (chain 4999);
       expected = false;
     };
   };

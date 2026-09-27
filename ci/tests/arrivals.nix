@@ -306,7 +306,7 @@ in
         node = "s";
         distance = 0;
         via = null;
-        admission = "'p*";
+        admission = r.stateKey (r.star (r.lit "p"));
       };
     };
     test-arrivals-carry-the-delivering-edge = {

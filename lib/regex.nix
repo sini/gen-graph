@@ -25,47 +25,55 @@
 # minimality rule, never a termination one.
 #
 # Labels are the edge-kind names of a labeled graph (Néron et al. 2015); a
-# query's path constraint is a word in this alphabet. Labels are expected to
-# match [A-Za-z0-9_-]+ (the parse alphabet): a label containing rendering
-# metacharacters (* | . parens) can collide with a composite's canonical
-# rendering in stateKey — constructor callers own this constraint (see README).
+# query's path constraint is a word in this alphabet; the parse alphabet is
+# [A-Za-z0-9_-]+.
 { prelude }:
 let
-  inherit (import ./key.nix) attrKey;
+  # ── the canonical key is a Merkle digest ─────────────────────────────────
+  # Every node a constructor builds carries `k`, the sha256 of its tag and its children's `k`.
+  # `plus r` holds one `r` twice, and Nix shares that value, so its `k` thunk is forced once
+  # however many parents reach it: a key costs one hash per node of the DAG, never a rendering
+  # of the tree the DAG unfolds to (5·2^k − 2 characters for k nested `(…)+`, den-hoag-2dx7j).
+  # The preimage is injective — one tag character, then a label or 64-hex child keys of fixed
+  # width — so two normal forms share a key only by a sha256 collision, and a label carrying
+  # `* | . ( )` no longer collides with a composite as the old rendering did.
+  #
+  # The key exists only on a term the constructors built: normal form is their invariant
+  # (Owens, Reppy & Turon's strategy, above), so a hand-built attrset was never canonically
+  # keyed, and it is refused by name rather than keyed.
+  #
+  # Each composite is built with its key already forced (`builtins.seq k { … }`). The constructors
+  # force every child before building on it, so on a term already built (e.g. by `builtins.foldl'`)
+  # a child's key is a value by then, and reading any node's key walks nothing: such a term keys in
+  # constant stack at any depth. Before this, forcing a root's key walked the whole term and met the
+  # evaluator's call-depth ceiling near 2,500 levels (den-hoag-regex-statekey-ceiling-4ok8y). A term
+  # accumulated LAZILY through the constructors is constructed on its first read, and the recursion
+  # of that construction is the caller's: measured at 1,110 levels, with or without this.
+  notATerm = "gen-graph.regex: this value was not built by the regex constructors (eps, empty, any, lit, seq, alt, star, opt, plus, deriv, parse), so it has no canonical key";
+
   # ── constructors normalize on the way in ─────────────────────────────────
   eps = {
     t = "eps";
+    k = builtins.hashString "sha256" "e";
   };
   empty = {
     t = "empty";
+    k = builtins.hashString "sha256" "0";
   };
   any = {
     t = "any";
+    k = builtins.hashString "sha256" "_";
   };
   lit = l: {
     t = "lit";
     inherit l;
+    k = builtins.hashString "sha256" ("'" + l);
   };
 
   isT = t: r: r.t == t;
 
-  # canonical rendering; alt is sorted by this, making it a true canonical form
-  stateKey =
-    r:
-    if r.t == "eps" then
-      "e"
-    else if r.t == "empty" then
-      "0"
-    else if r.t == "any" then
-      "_"
-    else if r.t == "lit" then
-      "'" + r.l
-    else if r.t == "star" then
-      stateKey r.r + "*"
-    else if r.t == "seq" then
-      "(" + builtins.concatStringsSep "." (map stateKey r.rs) + ")"
-    else
-      "(" + builtins.concatStringsSep "|" (map stateKey r.rs) + ")";
+  # canonical key; alt is sorted by this, making it a true canonical form
+  stateKey = r: r.k or (throw notATerm);
 
   seq =
     rs:
@@ -80,34 +88,47 @@ let
     else if builtins.length noEps == 1 then
       builtins.head noEps
     else
-      {
+      let
+        ks = builtins.catAttrs "k" noEps;
+        k =
+          if builtins.length ks == builtins.length noEps then
+            builtins.hashString "sha256" ("." + builtins.concatStringsSep "" ks)
+          else
+            throw notATerm;
+      in
+      builtins.seq k {
         t = "seq";
         rs = noEps;
+        inherit k;
       };
 
   alt =
     rs:
     let
-      toKey = attrKey "regex.alt";
       flat = builtins.concatMap (r: if isT "alt" r then r.rs else [ r ]) rs;
       noEmpty = builtins.filter (r: !(isT "empty" r)) flat;
       # dedup + sort by canonical key (ACI: assoc by flatten, comm by sort, idem by dedup)
       byKey = builtins.listToAttrs (
         map (r: {
-          name = toKey (stateKey r);
+          name = stateKey r;
           value = r;
         }) noEmpty
       );
-      canon = map (k: byKey.${k}) (builtins.sort builtins.lessThan (builtins.attrNames byKey));
+      keys = builtins.sort builtins.lessThan (builtins.attrNames byKey);
+      canon = map (k: byKey.${k}) keys;
     in
     if canon == [ ] then
       empty
     else if builtins.length canon == 1 then
       builtins.head canon
     else
-      {
+      let
+        k = builtins.hashString "sha256" ("|" + builtins.concatStringsSep "" keys);
+      in
+      builtins.seq k {
         t = "alt";
         rs = canon;
+        inherit k;
       };
 
   star =
@@ -117,9 +138,12 @@ let
     else if isT "eps" r || isT "empty" r then
       eps
     else
-      {
+      let
+        k = builtins.hashString "sha256" ("*" + r.k or (throw notATerm));
+      in
+      builtins.seq k {
         t = "star";
-        inherit r;
+        inherit r k;
       };
 
   opt =
@@ -186,10 +210,25 @@ let
   # Character-level tokenizer + recursive-descent over the token list; index
   # threaded, no regex builtins (builtins.match over user strings backtracks and
   # can stack-overflow — see REFERENCE.md).
-  parse =
+  # ADR-0032 (a named refusal where a real ceiling exists): the parser's recursion is bounded
+  # by the pattern's length, knowable before the first frame. Nested groups bind: `(`×k a `)`×k
+  # returns at k = 623 (1,247 characters) and aborts at 624, and 200 caller frames move that
+  # boundary by 13 levels. The default leaves ~1,900 caller frames of headroom. LOWER it to match
+  # the stack a caller is itself nested in; raising it past the measured boundary is out of
+  # contract and meets the uncatchable abort this cap exists to replace.
+  parseMaxLength = 1000;
+
+  parseWith =
+    {
+      maxLength ? parseMaxLength,
+    }:
     s:
     let
-      err = m: throw "gen-graph.regex.parse: ${m} (in ${builtins.toJSON s})";
+      err =
+        m:
+        throw "gen-graph.regex.parse: ${m} (in ${
+          builtins.toJSON (if n > 60 then builtins.substring 0 60 s + "…" else s)
+        })";
       n = builtins.stringLength s;
       isLabelChar =
         c:
@@ -320,7 +359,14 @@ let
         else
           pExpr 0;
     in
-    if result.i == len then result.re else err "trailing tokens";
+    if n > maxLength then
+      err "pattern length ${toString n} exceeds the stated cap of ${toString maxLength} characters; past it the parser's recursion meets the evaluator's call-depth ceiling, an abort tryEval cannot catch (lower the cap with parseWith { maxLength; } when calling from deep in a stack)"
+    else if result.i == len then
+      result.re
+    else
+      err "trailing tokens";
+
+  parse = parseWith { };
 in
 {
   inherit
@@ -337,5 +383,6 @@ in
     deriv
     stateKey
     parse
+    parseWith
     ;
 }

@@ -234,13 +234,13 @@ in
         ];
         arrivals = [
           {
-            admission = "'x*";
+            admission = regex.stateKey x;
             distance = 0;
             node = "a";
             via = null;
           }
           {
-            admission = "'x*";
+            admission = regex.stateKey x;
             distance = 1;
             node = "b";
             via = {

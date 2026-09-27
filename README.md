@@ -1159,23 +1159,27 @@ to whoever supplied the predicate.
 ```
 regex.lit / seq / alt / star / opt / plus / any / eps / empty   # constructors
 regex.parse : string → regex                                     # compact form
+regex.parseWith : { maxLength ? 1000 } → string → regex          # the same, cap stated
 ```
 
 Grammar (`parse`): whitespace = sequence, `|` = alternation (binds loosest), postfix `*` `?`
 `+`, parentheses group, `_` is the any-label wildcard, labels are `[A-Za-z0-9_-]+`, and `""`
 parses to `eps`. Postfix is whitespace-insensitive — `a *` is `a*`. Malformed input throws a
-named `gen-graph.regex.parse: …` error.
+named `gen-graph.regex.parse: …` error. So does a pattern longer than the cap (1,000
+characters by default): past it the parser's recursion would meet the evaluator's call-depth
+ceiling, an abort `tryEval` cannot catch. A caller nested deep in its own stack lowers it with
+`parseWith { maxLength = …; }`.
 
 ```nix
 regex.parse "contains* member"          # zero-or-more contains, then one member
 regex.parse "own | include owni"        # a declaration here, or one hop through an include
 ```
 
-> **Label alphabet caveat.** Regex composites render to a canonical `stateKey` for the
-> derivative seen-set. A constructor-supplied `lit` label containing rendering metacharacters
-> (`* | . ( )`) can collide with a composite's rendering, so `lit` labels are expected to match
-> `[A-Za-z0-9_-]+` (the `parse` alphabet). Callers own this constraint (see the `regex.nix`
-> header).
+`regex.stateKey r` is the canonical key of a constructor-built term: a sha256 Merkle digest
+over the normal form, one hash per constructed node, compared and never read. Its preimage is
+injective, so a `lit` label carrying `* | . ( )` keys apart from any composite. Keys are
+computed as terms are built, so reading one on a term already built costs constant stack at
+any depth. A value the constructors did not build has no key, and `stateKey` refuses it by name.
 
 **`query`** runs a labeled query in one of five modes:
 
@@ -1277,10 +1281,10 @@ queryArrivals {
   advance = s: s.distance + 1;    # REQUIRED — the per-step distance rule
   # where ? (_: true)
 }
-# → [ { node = "x"; distance = 1; via = { from = "s"; label = "a"; }; admission = "e"; }
-#     { node = "x"; distance = 1; via = { from = "s"; label = "b"; }; admission = "e"; } ]
-#   ("e" is stateKey's rendering of eps — nothing further is admitted here; a literal
-#    label `e` would render `'e`)
+# → [ { node = "x"; distance = 1; via = { from = "s"; label = "a"; }; admission = regex.stateKey regex.eps; }
+#     { node = "x"; distance = 1; via = { from = "s"; label = "b"; }; admission = regex.stateKey regex.eps; } ]
+#   (the key of eps: nothing further is admitted here. `admission` is a digest, compared and
+#    never read)
 ```
 
 `all` answers that query `[ "x" ]`. Its seen-key is ⟨node, derivative-state⟩ and an
@@ -1530,7 +1534,7 @@ The algorithms and design principles draw from:
 - **Tarjan (1972)** — *Depth-First Search and Linear Graph Algorithms*. *Implements.* The pre-order traversal combinators (`foldPreorder`, `expandPreorder`, `foldReach`) fold in DFS pre-order — a frame before its children, siblings in list order, each frame visited once via a first-occurrence visited set. First-occurrence is Tarjan's pre-order discovery numbering; `genericClosure` (BFS, single-keyed, payload-blind) structurally cannot express the order, payload or edge exposure these carry. Separately, **Lemma 9 (p.155) is the definition anchor** the SCC-partition sites cite — the strongly connected components as equivalence classes of mutual reachability; the paper does **not** supply the condensation/quotient construction, which is anchored at Mokhov (2017) §4.6. **`lowlink` implements STRONGCONNECT**, the SCC procedure of Theorem 13: DFS numbering, the stack of points, and the LOWLINK root test of Lemma 12. It is iterated rather than recursed — one `genericClosure` step per push, edge examined, frame finished or member popped, over a persistent 8-ary trie index — so its cost is Θ((n + m) · log₈ n), not the paper's O(V + E). It departs from the paper in one stated respect: a component is tagged by its smallest member, the library's contract, not by its root.
 - **Bentley & Saxe (1980)** — *Decomposable Searching Problems I: Static-to-Dynamic Transformation*. *Implements.* The pre-order walks' visited set: membership is a decomposable searching problem, so the static structure (a native attrset) is made dynamic by the logarithmic method — a flat buffer of 32 keys carried into levels of 32·2ⁱ keys as a binary counter — and each key is copied O(log(n/32)) times rather than once per later insert (`lib/preorder.nix`, `levels`).
 - **Meijer, Fokkinga & Paterson (1991)** — *Functional Programming with Bananas, Lenses, Envelopes and Barbed Wire*. *Informed by.* `foldPreorder` has the shape of a hylomorphism: the visited-set coalgebra unfolds the (possibly cyclic) graph into its finite DFS spanning forest, which `expand` folds (catamorphism) into the accumulator. `expandPreorder` and `foldReach` specialize that accumulator to an ordered witness list — an ordered, payload-carrying fold rather than a set-returning closure.
-- **Brzozowski (1964)** — *Derivatives of Regular Expressions*. *Implements.* The labeled-query `follow` kernel steps a Brzozowski derivative of the label regex alongside the graph walk; `deriv l r` and `nullable r` are the classical derivative and nullability functions, so a path's label word is accepted iff folding `deriv` over it lands in a nullable state. **The termination guarantee is also his**: Theorem 5.2 — "every regular expression has only a finite number of dissimilar derivatives" — where the similarity of Definition 5.2 is the ACI identities of *alternation only* (`R+R=R`, `P+Q=Q+P`, `(P+Q)+R=P+(Q+R)`). That is what bounds the state set and makes the canonical `stateKey` a sound seen-set key, so the `all` mode's (node × derivative-state) product automaton terminates on cyclic graphs. The bound holds *modulo* those identities, which means the normalization has to be performed rather than merely be available — Brzozowski's own proof (Appendix II) names `R+R=R` as the identity that terminates the process.
+- **Brzozowski (1964)** — *Derivatives of Regular Expressions*. *Implements.* The labeled-query `follow` kernel steps a Brzozowski derivative of the label regex alongside the graph walk; `deriv l r` and `nullable r` are the classical derivative and nullability functions, so a path's label word is accepted iff folding `deriv` over it lands in a nullable state. **The termination guarantee is also his**: Theorem 5.2 — "every regular expression has only a finite number of dissimilar derivatives" — where the similarity of Definition 5.2 is the ACI identities of *alternation only* (`R+R=R`, `P+Q=Q+P`, `(P+Q)+R=P+(Q+R)`). That is what bounds the state set and makes the canonical `stateKey` (a Merkle digest over the normal form) a sound seen-set key, so the `all` mode's (node × derivative-state) product automaton terminates on cyclic graphs. The bound holds *modulo* those identities, which means the normalization has to be performed rather than merely be available — Brzozowski's own proof (Appendix II) names `R+R=R` as the identity that terminates the process.
 - **Owens, Reppy & Turon (2009)** — *Regular-expression Derivatives Re-examined*. *Implements — the enlarged normalization, not the finiteness theorem.* Definition 4.1 is a strict superset of Brzozowski's similarity: on top of the ACI identities of alternation it adds sequence flattening with unit/zero absorption and star collapse, and it supplies the smart-constructor strategy this library follows, normalizing on the way in rather than canonicalizing after the fact. Owens, Reppy & Turon credit the finiteness result to Brzozowski themselves (§3.3, §4.1) and state no termination theorem for the enlarged rule set; relying on the composite is folklore, and safe in this direction, because every added identity is semantics-preserving and size-decreasing and so can only merge states that ACI alone would have kept apart. §4.2's character-set merge (`alt` of `any` with a literal) is **not** implemented — a minimality rule, never a termination one.
 - **Néron, Tolmach, Visser & Wachsmuth (2015)** — *A Theory of Name Resolution*. *Implements.* Beyond parent-chain resolution (above), the labeled query surface generalizes scope-graph reachability to arbitrary edge labels: `query`'s `follow` is a reachability regex over labels, and the `visible`/`layers` specificity order generalizes Néron's D < I < P label order.
 - **Apt, Blair & Walker (1988)** — *Towards a Theory of Declarative Knowledge*, Lemma 1. *Implements — the graph half only.* The lemma is a biconditional between a program property and a graph property: no cycle of the dependency graph contains a negative edge. `cyclicEdgesWhere` computes that graph property for a caller-supplied notion of "negative", and the construction is the paper's **own** proof method for the converse — decompose the dependency graph into strongly connected components (which is `condensation`), then read the retained labelled edges against that partition. gen-graph has no programs, no relation symbols and no clauses, and does not know which labels are negative, so it computes the graph side and names it accordingly; the program-level word belongs to a caller that has programs. The archived text carries an OCR hazard inside the converse half of that proof (a flattened inequality), so its *prose* is cited and no inequality from it is lifted into code, comment or oracle — the stratum-index arithmetic plays no part here, only the decomposition.
