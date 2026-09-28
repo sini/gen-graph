@@ -14,13 +14,52 @@ let
     ${F.unknown} = 1;
   };
   each = f: builtins.mapAttrs (_: f);
-  guarded = builtins.filter (n: F.records.${n} ? misplaced) (builtins.attrNames F.records);
-  guardedRows = builtins.listToAttrs (
-    map (n: {
-      name = n;
-      value = F.records.${n};
-    }) guarded
+
+  # ── THE CHAINED DOORS, ENUMERATED FROM THE SURFACE (G10, P6) ──
+  # Every options door the library publishes (depth <= 2; closed, nothing required), read off its
+  # `__contract` rather than a hand list, so a new one is seen whether or not a row was written.
+  isDoor = v: builtins.isAttrs v && v ? __contract && v ? __functor;
+  surfaceDoors =
+    prefix: set:
+    builtins.concatMap (
+      k:
+      let
+        p = if prefix == "" then k else "${prefix}.${k}";
+        r = builtins.tryEval set.${k};
+      in
+      if !r.success then
+        [ ]
+      else if isDoor r.value then
+        [
+          {
+            name = p;
+            value = r.value;
+          }
+        ]
+      else if prefix == "" && builtins.isAttrs r.value && !(r.value ? __functor) then
+        surfaceDoors p r.value
+      else
+        [ ]
+    ) (builtins.attrNames set);
+  optionDoors = builtins.listToAttrs (
+    builtins.filter (d: !d.value.__contract.open && d.value.__contract.required == [ ]) (
+      surfaceDoors "" genGraph
+    )
   );
+  # Derived: the options step applied to `{ }` is an open record door.
+  chainedAtOnce = builtins.filter (
+    n:
+    let
+      s = builtins.tryEval (optionDoors.${n} { });
+    in
+    s.success && isDoor s.value && s.value.__contract.open
+  ) (builtins.attrNames optionDoors);
+  # Every chained door: the derived ones, and each fixture row pairing an options step with a record
+  # step further along (`queryFold`'s record is its fourth operand; `closureOf` is not a surface name).
+  chained = builtins.filter (n: builtins.elem n chainedAtOnce || F.records ? ${n}) (
+    builtins.attrNames (optionDoors // F.options)
+  );
+  optionsOf = n: (optionDoors.${n} or F.options.${n}.door).__contract.optional;
   flag =
     v: names:
     builtins.listToAttrs (
@@ -68,10 +107,59 @@ in
       expr = each (d: applied d.step (d.good // extra)) F.records;
       expected = each (_: true) F.records;
     };
-    # G10: an option of the step's own options step, given on the record, is refused by name.
-    test-a-misplaced-option-is-refused-at-every-guarded-record-step = {
-      expr = each (d: applied d.step (d.good // { ${d.misplaced} = 1; })) guardedRows;
-      expected = each (_: false) guardedRows;
+    # G10 over EVERY chained door: each of its options step's own names (from that step's
+    # `__contract`), given on the record, is refused. The answer is the names ADMITTED.
+    test-every-option-is-refused-at-every-chained-record-step = {
+      expr = builtins.listToAttrs (
+        map (n: {
+          name = n;
+          value = builtins.filter (o: applied F.records.${n}.step (F.records.${n}.good // { ${o} = 1; })) (
+            optionsOf n
+          );
+        }) chained
+      );
+      expected = builtins.listToAttrs (
+        map (n: {
+          name = n;
+          value = [ ];
+        }) chained
+      );
+    };
+    # P6: every options door on the surface is classified, a chained one has a `records` row to be
+    # guarded on, and none is waved through as `notChained`. `chainedAtOnce` is pinned as the
+    # enumerator's live control: a walk that found nothing would leave both lists empty.
+    test-every-chained-door-on-the-surface-is-a-guarded-row = {
+      expr = {
+        unclassified = builtins.filter (n: !(F.records ? ${n}) && !(builtins.elem n F.notChained)) (
+          builtins.attrNames optionDoors
+        );
+        chainedWithoutRow = builtins.filter (n: !(F.records ? ${n})) chainedAtOnce;
+        inherit chainedAtOnce;
+        chained = builtins.length chained;
+      };
+      expected = {
+        unclassified = [ ];
+        chainedWithoutRow = [ ];
+        chainedAtOnce = [
+          "ancestorsOf"
+          "condensationClosure"
+          "dependents"
+          "expandPreorder"
+          "foldPreorder"
+          "foldReach"
+          "fromScan"
+          "pathsBetween"
+          "query"
+          "queryArrivals"
+          "seededFixpoint"
+          "topoOrder"
+          "topoOrderKahn"
+          "transitiveClosure"
+          "transitiveReduction"
+        ];
+        # the fifteen, `queryFold` and `closureOf`
+        chained = 17;
+      };
     };
     test-every-record-step-publishes-the-row-as-its-contract = {
       expr = each (d: {

@@ -25,6 +25,17 @@ in
 {
   unknown = "notAFieldOfThisDoor";
 
+  # The options steps whose next step is NOT a record door, so there is no record for G10 to guard:
+  # a positional operand (`fixpoint`, `fromRegistry`, `regex.parseWith`) or a value (`mkGraph`).
+  # `ci/tests/doors.nix` enumerates every options door on the published surface and requires each
+  # to be here or to have a `records` row, so a new chained door cannot go unguarded unseen (P6).
+  notChained = [
+    "mkGraph"
+    "fixpoint"
+    "fromRegistry"
+    "regex.parseWith"
+  ];
+
   # ── EVERY OPTIONS STEP (P2 rule 2) ──
   # Closed: `{ }` is admitted, an unknown field is refused catchably when the options are applied
   # (G1/G4), and the published contract is this row's `optional` (D3). `name` is the door's name
@@ -249,6 +260,7 @@ in
           "nodes"
           "edges"
         ];
+        misplaced = "keyOf";
       };
       topoOrderKahn = accessor (G.topoOrderKahn { }) // {
         drop = "nodes";
@@ -256,6 +268,7 @@ in
           "nodes"
           "edges"
         ];
+        misplaced = "keyOf";
       };
       materializeParents = {
         step = G.materializeParents;

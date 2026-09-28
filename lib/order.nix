@@ -204,6 +204,9 @@ let
           "lessThan"
         ];
       } (o: graph (topoOrderBody who gated (o.keyOf or (node: node)) (o.lessThan or builtins.lessThan)));
+      # `keyOf` / `lessThan` on the graph record are refused by name (G10): an accessor value can
+      # carry a `keyOf` of its own (gen-view's `accumulatorRelation`), which the open record would
+      # otherwise admit and never read.
       graph = door {
         name = "gen-graph.${who}";
         required = [
@@ -211,6 +214,7 @@ let
           "edges"
         ];
         open = true;
+        optionsStep = options;
       };
     in
     options;

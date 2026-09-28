@@ -1029,19 +1029,18 @@ in
           control = producersFirst;
         };
       };
-    # ★ THE PRICE OF THE OPEN RECORD (den-hoag-nvrl1, arm B): an option written on the graph
-    # record is IGNORED, not refused. A `lessThan` that is not a function is refused as an option
-    # and never read on the record, so a caller migrating from the one-record form moves `keyOf`
-    # and `lessThan` into the options or loses them without a word. The subject is which field
-    # is read, so the cell asserts it without pinning the door's order (clause 3).
-    test-topo-option-on-the-graph-record-is-ignored =
+    # An option written on the graph record is REFUSED, not ignored (G10, `optionsStep`): the
+    # record is open (R5) except for its own options step's names, so a caller migrating from the
+    # one-record form, or passing an accessor that carries a `keyOf` of its own, is told rather
+    # than silently ordered by identity. The by-name message is `door-refusals`'.
+    test-topo-option-on-the-graph-record-is-refused =
       let
         antichain = acc [
           "q"
           "p"
           "r"
         ] { };
-        # not a function: APPLIED it refuses by name, IGNORED it is never read
+        # not a function: refused as an option, and refused on the record as misplaced
         bad = 1;
         ran = v: (builtins.tryEval (builtins.deepSeq v true)).success;
       in
@@ -1051,7 +1050,7 @@ in
           asOption = ran (topoOrder { lessThan = bad; } antichain);
         };
         expected = {
-          onRecord = true;
+          onRecord = false;
           asOption = false;
         };
       };
