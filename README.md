@@ -492,7 +492,7 @@ except that each refusal names the door the caller invoked.
 `topoOrder { lessThan = …; }` is itself an ordering function; the graph record comes second and
 is **open**, so a record wider than `{ nodes, edges }` is ordered as it stands. The options set
 is closed by gen-prelude's shared `checkOptions`: a misspelt option is refused by name, catchably, when
-the options are applied. The graph record is a door too (P2): a graph argument that is not an
+the options are applied. The graph record is a door too: a graph argument that is not an
 attrset, or a record missing `nodes` or `edges`, is refused by name, catchably, when it is applied.
 ★ **Migration hazard.** A caller still written in the one-record form `topoOrder { nodes; edges; }`
 now hands its record to the OPTIONS set and is refused by name, catchably
@@ -1202,7 +1202,7 @@ value the constructors did not build, by the same name.
 query : { mode?; where?; order?; groupBy?; combine?; empty?; valueOf?; } → { graph; from; follow; } → result
 ```
 
-The options are ONE closed set, the same in every mode (den-hoag-nvrl1): an unknown option is
+The options are ONE closed set, the same in every mode: an unknown option is
 refused by name when `query opts` is formed, whatever the mode, and an option given on the query
 record is refused as misplaced. `groupBy` is required only in `visible` mode, and `combine` and
 `empty` only in `fixpoint` mode; each is refused by name at `query opts` when its mode lacks it —
