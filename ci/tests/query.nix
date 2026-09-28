@@ -391,7 +391,7 @@ in
                   "include"
                   "owni"
                 ];
-                groupBy = _: "decl";
+                groupBy = _: "decl"; # both answers compete for one name
               }
               {
                 graph = g;

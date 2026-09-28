@@ -34,7 +34,7 @@ g = {
 
 # Query
 graph.reachableFrom g "web"      # → [ "api" "cache" "database" ]
-graph.dependents    g "database" # → [ "api" "web" ]
+graph.dependents    { } g "database" # → [ "api" "web" ]
 graph.roots         g            # → [ "web" ]
 graph.cycles        g            # → []
 ```
@@ -120,8 +120,8 @@ reachableFrom  : { edges, ... } → id → [id]
 reachableWhere : { edges, ... } → id → (id → bool) → [id]
 canReach       : { edges, ... } → id → id → bool
 selfReachable  : { edges, ... } → id → bool
-ancestorsOf    : { parent, ... } → id → [id]
-pathsBetween   : { edges, maxDepth ? 2000, ... } → id → id → [[id]]
+ancestorsOf    : { maxDepth? } → { parent, ... } → id → [id]   # maxDepth is retired: refused by name
+pathsBetween   : { maxDepth ? 2000 } → { edges, ... } → id → id → [[id]]
 ```
 
 And their **amortized dual**, for a caller spending many traversals over one accessor. `hoistEdges`
@@ -163,10 +163,10 @@ graph.selfReachable cyclicGraph "a"   # → true
 graph.selfReachable dagGraph "a"      # → false
 ```
 
-**`ancestorsOf g startId`** — walks `parent` links upward. Returns the chain from immediate parent to root. Cycle-safe: stops if a visited id is seen again. A `genericClosure` over the parent chain, so it has no depth ceiling (the ceiling row below); a retired `maxDepth` on the accessor is refused by name.
+**`ancestorsOf { } g startId`** — walks `parent` links upward. Returns the chain from immediate parent to root. Cycle-safe: stops if a visited id is seen again. A `genericClosure` over the parent chain, so it has no depth ceiling (the ceiling row below); a retired `maxDepth` option is refused by name when `ancestorsOf opts` is formed, and one given on the accessor record is refused as misplaced.
 
 ```nix
-graph.ancestorsOf g "grandchild"
+graph.ancestorsOf { } g "grandchild"
 # → [ "child1" "root" ]
 ```
 
@@ -181,10 +181,10 @@ in map (graph.reachableVia succ) g.nodes           # …spend it n times
 
 Inside this library `cycles` and `fbNode` bind it and `dependentsOf` and `fbWork` deliberately do not — see their cost rows for the measurement each decision rests on.
 
-**`pathsBetween g startId endId`** — all acyclic paths from `startId` to `endId`. Each path is a list of ids including both endpoints. `maxDepth` on the accessor caps the path depth it will extend to; see the ceiling row below.
+**`pathsBetween { maxDepth ? 2000; } g startId endId`** — all acyclic paths from `startId` to `endId`. Each path is a list of ids including both endpoints. The `maxDepth` option caps the path depth it will extend to (given on the accessor record it is refused as misplaced); see the ceiling row below.
 
 ```nix
-graph.pathsBetween g "a" "d"
+graph.pathsBetween { } g "a" "d"
 # → [ [ "a" "b" "d" ] [ "a" "c" "d" ] ]   # diamond
 ```
 
@@ -198,9 +198,9 @@ occurrence wins) via a threaded visited set. They visit only what they reach, an
 frame's successors may be **demand-generated** (forced only when the frame is reached).
 
 ```
-foldPreorder   : { roots; key; expand; acc; visited?; surface ? "foldPreorder" } → { acc; visited }
-expandPreorder : { roots; key; edges; resolve?; emit?; seen0?; nodes0? }          → { nodes; seen }
-foldReach      : { roots; edges; target; project; itemKey; visited0?; seen0?; nodes0? } → { nodes; seen; visited }
+foldPreorder   : { visited?; surface ? "foldPreorder" } → { roots; key; expand; acc; } → { acc; visited }
+expandPreorder : { resolve?; emit?; seen0?; nodes0? } → { roots; key; edges; }          → { nodes; seen }
+foldReach      : { visited0?; seen0?; nodes0? } → { roots; edges; target; project; itemKey; } → { nodes; seen; visited }
 ```
 
 **`foldPreorder`** — the primitive. A pre-order DFS fold with a caller-owned accumulator and a
@@ -237,7 +237,7 @@ precondition.
 
 ```nix
 # classify a nested include tree into two buckets, cycle-guarded by .key
-graph.foldPreorder {
+graph.foldPreorder { } {
   roots  = [ rootNode ];
   key    = v: v.key or null;
   acc    = { recs = [ ]; bares = [ ]; };
@@ -257,12 +257,13 @@ list.
 
 ```nix
 graph.expandPreorder {
-  roots   = aspectList;
-  key     = a: a.key;
   resolve = a: if a.__isWrappedFn or false then a ctx else a;   # parametric invoke
-  edges   = concrete: concrete.includes or [ ];                  # demand-generated
   emit    = a: concrete: { inherit (a) key; content = concrete; };
   seen0   = droppedKeys;
+} {
+  roots   = aspectList;
+  key     = a: a.key;
+  edges   = concrete: concrete.includes or [ ];                  # demand-generated
 }
 # → { nodes = [ … witness, pre-order … ]; seen = { … }; }
 ```
@@ -278,14 +279,15 @@ the witness across vertices (`seen0`; a `null` item key is kept, never deduped).
 
 ```nix
 graph.foldReach {
+  visited0 = { ${startId} = true; };
+  seen0    = structuralKeys;                   # structural component already emitted
+  nodes0   = structuralNodes;
+} {
   roots    = edgesAt startId;                 # edgesAt bakes in suppression
   edges    = edgesAt;
   target   = e: e.target;
   project  = e: builtins.filter (classFilter e) (contentAt e.target);   # per-edge label projection
   itemKey  = n: n.key;
-  visited0 = { ${startId} = true; };
-  seen0    = structuralKeys;                   # structural component already emitted
-  nodes0   = structuralNodes;
 }
 # → { nodes = [ … ordered witness … ]; seen = { … }; visited = { … }; }
 ```
@@ -297,7 +299,7 @@ These functions enumerate all nodes. They require both `edges` and `nodes`.
 ```
 cycles             : { edges, nodes, ... } → [id]
 cyclePaths         : { edges, nodes, ... } → [[id]]
-dependents         : { edges, nodes, ... } → id → [id]
+dependents         : { maxIter? } → { edges, nodes, ... } → id → [id]
 dependentsOf       : { edges, nodes, ... } → id → [id]
 dependentsFrontier : { edges, nodes, ... } → id → (id → bool) → [id]
 impactOf           : { edges, nodes, ... } → id → [id]   # alias for dependentsOf
@@ -307,7 +309,7 @@ condensation       : { edges, nodes, ... } → { reps, bottomUp, members, sccs, 
 fbNode             : { edges, nodes, ... } → <the same record>   # partition arm, by name
 fbWork             : { edges, nodes, ... } → <the same record>   # partition arm, by name
 lowlink            : { edges, nodes, ... } → <the same record>   # partition arm, by name; the door's default
-condensationClosure: { edges, nodes, ... } → <the same record>   # partition arm, by name
+condensationClosure: { maxIter? } → { edges, nodes, ... } → <the same record>   # partition arm, by name
 condensationOf     : { edges, nodes, ... } → tagOf → <the same record>   # the finisher every arm calls
 directDependents   : { edges, nodes, ... } → { id → [id] }
 directDependentsOf : { edges, nodes, ... } → id → [id]
@@ -333,10 +335,10 @@ graph.cycles g       # → [ "b" "c" "d" ]   membership, key-sorted
 graph.cyclePaths g   # → [ [ "b" "d" "c" ] ]   the traversal — b→d, d→c, c→b
 ```
 
-**`dependents g targetId`** — all nodes that transitively reach `targetId` (reverse reachability). Uses full transitive closure + transpose — closure-class cost (super-quadratic, see Performance), O(1) lookup thereafter. Best for multi-target queries (amortized).
+**`dependents { maxIter ? 1000; } g targetId`** — all nodes that transitively reach `targetId` (reverse reachability). Uses full transitive closure + transpose — closure-class cost (super-quadratic, see Performance), O(1) lookup thereafter. Best for multi-target queries (amortized).
 
 ```nix
-graph.dependents g "database"   # → [ "api" "web" "worker" ]
+graph.dependents { } g "database"   # → [ "api" "web" "worker" ]
 ```
 
 **`dependentsOf g targetId`** — same result as `dependents`, but uses reverse traversal: builds the reverse edge index over every edge (`Θ(n + E)`), then runs the same C-level BFS from the target over that index, costing `Θ(Σ_{u ∈ reach⁻ target} (1 + indeg u))` — the operator re-reads the index at every visit, and in the reversed graph a node's out-degree is its forward **in**-degree. O(reachable) only where in-degree is bounded; Θ(n²) on a complete DAG. **Preferred for single-target queries on large graphs.**
@@ -475,7 +477,7 @@ coneRank : { edges, ... } → [id] → { order, depth }
 entryAnywhere            : entry                       ( {} — no constraints )
 entryAfter  [ "a" ]      : entry                       ( comes after "a" )
 entryBefore [ "b" ]      : entry                       ( comes before "b" )
-entryBetween befs afts   : entry
+entryBetween { before = befs; after = afts; } : entry
 phaseOrder  { name = entry; ... } : [ name ]           ( forward topological order )
 ```
 
@@ -490,8 +492,8 @@ except that each refusal names the door the caller invoked.
 `topoOrder { lessThan = …; }` is itself an ordering function; the graph record comes second and
 is **open**, so a record wider than `{ nodes, edges }` is ordered as it stands. The options set
 is closed by gen-prelude's shared `checkOptions`: a misspelt option is refused by name, catchably, when
-the options are applied. A graph argument that is not an attrset refuses by
-name; a record missing `nodes` or `edges` still aborts on the formals.
+the options are applied. The graph record is a door too (P2): a graph argument that is not an
+attrset, or a record missing `nodes` or `edges`, is refused by name, catchably, when it is applied.
 ★ **Migration hazard.** A caller still written in the one-record form `topoOrder { nodes; edges; }`
 now hands its record to the OPTIONS set and is refused by name, catchably
 (`gen-graph.topoOrder: 'edges' is not an option of this door; …`) — loudly, and in-roster the suites catch it. The quiet case is a caller that migrates
@@ -742,22 +744,22 @@ materializeParents : { parent, nodes, ... } → { id → id }
 ### Fixpoint
 
 ```
-fixpoint            : { seed, step, maxIter?, refusal? } → edgeMap
-seededFixpoint      : { seed, frontier, step, maxIter? } → edgeMap
-compose             : edgeMap → edgeMap → edgeMap
+fixpoint            : { maxIter?, refusal? } → step → seed → edgeMap
+seededFixpoint      : { maxIter? } → { seed, frontier, step } → edgeMap
+compose             : { first, second } → edgeMap
 closureClass        : [ surfaceName ]
-closureOf           : surfaceName → { edges, nodes, maxIter?, ... } → edgeMap
-transitiveClosure   : { edges, nodes, maxIter?, ... } → edgeMap
-transitiveReduction : { edges, nodes, maxIter?, ... } → edgeMap
+closureOf           : surfaceName → { maxIter? } → { edges, nodes, ... } → edgeMap
+transitiveClosure   : { maxIter? } → { edges, nodes, ... } → edgeMap
+transitiveReduction : { maxIter? } → { edges, nodes, ... } → edgeMap
 ```
 
-**`fixpoint { seed, step, maxIter?, refusal? }`** — iterates `step` on `seed` until the result stabilizes (`next == current`). Throws if the step is **not ascending** — if it withdraws an edge the accumulator already held — naming the withdrawn edges, or if it exceeds `maxIter` (default 1000). The test is **containment of edge content** (`differenceEdges current next == { }`), not edge count: a step removing one edge and adding another keeps the count and is still refused. ★ Edge targets must be **strings**, because the membership set the test builds is keyed by them; a non-string target gets Nix's own type error rather than a gen-graph refusal.
+**`fixpoint { maxIter?, refusal? } step seed`** — iterates `step` on `seed` until the result stabilizes (`next == current`). Throws if the step is **not ascending** — if it withdraws an edge the accumulator already held — naming the withdrawn edges, or if it exceeds `maxIter` (default 1000). The test is **containment of edge content** (`differenceEdges { minuend = current; subtrahend = next; } == { }`), not edge count: a step removing one edge and adding another keeps the count and is still refused. ★ Edge targets must be **strings**, because the membership set the test builds is keyed by them; a non-string target gets Nix's own type error rather than a gen-graph refusal.
 
 **The cap's refusal names no cause, and that is deliberate.** Reaching `maxIter`, this binding has observed two things — the cap was reached, and no step ever withdrew an edge, since the guard would have refused that where it happened — and `step` is yours, so it cannot know which of two unrelated constructions it is holding: a step whose ascent (monotone, or merely inflationary) is longer than the cap, or a step **stationary in edge content that is never literally equal**, which permuting a target list is enough to produce — the containment test passes in both directions and `next == current` never holds. The message therefore reports the observation and stops; saying the step *ascended* would be false of the permutation, which reaches the cap having ascended nowhere. `refusal` is how a caller whose `step` is fixed supplies its own reading: it receives the cap that was exhausted and returns the message to throw.
 
-**`closureClass` / `closureOf surfaceName`** — `transitiveClosure`, `dependents`, `condensationClosure` and `transitiveReduction` each make one closure call, so they share one cost curve (see *The closure class* under Performance), one ceiling, and one refusal. `closureOf` is that shared construction, named by the surface calling it; `closureClass` is the enumeration it accepts, and a surface off that list is refused rather than allowed to emit a refusal naming a surface the library does not have. Every member forwards a `maxIter` set on its own argument record to the fixpoint, so a caller who knows their graph's depth can state the budget the refusal will quote back.
+**`closureClass` / `closureOf surfaceName { maxIter? } g`** — `transitiveClosure`, `dependents`, `condensationClosure` and `transitiveReduction` each make one closure call, so they share one cost curve (see *The closure class* under Performance), one ceiling, and one refusal. `closureOf` is that shared construction, named by the surface calling it; `closureClass` is the enumeration it accepts, and a surface off that list is refused rather than allowed to emit a refusal naming a surface the library does not have. Every member takes `maxIter` as its OPTION and forwards it to the fixpoint (`transitiveClosure { maxIter = 64; } g`), so a caller who knows their graph's depth can state the budget the refusal will quote back; a `maxIter` given on the accessor record is refused as misplaced.
 
-Because the closure's `step` is `unionEdges current (compose current mat)`, it only ever grows — it is monotone on the **subset** order, not merely on cardinality — so the withdrawing cause cannot arise there, and since `fixpoint`'s own guard now tests that same order it cannot arise past the guard anywhere; the stationary-but-unequal cause cannot arise here either, because this step converges. Reaching the cap can only mean an ascending chain that has not converged. For reachability that chain's height is the graph's **diameter**, so these four refuse with it by name:
+Because the closure's `step` is `unionEdges current (compose { first = current; second = mat; })`, it only ever grows — it is monotone on the **subset** order, not merely on cardinality — so the withdrawing cause cannot arise there, and since `fixpoint`'s own guard now tests that same order it cannot arise past the guard anywhere; the stationary-but-unequal cause cannot arise here either, because this step converges. Reaching the cap can only mean an ascending chain that has not converged. For reachability that chain's height is the graph's **diameter**, so these four refuse with it by name:
 
 ```
 gen-graph: dependents: the graph's reachability diameter exceeds 1000, the closure
@@ -766,13 +768,13 @@ construction, so an unconverged closure at the cap is depth and nothing else.
 ```
 
 ```nix
-closure = graph.fixpoint {
-  seed = graph.materialize g;
-  step = current: graph.unionEdges current (graph.compose current (graph.materialize g));
-};
+closure = graph.fixpoint { } (current: graph.unionEdges current (graph.compose {
+  first = current;
+  second = (graph.materialize g);
+})) (graph.materialize g);
 ```
 
-**`seededFixpoint { seed, frontier, step, maxIter? }`** — semi-naive variant of `fixpoint`. Here `step` takes two arguments, `step frontier accumulator`, and is shown **only the current delta frontier** rather than the whole accumulator — so each iteration does work proportional to what changed, not to the full result. Newly produced facts join the accumulator and become the next frontier; it converges when the frontier empties. Throws past `maxIter` (default 1000).
+**`seededFixpoint { maxIter? } { seed, frontier, step }`** — semi-naive variant of `fixpoint`. Here `step` takes two arguments, `step frontier accumulator`, and is shown **only the current delta frontier** rather than the whole accumulator — so each iteration does work proportional to what changed, not to the full result. Newly produced facts join the accumulator and become the next frontier; it converges when the frontier empties. Throws past `maxIter` (default 1000).
 
 ★ **`step` must be monotone in BOTH arguments. The binding does not check THAT — it checks ONE-STEP SUPPORT, which a monotone `step` cannot fail.** This line used to say no monotonicity guard was needed "since union-accumulation never shrinks" — true of the accumulator and silent about the content. Union cannot shrink, but neither can it RETRACT: a rule concluding from a fact's ABSENCE keeps its conclusion after that fact arrives, so the run converges, well-formed, on an accumulation the converged graph does not support. At convergence every conclusion must therefore be an axiom (`seed ∪ frontier`) or be re-derived by `step` from the converged accumulator; one that is not is **refused by name**, the message enumerating the withdrawn conclusions.
 
@@ -783,18 +785,21 @@ Measured price: one extra full step, and **the axis is ROUND COUNT, not size**. 
 ```nix
 # Semi-naive transitive closure: dR = dF ∘ R each round.
 mat = graph.materialize g;
-closure = graph.seededFixpoint {
+closure = graph.seededFixpoint { } {
   seed     = mat;
   frontier = mat;
-  step     = dF: _acc: graph.compose dF mat;
+  step     = dF: _acc: graph.compose {
+    first = dF;
+    second = mat;
+  };
 };
 ```
 
-**`compose e1 e2`** — relational composition of two edge maps. For each `a → b` in `e1` and `b → c` in `e2`, emits `a → c`.
+**`compose { first; second; }`** — relational composition of two edge maps. For each `a → b` in `first` and `b → c` in `second`, emits `a → c`. Composition is not commutative, so the two maps are one record whose field names carry the order.
 
-**`transitiveClosure g`** — full transitive closure as an edge map. Materializes `g`, then iterates `compose` to fixpoint.
+**`transitiveClosure { maxIter ? 1000; } g`** — full transitive closure as an edge map. Materializes `g`, then iterates `compose` to fixpoint.
 
-**`transitiveReduction g`** — minimal edge map preserving reachability. Removes edge `a → c` when `a → b → c` exists for some `b`. Standard DAG transitive reduction (gen-graph's own implementation); assumes a DAG — the reduction is unique only on acyclic graphs.
+**`transitiveReduction { maxIter ? 1000; } g`** — minimal edge map preserving reachability. Removes edge `a → c` when `a → b → c` exists for some `b`. Standard DAG transitive reduction (gen-graph's own implementation); assumes a DAG — the reduction is unique only on acyclic graphs.
 
 ### Edge Map Operations
 
@@ -803,7 +808,7 @@ These operate on materialized edge maps `{ id → [id] }`, not on accessor recor
 ```
 unionEdges      : edgeMap → edgeMap → edgeMap
 intersectEdges  : edgeMap → edgeMap → edgeMap
-differenceEdges : edgeMap → edgeMap → edgeMap
+differenceEdges : { minuend, subtrahend } → edgeMap
 selectEdges     : (id → id → bool) → edgeMap → edgeMap
 ```
 
@@ -811,7 +816,7 @@ selectEdges     : (id → id → bool) → edgeMap → edgeMap
 
 **`intersectEdges a b`** — only edges present in both maps. Empty target lists are dropped.
 
-**`differenceEdges a b`** — edges in `a` not in `b`. Empty target lists are dropped.
+**`differenceEdges { minuend; subtrahend; }`** — edges in `minuend` not in `subtrahend`. Empty target lists are dropped.
 
 ### Construction
 
@@ -819,8 +824,8 @@ Top-level helpers for building accessor records, exported flat (no `mock` namesp
 
 ```
 mkGraph      : { edges?, parents?, nodeData? } → accessorRecord
-fromRegistry : { registry, edges, parent? } → accessorRecord
-fromScan     : { items, scan, project, nodeData? } → accessorRecord + { derivedEdges }
+fromRegistry : { parent? } → edges → registry → accessorRecord
+fromScan     : { nodeData?, parents? } → { items, scan, project } → accessorRecord + { derivedEdges }
 field        : name → id → entry → [id]
 fields       : [name] → id → entry → [id]
 fixtures     : { diamond, chain, cyclic, tree, attributed, disconnected }
@@ -849,13 +854,14 @@ graph.select g (d: d ? label)         # → [ "a" "c" ]
 
 ```nix
 g = graph.fromScan {
+  nodeData = { "theme:font" = { field = "font"; }; };
+} {
   items = [
     { id = "theme:font"; value = { size = mkRef "terminal:size"; }; }
     { id = "terminal:size"; value = { }; }
   ];
   scan = v: builtins.filter isRef (builtins.attrValues v);
   project = r: r.target;
-  nodeData = { "theme:font" = { field = "font"; }; };
 };
 
 g.edges "theme:font"                  # → [ "terminal:size" ]
@@ -868,10 +874,7 @@ Nothing here knows what a reference is: `scan` and `project` arrive as arguments
 **`fromRegistry`** — wraps an arbitrary registry attrset. `edges`/`parent` are `id → entry → …` projections applied per node; `field`/`fields` build common projections.
 
 ```nix
-g = graph.fromRegistry {
-  registry = myNodes;
-  edges = graph.field "deps";   # each entry's `deps` list
-};
+g = graph.fromRegistry { } (graph.field "deps") myNodes;
 ```
 
 **Malformed caller data is refused by name, catchably.** Each read of caller data is guarded where it already was, never pre-scanned, so a construction refuses exactly what the unguarded read died on or misread, and a read that never meets the defect answers as before. **Shape** is checked at every read (a list is a list, an element is a record, a field is present); an endpoint's **stringness** only where the constructor keys it (`from`, a keyed `to`, a scanned item's `id`). An endpoint passed through unkeyed — `edges id` returning a `to`, `parent id`, `derivedEdges[i].from` — is not checked for type. A message names the door you invoked, the field and the element's position, and the type, never the value:
@@ -908,10 +911,7 @@ is the projection that reads it as one, `id → [id]`, so an accessor-shaped `ed
 a substrate that never had one.
 
 ```nix
-structuralEdges = graph.mkEndpointProjection {
-  childBearing = name: name == "children" || name == "derived-children";
-  isNode = t: builtins.elem t ev.allNodeIds;
-} ev.structuralAttributes;
+structuralEdges = graph.mkEndpointProjection (name: name == "children" || name == "derived-children") (t: builtins.elem t ev.allNodeIds) ev.structuralAttributes;
 
 structuralEdges "a"   # => [ "b" "a-spawned" "c" ]
 ```
@@ -970,7 +970,7 @@ and when it is fixed (before the evaluation it orders exists). `mkDeclaredEdges`
 are settled, at construction, because a construct's contract belongs at its construction site.
 
 ```nix
-ref = graph.mkNodeRef { isRegistered = id: builtins.elem id declaredNodeOrder; };
+ref = graph.mkNodeRef (id: builtins.elem id declaredNodeOrder);
 
 declared = graph.mkDeclaredEdges {
   child = [ (ref "parent") (ref "sibling") ];
@@ -1063,17 +1063,14 @@ nodes        : [ id ]
 Reachability is then constrained by a **regex over labels** — a query answers a node iff the
 word spelled by the labels along some path from `from` matches the `follow` expression.
 
-**`labeledFrom { perLabel; nodes; }`** adapts one plain accessor per edge kind into the
+**`labeledFrom perLabel nodes`** adapts one plain accessor per edge kind into the
 labeled contract:
 
 ```nix
 g = graph.labeledFrom {
-  nodes = [ "root" "h1" "u1" "g1" ];
-  perLabel = {
     contains = id: containsEdges id;   # each returns a plain [ id ] list
     member   = id: memberEdges id;
-  };
-};
+  } [ "root" "h1" "u1" "g1" ];
 ```
 
 **`nodes` is a required formal, and that is breaking** — the constructor used to take the
@@ -1099,8 +1096,16 @@ the forward construction over a transposed accessor with `follow`, `order` and `
 untouched — one construction with a direction argument, not two that can drift apart.
 
 ```nix
-query { graph = g;                        from = "root"; follow = regex.parse "contains+"; }
-query { graph = graph.labeledTranspose g; from = "u1";   follow = regex.parse "contains+"; }
+query { } {
+  graph = g;
+  from = "root";
+  follow = regex.parse "contains+";
+}
+query { } {
+  graph = graph.labeledTranspose g;
+  from = "u1";
+  follow = regex.parse "contains+";
+}
 # → what root contains         /         → what contains u1
 ```
 
@@ -1112,15 +1117,15 @@ shared by every lookup and not forced at all if the transposed graph is never qu
 it is expressible only because `nodes` is a required formal: reversal asks who points **at**
 a node, which an accessor's non-enumerable domain cannot answer alone.
 
-**`boundedBy g marksOf`** applies per-node **boundary marks** to a labeled graph, yielding a
+**`boundedBy marksOf g`** applies per-node **boundary marks** to a labeled graph, yielding a
 labeled graph plus a companion diagnostic. A mark is `{ name; admits; }` — a name the
 diagnostic can quote and a `label → bool` predicate. `marksOf : id → [ mark ]`, and an
 unmarked node returns `[ ]`.
 
 ```nix
-b = graph.boundedBy g (
+b = graph.boundedBy (
   id: if id == "gate" then [ { name = "sealed"; admits = l: l == "e"; } ] else [ ]
-);
+) g;
 
 b.labeledEdges "gate"   # → [ { label = "e"; target = "ok"; } ]         the admitted edges
 b.withheld     "gate"   # → [ { label = "q"; target = "no"; marks = [ "sealed" ]; } ]
@@ -1136,13 +1141,13 @@ indistinguishable in the diagnostic as well as in the answer. An edge withheld b
 marks is one entry naming all of them — picking one would make the report depend on mark
 order.
 
-**`cyclicEdgesWhere g p`** — the edges whose label satisfies `p` **and** which lie on a
+**`cyclicEdgesWhere p g`** — the edges whose label satisfies `p` **and** which lie on a
 cycle, as `[ { from; label; to; } ]` sorted by `(from, label, to)`. Empty means no cycle of
 this graph carries such an edge. It completes the family `cycles` (which *nodes*) and
 `cyclePaths` (which *walk*) with *which edges satisfying p*.
 
 ```nix
-graph.cyclicEdgesWhere g (l: l == "neg")
+graph.cyclicEdgesWhere (l: l == "neg") g
 # → [ ] , or e.g. [ { from = "c"; label = "neg"; to = "a"; } ]
 ```
 
@@ -1194,11 +1199,15 @@ value the constructors did not build, by the same name.
 **`query`** runs a labeled query in one of five modes:
 
 ```
-query : { graph; from; follow; where?; mode?; order?; groupBy; … } → result
+query : { mode?; where?; order?; groupBy?; combine?; empty?; valueOf?; } → { graph; from; follow; } → result
 ```
 
-`groupBy` is required only in `visible` mode — see the mode table below: it is total, never
-defaulted, so a caller must state its grouping rather than inherit one silently.
+The options are ONE closed set, the same in every mode (den-hoag-nvrl1): an unknown option is
+refused by name when `query opts` is formed, whatever the mode, and an option given on the query
+record is refused as misplaced. `groupBy` is required only in `visible` mode, and `combine` and
+`empty` only in `fixpoint` mode; each is refused by name at `query opts` when its mode lacks it —
+`groupBy` is total, never defaulted, so a caller must state its grouping rather than inherit one
+silently.
 
 | Mode            | Result                                             | Notes                                                                                                                                                                                                               |
 | --------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1228,12 +1237,13 @@ rank lets continuation on lower-ranked labels beat stopping.
 
 ```nix
 query {
-  graph = g;
-  from = "s";
-  follow = regex.parse "own | include";
   mode = "visible";
   order.labels = [ "own" "include" ];   # own shadows include
   groupBy = ans: ans.node;              # required: the per-node reading
+} {
+  graph = g;
+  from = "s";
+  follow = regex.parse "own | include";
 }
 # → { visible = [ … own answers … ]; shadowed = [ … include answers … ]; }
 ```
@@ -1265,13 +1275,10 @@ needs the order without `query`'s answer shape takes the piece rather than rebui
 sorted order (the group-closure / acl shape):
 
 ```nix
-queryFold {
+queryFold { } (acc: u: acc ++ [ u ]) [ ] {   # options { valueOf ? (id: id); where ? (_: true); }, combine, empty
   graph = g;
   from = "admins";
   follow = regex.parse "includes* member";
-  empty = [ ];
-  combine = acc: u: acc ++ [ u ];
-  # valueOf ? (id: id), where ? (_: true)
 }
 ```
 
@@ -1284,12 +1291,11 @@ two ways, both of which are the point: it is keyed on the **arriving edge** rath
 node, and it returns a **sequence** rather than a set.
 
 ```nix
-queryArrivals {
+queryArrivals { } {                # options { where ? (_: true); }
   graph = g;
   from = "s";
   follow = regex.parse "a | b";
   advance = s: s.distance + 1;    # REQUIRED — the per-step distance rule
-  # where ? (_: true)
 }
 # → [ { node = "x"; distance = 1; via = { from = "s"; label = "a"; }; admission = regex.stateKey regex.eps; }
 #     { node = "x"; distance = 1; via = { from = "s"; label = "b"; }; admission = regex.stateKey regex.eps; } ]
@@ -1338,12 +1344,9 @@ and the component a caller needs to state a ⟨node, state⟩ collapse of its ow
 ```nix
 # consumer code: wrap gen-scope's per-label followEdge into the labeled contract
 g = graph.labeledFrom {
-  nodes = scope.allIds self;           # the domain, stated: absence is not a default
-  perLabel = {
     imports = id: scope.followEdge "imports" self id;
     parent  = id: scope.followEdge "parent" self id;
-  };
-};
+  } (scope.allIds self);
 ```
 
 **Cost guidance.** `all` is `genericClosure`-backed and scales (no path materialization).
@@ -1380,7 +1383,7 @@ in {
   entryPoints  = graph.roots g;                               # [ "web" "worker" ]
   datastores   = graph.leaves g;                              # [ "cache" "db" "queue" ]
   webDeps      = graph.reachableFrom g "web";                 # [ "api" "cache" "db" ]
-  dbImpact     = graph.dependents g "db";                     # [ "api" "web" "worker" ]
+  dbImpact     = graph.dependents { } g "db";                     # [ "api" "web" "worker" ]
   backendNodes = graph.select g (d: d.type == "backend");     # [ "api" "worker" ]
   hasCycles    = graph.cycles g != [];                        # false
 }

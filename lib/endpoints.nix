@@ -128,9 +128,9 @@ in
   #
   # The published projection. Refuses by name on a governed attribute that is not a list of node
   # ids, and emits a SET.
-  # RECORD door (den-hoag-7gp66 P1, R5): every field required and none closed — a missing one is
-  # refused by name, catchably, and an extra one is admitted. The check is seq'd onto the result, so
-  # it fires when the record is applied.
+  # `mkEndpointProjection childBearing isNode structuralAttributesOf` (P2, R7): the two predicates
+  # configure and the structural record is the subject, so it comes last; the operands are
+  # positional, so their arity is structural and P1's record check retires.
   mkEndpointProjection =
     childBearing: isNode:
     (
@@ -187,9 +187,8 @@ in
   # attribute of this node that violates the codomain contract, and `[ ]` when none does. An
   # assertion belongs on this returned message rather than on a caught throw — a caught throw
   # proves only that something refused, never that it refused for the reason under test.
-  # RECORD door (den-hoag-7gp66 P1, R5): every field required and none closed — a missing one is
-  # refused by name, catchably, and an extra one is admitted. The check is seq'd onto the result, so
-  # it fires when the record is applied.
+  # `mkProjectionFindings childBearing isNode structuralAttributesOf` (P2, R7): positional, as
+  # `mkEndpointProjection` is.
   mkProjectionFindings =
     childBearing: isNode:
     (

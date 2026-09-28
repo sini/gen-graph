@@ -43,7 +43,7 @@ graph.reachableFrom g "web"     # [ "api" "cache" "db" ]
 graph.roots g                   # [ "web" "worker" ]
 graph.leaves g                  # [ "cache" "db" "queue" ]
 graph.cycles g                  # []  — it's a DAG
-graph.dependents g "db"         # [ "api" "web" "worker" ]
+graph.dependents { } g "db"         # [ "api" "web" "worker" ]
 ```
 
 > **Why functions instead of a fixed format?** Because your data already exists. You shouldn't have to reshape it into gen-graph's preferred structure. The accessor pattern means gen-graph works with *any* attrset, database, or computed value — as long as you can write a function that answers "edges from id" and "list of ids."
@@ -95,8 +95,8 @@ Here's something subtle about gen-graph's design: traversal functions **never lo
 ```nix
 # These only use `edges`:
 graph.reachableFrom g "web"        # follows edges from "web" outward
-graph.pathsBetween g "web" "db"    # DFS from "web" toward "db"
-graph.ancestorsOf g "grandchild"   # follows parent links upward
+graph.pathsBetween { } g "web" "db"    # DFS from "web" toward "db"
+graph.ancestorsOf { } g "grandchild"   # follows parent links upward
 ```
 
 If your graph has 10,000 nodes but only 5 are reachable from `"web"`, gen-graph only evaluates those 5. The other 9,995 are never touched.
@@ -134,7 +134,7 @@ gen-graph offers two variants:
 graph.dependentsOf g "db"     # [ "api" "web" "worker" ]
 
 # Multi-target (amortized — full closure computed once):
-graph.dependents g "db"       # same result, different algorithm
+graph.dependents { } g "db"       # same result, different algorithm
 ```
 
 **`dependentsOf`** builds a reverse edge index once (`Θ(n + E)` — it reads every node's out-edges), then does C-level BFS from the target in the reversed graph. That walk re-reads the index at every visit, so it costs `Θ(Σ_{u ∈ reach⁻ target} (1 + indeg u))`: O(reachable) only where in-degree is bounded. Fast for one-off queries.
@@ -160,7 +160,7 @@ These functions require `nodes` in addition to `edges`:
 
 ```nix
 graph.cycles g         # nodes in any cycle
-graph.dependents g "db"  # who transitively reaches "db"
+graph.dependents { } g "db"  # who transitively reaches "db"
 graph.roots g          # nodes with no incoming edges
 ```
 
@@ -171,7 +171,7 @@ Internally, these functions **materialize** the graph — they build a complete 
 The **transitive closure** is "if A reaches B and B reaches C, then A reaches C" applied exhaustively. gen-graph computes it via Arntzenius & Krishnaswami's (2016) monotone fixpoint:
 
 ```nix
-closure = graph.transitiveClosure g;
+closure = graph.transitiveClosure { } g;
 # closure."web" → [ "api" "cache" "db" ]  — everything web can reach
 # closure."gateway" → [ "api" "cache" "db" "web" ] — the full picture
 ```
@@ -203,13 +203,16 @@ b = graph.materialize g2;
 
 graph.unionEdges a b       # merge two graphs
 graph.intersectEdges a b   # edges present in both
-graph.differenceEdges a b  # edges in a but not b
+graph.differenceEdges {
+  minuend = a;
+  subtrahend = b;
+}  # edges in the minuend but not the subtrahend
 ```
 
 The **transitive reduction** (also from Mokhov) answers: "what's the minimal graph that preserves all reachability?"
 
 ```nix
-minimal = graph.transitiveReduction g;
+minimal = graph.transitiveReduction { } g;
 # Removes edge a→c when a→b→c already provides the path
 ```
 
@@ -221,7 +224,10 @@ This is useful for diagram clarity — show only the essential structure, hide r
 
 ```nix
 # If a→b in map1, and b→c in map2, then a→c in the composition
-twoHop = graph.compose (graph.materialize g) (graph.materialize g);
+twoHop = graph.compose {
+  first = (graph.materialize g);
+  second = (graph.materialize g);
+};
 ```
 
 This is the engine behind `transitiveClosure` — iterating `compose` to fixpoint computes all transitive edges. But it's also a public API: you might compose a "depends-on" graph with a "deployed-on" graph to find "what hardware does this service indirectly use?"
@@ -264,7 +270,7 @@ g = graph.mkGraph {
 };
 
 graph.reachableFrom g "a"    # [ "b" "c" ]
-graph.ancestorsOf g "child"  # [ "parent" ]
+graph.ancestorsOf { } g "child"  # [ "parent" ]
 ```
 
 If you have data in a node-map format (an attrset keyed by id, each entry carrying its
@@ -278,12 +284,10 @@ legacy = {
   "svc:db" = { imports = []; parent = "svc:api"; };
 };
 g = graph.fromRegistry {
-  registry = legacy;
-  edges  = graph.field "imports";        # each entry's `imports` list
   parent = _id: entry: entry.parent or null;
-};
+} (graph.field "imports") legacy;
 graph.reachableFrom g "svc:web"   # [ "svc:api" "svc:db" ]
-graph.ancestorsOf g "svc:db"      # [ "svc:api" "svc:web" ]
+graph.ancestorsOf { } g "svc:db"      # [ "svc:api" "svc:web" ]
 ```
 
 Malformed data is refused by name and catchably, where it is read:
@@ -351,7 +355,7 @@ For "can A reach B?" questions, don't compute the full transitive closure:
 
 ```nix
 # DON'T: materializes the full closure (super-quadratic)
-closure = graph.transitiveClosure g;
+closure = graph.transitiveClosure { } g;
 answer = builtins.elem "db" (closure."web" or []);
 
 # DO: visits only nodes on the path
@@ -378,7 +382,7 @@ Cross-partition edges are rare in practice. The speed-up is shape-dependent: spl
 
 ```nix
 # DON'T: computes the full closure (super-quadratic) for one question
-graph.dependents g "db"
+graph.dependents { } g "db"
 
 # DO: builds reverse index Θ(n + E) + C-level BFS O(reachable) at bounded in-degree
 graph.dependentsOf g "db"

@@ -465,13 +465,9 @@ let
 
   # `all` mode: the (node × derivative-state) product automaton, closed via
   # genericClosure. A node answers when its state is nullable.
-  # NOT A DOOR (den-hoag-7gp66 P1, P-1): `queryAll` is reached only through `query` (mode `all`,
-  # and mode `fixpoint` via `queryFold`) and through `queryFold` directly, so a native closed/
-  # required formal here would abort past `tryEval` naming a callee the caller never mentioned.
-  # `door` is the caller's own name, already `gen-graph.`-qualified, supplied at each of those
-  # call sites; MIXED-shaped like `queryArrivals`: `checkOptions` over `checkRequired`, closed
-  # over the whole set — an unknown or missing field is refused by name, catchably, naming the
-  # door the caller called, when the record is applied.
+  # NOT A DOOR: the unchecked core `query` (modes `all` and `fixpoint`) and `queryFold` call
+  # (P2 §p2.3.2). Their doors check the options and the query record, so an unknown or missing
+  # field is refused by name, catchably, naming the door the caller called, before this runs.
   queryAll =
     {
       graph,
@@ -714,9 +710,9 @@ let
   # a ⟨node, derivative-state⟩ collapse of its own.
   # `queryArrivals { where ? (_: true); } { graph; from; follow; advance; }` (P2, R7): the options
   # first, closed, then the four operands as ONE open record — rule 5's record, read at the unit:
-  # `graph`, `from`, `follow` and `advance` are four sorts (a labeled graph, a node, a path
-  # expression, a charge function) with no order among them that makes one the subject the others
-  # configure. A `where` given on the record is refused as misplaced (`optionsStep`).
+  # `graph` is the subject rule 4 could name, but `from`, `follow` and `advance` (a node, a path
+  # expression and a charge function) have no natural order among them, so the doubt is recorded
+  # here and the record kept. A `where` given on the record is refused as misplaced (`optionsStep`).
   queryArrivals = door {
     name = "gen-graph.queryArrivals";
     optional = [ "where" ];
@@ -836,10 +832,8 @@ let
   # pathsBetween precedent) with derivative pruning; enumeration-priced —
   # use `all` for scale, `paths` when the witness itself is the product
   # (resolution traces, shadowing explanations).
-  # NOT A DOOR (den-hoag-7gp66 P1, P-1): `queryPaths` is reached only through `query` (modes
-  # `paths`, `visible` and `layers`, the latter two via `queryVisible`/`queryLayers`), so the
-  # same reasoning as `queryAll`'s applies — `door` is the caller's own name, supplied at each
-  # call site, never `queryPaths`'s own.
+  # NOT A DOOR: the unchecked core `query` calls in modes `paths`, `visible` and `layers` (the latter
+  # two via `queryVisible`/`queryLayers`); the same reasoning as `queryAll`'s applies.
   queryPaths =
     {
       graph,
@@ -983,13 +977,10 @@ let
   # but the omission now refuses, naming the missing argument, rather than silently
   # answering a question the caller never asked.
   #
-  # `groupBy ? null` is a SENTINEL, not a default: on this Nix (2.34.8) a bare required
-  # formal's "called without required argument" error is not `tryEval`-catchable (measured:
-  # neither it nor a plain attribute-missing error is — only `throw`/`assert` are), so a
-  # bare required formal here would make the refusal real but ITS OWN GUARD TEST unable to
-  # observe it, unlike `phaseOrder`'s and `closureOf`'s `throw`/`assert`-based refusals.
-  # The `null` sentinel is caught and refused explicitly below; the API contract — REQUIRED,
-  # TOTAL, never a silent behavioural default — is unaffected.
+  # `groupBy` is an option of `query` (P2: one closed set in every mode, den-hoag-nvrl1), so
+  # `visible` REQUIRES an option: its absence is refused by name, catchably, when
+  # `query { mode = "visible"; … }` is formed (`query` below), before any record is supplied.
+  # The API contract — REQUIRED, TOTAL, never a silent behavioural default — is unaffected.
   queryVisible =
     o: q:
     let

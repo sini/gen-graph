@@ -459,7 +459,7 @@ let
   # contract and meets the uncatchable abort this cap exists to replace.
   parseMaxLength = 1000;
 
-  # OPTIONS door (den-hoag-7gp66 P1, §v1.2): closed — an unknown option is refused by name,
+  # A pure OPTIONS door (P2, `prelude.door`): closed — an unknown option is refused by name,
   # catchably, when the options are applied, before the pattern is.
   parseWith = prelude.door {
     name = "gen-graph.regex.parseWith";
