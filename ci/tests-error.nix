@@ -139,7 +139,8 @@ let
   # fixture, because the shipped-cap controls below are themselves a cell about the SCHEDULE
   # and a deeper fixture would move their answers for an unrelated reason.
   cappedIter = 2;
-  capped = fork // {
+  # The cap is each closure surface's OPTION (P2): `<surface> { maxIter; } fork`.
+  capped = {
     maxIter = cappedIter;
   };
   # One round below the measured boundary of 6: the tightest cap at which this fixture must
@@ -147,7 +148,7 @@ let
   # written beside it so that moving one moves the other.
   boundaryIter = 6;
   marginProbeIter = boundaryIter - 1;
-  marginProbe = fork // {
+  marginProbe = {
     maxIter = marginProbeIter;
   };
 
@@ -157,10 +158,10 @@ let
   # of four cannot see. Each driver forces the shared closure and returns something small.
   drive = {
     transitiveClosure =
-      g: builtins.sort builtins.lessThan ((genGraph.transitiveClosure g)."n000022" or [ ]);
-    dependents = g: genGraph.dependents g "n000001";
-    condensationClosure = g: builtins.length (genGraph.condensationClosure g).sccs;
-    transitiveReduction = g: (genGraph.transitiveReduction g)."n000000" or [ ];
+      o: builtins.sort builtins.lessThan ((genGraph.transitiveClosure o fork)."n000022" or [ ]);
+    dependents = o: genGraph.dependents o fork "n000001";
+    condensationClosure = o: builtins.length (genGraph.condensationClosure o fork).sccs;
+    transitiveReduction = o: (genGraph.transitiveReduction o fork)."n000000" or [ ];
   };
   # What each driver answers at the SHIPPED cap on the SAME fixture — the live control that
   # the refusals above pin the CAP and not the fixture.
@@ -340,7 +341,7 @@ in
           # the four cells above are consistent with a fixture that cannot be closed at all.
           name = "test-closure-${surface}-shipped-cap-control";
           value = {
-            expr = drive.${surface} fork;
+            expr = drive.${surface} { };
             expected = shipped.${surface};
           };
         }) genGraph.closureClass
@@ -357,13 +358,15 @@ in
         # `fixpoint` gets the CAUSE-FREE message; the anchors are what make this an assertion
         # that the diameter text is ABSENT rather than an assertion that some text is present.
         test-generic-fixpoint-antitone-step-is-refused-naming-the-withdrawn-edge = {
-          expr = genGraph.fixpoint {
-            seed = {
-              a = [ "x" ];
-            };
-            step = antitoneStep;
-            maxIter = 7;
-          };
+          expr =
+            genGraph.fixpoint
+              {
+                maxIter = 7;
+              }
+              antitoneStep
+              {
+                a = [ "x" ];
+              };
           expectedError = {
             type = "ThrownError";
             msg = notAscending [ "a → x" ];
@@ -376,11 +379,8 @@ in
         # admitted rounds really were admitted. `maxIter` is the shipped default: reaching the
         # cap here would take 1,000 rounds and a different message.
         test-generic-fixpoint-refuses-at-the-first-non-ascending-step = {
-          expr = genGraph.fixpoint {
-            seed = {
-              a = [ "e0" ];
-            };
-            step = ascendThenWithdrawStep;
+          expr = genGraph.fixpoint { } ascendThenWithdrawStep {
+            a = [ "e0" ];
           };
           expectedError = {
             type = "ThrownError";
@@ -396,11 +396,21 @@ in
         # The antitone step is now refused before the cap, so without a second construction that
         # genuinely reaches it this comment would be arguing the pair instead of exhibiting it.
         test-generic-fixpoint-monotone-under-cap-names-no-cause = {
-          expr = genGraph.fixpoint {
-            seed = genGraph.materialize fork;
-            step = cur: genGraph.unionEdges cur (genGraph.compose cur (genGraph.materialize fork));
-            maxIter = 5;
-          };
+          expr =
+            genGraph.fixpoint
+              {
+                maxIter = 5;
+              }
+              (
+                cur:
+                genGraph.unionEdges cur (
+                  genGraph.compose {
+                    first = cur;
+                    second = (genGraph.materialize fork);
+                  }
+                )
+              )
+              (genGraph.materialize fork);
           expectedError = {
             type = "ThrownError";
             msg = "^gen-graph: fixpoint exceeded 5 iterations: the step neither converged nor shrank\\. `step` is the caller's, so this binding reports what it observed and names no cause\\.$";
@@ -411,13 +421,15 @@ in
         # being a monotone step in disguise. Byte-identical message to the cell above — which is
         # the assertion: two unrelated constructions, one cause-free text.
         test-generic-fixpoint-inflationary-non-monotone-under-cap-names-no-cause = {
-          expr = genGraph.fixpoint {
-            seed = {
-              a = [ "x" ];
-            };
-            step = inflationaryNonMonotoneStep;
-            maxIter = 5;
-          };
+          expr =
+            genGraph.fixpoint
+              {
+                maxIter = 5;
+              }
+              inflationaryNonMonotoneStep
+              {
+                a = [ "x" ];
+              };
           expectedError = {
             type = "ThrownError";
             msg = "^gen-graph: fixpoint exceeded 5 iterations: the step neither converged nor shrank\\. `step` is the caller's, so this binding reports what it observed and names no cause\\.$";
@@ -431,16 +443,18 @@ in
         # door called inside another keeps its own name; re-pinning it to `fixpoint` belongs to the
         # door-name migration (den-hoag-7gp66, R6), and this cell reds the day that lands.
         test-generic-fixpoint-non-string-edge-target-is-refused-by-name = {
-          expr = genGraph.fixpoint {
-            seed = {
-              a = [
-                1
-                2
-              ];
-            };
-            step = cur: { a = cur.a ++ [ 3 ]; };
-            maxIter = 5;
-          };
+          expr =
+            genGraph.fixpoint
+              {
+                maxIter = 5;
+              }
+              (cur: { a = cur.a ++ [ 3 ]; })
+              {
+                a = [
+                  1
+                  2
+                ];
+              };
           expectedError = {
             type = "ThrownError";
             msg = "^gen-graph\\.differenceEdges: got int, expected a node identifier \\(a string\\)$";
@@ -454,16 +468,18 @@ in
         # with a better answer — `a → y` names the edge where `(2 → 1)` named an arithmetic
         # difference the caller then had to locate.
         test-generic-fixpoint-shrinking-step-is-refused-by-the-subset-guard = {
-          expr = genGraph.fixpoint {
-            seed = {
-              a = [
-                "x"
-                "y"
-              ];
-            };
-            step = _: { a = [ "x" ]; };
-            maxIter = 7;
-          };
+          expr =
+            genGraph.fixpoint
+              {
+                maxIter = 7;
+              }
+              (_: { a = [ "x" ]; })
+              {
+                a = [
+                  "x"
+                  "y"
+                ];
+              };
           expectedError = {
             type = "ThrownError";
             msg = notAscending [ "a → y" ];
@@ -472,13 +488,15 @@ in
         # LIVE CONTROL, same run: the generic binding converges and returns. Without it the
         # three cells above are consistent with a `fixpoint` that refuses everything.
         test-generic-fixpoint-converging-control = {
-          expr = genGraph.fixpoint {
-            seed = {
-              a = [ "x" ];
-            };
-            step = cur: cur;
-            maxIter = 7;
-          };
+          expr =
+            genGraph.fixpoint
+              {
+                maxIter = 7;
+              }
+              (cur: cur)
+              {
+                a = [ "x" ];
+              };
           expected = {
             a = [ "x" ];
           };
@@ -495,7 +513,7 @@ in
     # graph withdrew, on an accumulation the library already has in hand.
     flake.testsError.seeded-support-refusal = {
       test-seeded-refusal-names-the-unsupported-conclusion = {
-        expr = genGraph.seededFixpoint {
+        expr = genGraph.seededFixpoint { } {
           seed = {
             root = [ "a" ];
           };
@@ -513,7 +531,7 @@ in
       # conclusions: a message that named one of them, or that ordered them by evaluation
       # accident, fails here and passes the cell above.
       test-seeded-refusal-enumerates-every-unsupported-conclusion = {
-        expr = genGraph.seededFixpoint {
+        expr = genGraph.seededFixpoint { } {
           seed = {
             root = [ "a" ];
           };
@@ -542,12 +560,17 @@ in
         expr =
           let
             mat = genGraph.materialize fork;
-            sn = genGraph.seededFixpoint {
+            sn = genGraph.seededFixpoint { } {
               seed = mat;
               frontier = mat;
-              step = dF: _: genGraph.compose dF mat;
+              step =
+                dF: _:
+                genGraph.compose {
+                  first = dF;
+                  second = mat;
+                };
             };
-            tc = genGraph.transitiveClosure fork;
+            tc = genGraph.transitiveClosure { } fork;
             sorted = m: n: builtins.sort builtins.lessThan (m.${n} or [ ]);
           in
           builtins.all (n: sorted sn n == sorted tc n) fork.nodes;
@@ -617,12 +640,16 @@ in
       {
         test-expandpreorder-refuses-a-retired-maxdepth-by-name = {
           expr =
-            (genGraph.expandPreorder {
-              roots = [ c.top ];
-              key = f: f;
-              inherit (c) edges;
-              maxDepth = 8;
-            }).seen;
+            (genGraph.expandPreorder
+              {
+                maxDepth = 8;
+              }
+              {
+                roots = [ c.top ];
+                key = f: f;
+                inherit (c) edges;
+              }
+            ).seen;
           expectedError = {
             type = "ThrownError";
             msg = "^gen-graph\\.expandPreorder: maxDepth is retired\\..*";
@@ -630,14 +657,18 @@ in
         };
         test-foldreach-refuses-a-retired-maxdepth-by-name = {
           expr =
-            (genGraph.foldReach {
-              roots = [ c.top ];
-              edges = t: c.edges t;
-              target = e: e;
-              project = e: [ e ];
-              itemKey = i: i;
-              maxDepth = 8;
-            }).visited;
+            (genGraph.foldReach
+              {
+                maxDepth = 8;
+              }
+              {
+                roots = [ c.top ];
+                edges = t: c.edges t;
+                target = e: e;
+                project = e: [ e ];
+                itemKey = i: i;
+              }
+            ).visited;
           expectedError = {
             type = "ThrownError";
             msg = "^gen-graph\\.foldReach: maxDepth is retired\\..*";
@@ -648,37 +679,52 @@ in
         # two callers.
         test-foldpreorder-refuses-a-retired-maxdepth-naming-a-caller-outside-this-library = {
           expr =
-            (genGraph.foldPreorder {
-              roots = [ c.top ];
-              key = f: f;
-              acc = 0;
-              expand = acc: frame: {
-                acc = acc + 1;
-                children = c.edges frame;
-              };
-              maxDepth = 8;
-              surface = "forwardExpand";
-            }).visited;
+            (genGraph.foldPreorder
+              {
+                maxDepth = 8;
+                surface = "forwardExpand";
+              }
+              {
+                roots = [ c.top ];
+                key = f: f;
+                acc = 0;
+                expand = acc: frame: {
+                  acc = acc + 1;
+                  children = c.edges frame;
+                };
+              }
+            ).visited;
           expectedError = {
             type = "ThrownError";
             msg = "^gen-graph\\.forwardExpand: maxDepth is retired\\..*";
           };
         };
         test-ancestorsof-refuses-a-retired-maxdepth-by-name = {
-          expr = genGraph.ancestorsOf {
-            inherit (ac9) parent;
-            maxDepth = 8;
-          } ac9.top;
+          expr =
+            genGraph.ancestorsOf
+              {
+                maxDepth = 8;
+              }
+              {
+                inherit (ac9) parent;
+              }
+              ac9.top;
           expectedError = {
             type = "ThrownError";
             msg = "^gen-graph\\.ancestorsOf: maxDepth is retired\\..*";
           };
         };
         test-pathsbetween-refusal-names-the-surface = {
-          expr = genGraph.pathsBetween {
-            inherit (c10) edges;
-            maxDepth = 8;
-          } c10.top c10.bottom;
+          expr =
+            genGraph.pathsBetween
+              {
+                maxDepth = 8;
+              }
+              {
+                inherit (c10) edges;
+              }
+              c10.top
+              c10.bottom;
           expectedError = {
             type = "ThrownError";
             msg = "^gen-graph\\.pathsBetween: path depth exceeded the stated cap of 8\\..*";
@@ -691,14 +737,19 @@ in
           expr = {
             paths = builtins.length (
               builtins.head (
-                genGraph.pathsBetween {
-                  inherit (c9) edges;
-                  maxDepth = 8;
-                } c9.top c9.bottom
+                genGraph.pathsBetween
+                  {
+                    maxDepth = 8;
+                  }
+                  {
+                    inherit (c9) edges;
+                  }
+                  c9.top
+                  c9.bottom
               )
             );
             expandPreorder = builtins.attrNames (
-              (genGraph.expandPreorder {
+              (genGraph.expandPreorder { } {
                 roots = [ c.top ];
                 key = f: f;
                 inherit (c) edges;
@@ -706,7 +757,7 @@ in
             );
             foldReach = builtins.length (
               builtins.attrNames
-                (genGraph.foldReach {
+                (genGraph.foldReach { } {
                   roots = [ c.top ];
                   edges = t: c.edges t;
                   target = e: e;
@@ -715,17 +766,25 @@ in
                 }).visited
             );
             foldPreorder =
-              (genGraph.foldPreorder {
-                roots = [ c.top ];
-                key = f: f;
-                acc = 0;
-                expand = acc: frame: {
-                  acc = acc + 1;
-                  children = c.edges frame;
-                };
-                surface = "forwardExpand";
-              }).acc;
-            ancestors = builtins.length (genGraph.ancestorsOf { inherit (ac9) parent; } ac9.top);
+              (genGraph.foldPreorder
+                {
+                  surface = "forwardExpand";
+                }
+                {
+                  roots = [ c.top ];
+                  key = f: f;
+                  acc = 0;
+                  expand = acc: frame: {
+                    acc = acc + 1;
+                    children = c.edges frame;
+                  };
+                }
+              ).acc;
+            ancestors = builtins.length (
+              genGraph.ancestorsOf { } {
+                inherit (ac9) parent;
+              } ac9.top
+            );
           };
           expected = {
             paths = 9;
@@ -850,7 +909,7 @@ in
         };
         walk =
           graph:
-          query {
+          query { } {
             inherit graph;
             from = "a";
             follow = x;
@@ -916,7 +975,7 @@ in
           };
         };
         test-a-non-string-target-is-refused-by-name-in-queryArrivals = {
-          expr = queryArrivals {
+          expr = queryArrivals { } {
             graph = on [
               {
                 label = "x";
@@ -939,16 +998,16 @@ in
         test-a-bounded-graph-refuses-as-boundedBy = {
           expr = walk (
             boundedBy
-              (on [
-                {
-                  label = 1;
-                  target = "b";
-                }
-              ])
               (_: [
                 {
                   name = "m";
                   admits = _: true;
+                }
+              ])
+              (on [
+                {
+                  label = 1;
+                  target = "b";
                 }
               ])
           );
@@ -1020,20 +1079,21 @@ in
           };
         };
         # ABSENCE IS A DECISION (`lib/query.nix`, THE LABELED CONTRACT IS TOTAL): at the two
-        # surfaces taking the record by pattern, `labeledEdges` stays a required formal, so its
-        # omission reports itself at the call rather than answering from `nodes` alone.
-        test-forgetLabels-keeps-labeledEdges-a-required-formal = {
+        # surfaces taking the labeled record, `labeledEdges` stays a required field of their door,
+        # so its omission reports itself at the call, by name and catchably (P2), rather than
+        # answering from `nodes` alone.
+        test-forgetLabels-keeps-labeledEdges-required = {
           expr = (forgetLabels { nodes = [ "a" ]; }).nodes;
           expectedError = {
-            type = "TypeError";
-            msg = "called without required argument 'labeledEdges'";
+            type = "ThrownError";
+            msg = "^gen-graph\\.forgetLabels: required field 'labeledEdges' is missing .*";
           };
         };
-        test-labeledTranspose-keeps-labeledEdges-a-required-formal = {
+        test-labeledTranspose-keeps-labeledEdges-required = {
           expr = (labeledTranspose { nodes = [ "a" ]; }).nodes;
           expectedError = {
-            type = "TypeError";
-            msg = "called without required argument 'labeledEdges'";
+            type = "ThrownError";
+            msg = "^gen-graph\\.labeledTranspose: required field 'labeledEdges' is missing .*";
           };
         };
       };
@@ -1068,17 +1128,15 @@ in
             else
               [ ];
         };
-        q =
-          extra:
-          query (
-            {
-              inherit graph;
-              from = "a";
-              follow = x;
-            }
-            // extra
-          );
-        bounded = marks: (boundedBy graph (_: marks)).withheld "a";
+        q = opts: qOn graph opts;
+        qOn =
+          g: opts:
+          query opts {
+            graph = g;
+            from = "a";
+            follow = x;
+          };
+        bounded = marks: (boundedBy (_: marks) graph).withheld "a";
         refusal = surface: tail: {
           type = "ThrownError";
           msg = "^gen-graph\\.${surface}: ${tail}$";
@@ -1103,22 +1161,25 @@ in
           expectedError = refusal "query" "where is a set, not a function returning a bool";
         };
         test-a-non-function-functor-labeledEdges-is-refused-by-name = {
-          expr = q {
-            graph = graph // {
+          expr = qOn (
+            graph
+            // {
               labeledEdges = {
                 __functor = 1;
               };
-            };
-          };
+            }
+          ) { };
           expectedError = refusal "query" "the graph's labeledEdges is a set, not a function from a node id to a list of \\{ label; target; \\}";
         };
         test-a-non-int-advance-is-refused-by-name-where-the-distance-is-read = {
-          expr = map (a: a.distance) (queryArrivals {
-            inherit graph;
-            from = "a";
-            follow = x;
-            advance = _: "far";
-          });
+          expr = map (a: a.distance) (
+            queryArrivals { } {
+              inherit graph;
+              from = "a";
+              follow = x;
+              advance = _: "far";
+            }
+          );
           expectedError = refusal "queryArrivals" "advance on the step \"a\" -x-> \"b\" returned a string, not an int, the distance after the step";
         };
         test-a-non-string-groupBy-is-refused-by-name = {
@@ -1129,7 +1190,7 @@ in
           expectedError = refusal "queryVisible" "groupBy on the answer at \"a\" returned a int, not a string, the answer's competition key";
         };
         test-a-non-list-marksOf-is-refused-by-name = {
-          expr = (boundedBy graph (_: 1)).labeledEdges "a";
+          expr = (boundedBy (_: 1) graph).labeledEdges "a";
           expectedError = refusal "boundedBy" "marksOf \"a\" returned a int, not a list of marks \\{ name; admits; \\}";
         };
         test-a-non-mark-is-refused-by-name = {
@@ -1163,7 +1224,7 @@ in
           expectedError = refusal "boundedBy" "marksOf \"a\" returned a mark with no name; `withheld` reports a mark by its name";
         };
         test-a-non-bool-p-is-refused-by-name = {
-          expr = cyclicEdgesWhere graph (_: 1);
+          expr = cyclicEdgesWhere (_: 1) graph;
           expectedError = refusal "cyclicEdgesWhere" "p on the label \"x\" returned a int, not a bool";
         };
         # FALSIFIER, not a door: a pattern formal is a function, and what it does with a node id is
@@ -1201,9 +1262,8 @@ in
         };
         qa = from: {
           graph = genGraph.labeledFrom {
-            inherit (g) nodes;
-            perLabel.l = g.edges;
-          };
+            l = g.edges;
+          } g.nodes;
           inherit from;
           follow = genGraph.regex.parse "l*";
         };
@@ -1228,9 +1288,9 @@ in
         test-canReach-from = cell (str "canReach") (genGraph.canReach g X "b");
         test-canReach-to = cell (str "canReach") (genGraph.canReach g "a" X);
         test-selfReachable = cell (str "selfReachable") (genGraph.selfReachable g X);
-        test-ancestorsOf = cell (str "ancestorsOf") (genGraph.ancestorsOf g X);
-        test-pathsBetween = cell (str "pathsBetween") (genGraph.pathsBetween g X "b");
-        test-dependents = cell (str "dependents") (genGraph.dependents g X);
+        test-ancestorsOf = cell (str "ancestorsOf") (genGraph.ancestorsOf { } g X);
+        test-pathsBetween = cell (str "pathsBetween") (genGraph.pathsBetween { } g X "b");
+        test-dependents = cell (str "dependents") (genGraph.dependents { } g X);
         test-dependentsOf = cell (str "dependentsOf") (genGraph.dependentsOf g X);
         test-dependentsFrontier = cell (str "dependentsFrontier") (
           genGraph.dependentsFrontier g X (_: false)
@@ -1242,9 +1302,9 @@ in
         test-selfReachableVia = cell (str "selfReachableVia") (
           genGraph.selfReachableVia (genGraph.hoistEdges g) X
         );
-        test-query = cell (scalar "query") (genGraph.query (qa X));
+        test-query = cell (scalar "query") (genGraph.query { } (qa X));
         test-queryArrivals = cell (scalar "queryArrivals") (
-          genGraph.queryArrivals (qa X // { advance = _: 1; })
+          genGraph.queryArrivals { } (qa X // { advance = _: 1; })
         );
       };
 
@@ -1423,7 +1483,7 @@ in
           condensationClosure = {
             who = "condensationClosure";
             prim = "condensationOf";
-            f = g: genGraph.condensationClosure g;
+            f = g: genGraph.condensationClosure { } g;
           };
           cycles = {
             who = "cycles";
@@ -1438,7 +1498,7 @@ in
           cyclicEdgesWhere = {
             who = "cyclicEdgesWhere";
             prim = "lowlink";
-            f = g: genGraph.cyclicEdgesWhere (lab g) (_: true);
+            f = g: genGraph.cyclicEdgesWhere (_: true) (lab g);
           };
         };
         inPrim = sv: if sv ? prim then " \\(in ${sv.prim}\\)" else "";
@@ -1541,7 +1601,7 @@ in
           reachableFrom = genGraph.reachableFrom (acc e) "b";
           canReach = genGraph.canReach (acc e) "b" "c";
           selfReachable = genGraph.selfReachable (acc e) "b";
-          pathsBetween = genGraph.pathsBetween (acc e) "a" "c";
+          pathsBetween = genGraph.pathsBetween { } (acc e) "a" "c";
           dependentsOf = genGraph.dependentsOf (acc e) "c";
           dependentsFrontier = genGraph.dependentsFrontier (acc e) "c" (_: true);
           directDependents = genGraph.directDependents (acc e);
@@ -1555,7 +1615,7 @@ in
           };
           topoOrder = genGraph.topoOrder { } (acc (acyclic e));
           coneRank = genGraph.coneRank (acc (acyclic e)) nodes;
-          expandPreorder = genGraph.expandPreorder {
+          expandPreorder = genGraph.expandPreorder { } {
             roots = [ "b" ];
             key = f: f;
             edges = e;
@@ -1578,20 +1638,18 @@ in
           cell
             "^gen-graph\\.fromRegistry: edges is a int, not a function from a node id and its registry entry to a list of node ids$"
             (
-              genGraph.reachableFrom (genGraph.fromRegistry {
-                registry = {
-                  a = { };
-                };
-                edges = 1;
+              genGraph.reachableFrom (genGraph.fromRegistry { } 1 {
+                a = { };
               }) "a"
             );
-        # FALSIFIERS, not doors: a missing `edges` is the arity class, a pattern-formal `edges` the
-        # caller's own destructuring
-        test-a-missing-edges-is-an-arity-abort = {
+        # A missing `edges` is the accessor record's own door (P2 rule 3: refused by name,
+        # catchably, where it was once the arity class); a pattern-formal `edges` is still a
+        # FALSIFIER, the caller's own destructuring.
+        test-a-missing-edges-is-refused-by-the-door = {
           expr = genGraph.reachableFrom { inherit nodes; } "a";
           expectedError = {
-            type = "TypeError";
-            msg = "called without required argument 'edges'";
+            type = "ThrownError";
+            msg = "^gen-graph\\.reachableFrom: required field 'edges' is missing \\(required: 'edges'\\) \\(in prelude\\.checkRequired\\)$";
           };
         };
         test-a-pattern-formal-edges-aborts-in-the-callers-destructuring = {
@@ -1991,15 +2049,18 @@ in
         keyMsg =
           door:
           "^gen-graph\\.${door}: keyOf returned a non-string key \\(type int\\) for the node at index 0; ordering keys must be strings$";
+        # The graph record is a door (P2): a non-attrset is refused by `checkRequired`, naming the door.
         notAGraph =
-          door: "^gen-graph\\.${door}: the graph is a list, not an attribute set carrying nodes and edges$";
+          door:
+          "^gen-graph\\.${door}: the argument must be an attrset, not a list \\(required: 'nodes', 'edges'\\) \\(in prelude\\.checkRequired\\)$";
       in
       {
         test-kahn-refusal-names-topoOrderKahn = cell (keyMsg "topoOrderKahn") (
           genGraph.topoOrderKahn { } nonStringKey
         );
         test-door-refusal-names-topoOrder = cell (keyMsg "topoOrder") (genGraph.topoOrder { } nonStringKey);
-        # A graph argument that is not an attrset used to abort on the formals, uncatchably.
+        # A graph argument that is not an attrset used to abort on the formals, uncatchably; it is
+        # refused at the graph record's own door now (P2).
         test-a-graph-that-is-not-a-record-refuses-by-name = cell (notAGraph "topoOrder") (
           genGraph.topoOrder { } [ ]
         );
@@ -2049,13 +2110,10 @@ in
           reachableVia = genGraph.reachableVia (genGraph.hoistEdges (acc e)) "a";
           selfReachableVia = genGraph.selfReachableVia (genGraph.hoistEdges (acc e)) "a";
           coScc = genGraph.coScc (acc e) "a" "c";
-          fromRegistryDown = genGraph.reachableFrom (genGraph.fromRegistry {
-            registry = {
-              a = { };
-              b = { };
-              c = { };
-            };
-            edges = id: _entry: e id;
+          fromRegistryDown = genGraph.reachableFrom (genGraph.fromRegistry { } (id: _entry: e id) {
+            a = { };
+            b = { };
+            c = { };
           }) "a";
         };
         # the name the refusal carries where it is not the surface's own; `prim` is the primitive a
@@ -2100,11 +2158,12 @@ in
         ) names
       );
 
-    # ── THE RECORD DOORS (den-hoag-7gp66 P1, spec §v1.2) ──
-    # Every published door taking a record composes gen-prelude's `checkRequired` (a RECORD door, open
-    # past its required set, R5) or `checkOptions` over it (an OPTIONS or MIXED door, closed). Each
-    # refusal names the door, the field and the accepted set. The shared cases are
-    # `tests/_fixtures/doors.nix`; `ci/tests/doors.nix` asserts the same refusals catchable.
+    # ── THE DOORS (den-hoag-7gp66 P1, then P2 — `prelude.door`) ──
+    # Every published step taking a record is a door: a RECORD step (open past its required set, R5)
+    # or an OPTIONS step (closed). Each refusal names the door, the field and the accepted set; a
+    # record step guarded by its options step (`optionsStep`, G10) names the option and that door.
+    # The shared cases are `tests/_fixtures/doors.nix`; `ci/tests/doors.nix` asserts the same
+    # refusals catchable.
     flake.testsError.door-refusals =
       let
         F = import ./tests/_fixtures/doors.nix { inherit genGraph; };
@@ -2112,21 +2171,29 @@ in
         # the message is the door's text, not prelude's: an anchored literal, so a grown or reordered
         # accepted set turns the cell red
         exactly = m: "^" + builtins.replaceStrings [ "." "(" ")" ] [ "\\." "\\(" "\\)" ] m + "$";
-        cell = d: r: m: {
-          expr = builtins.seq (d.door r) true;
+        cell = step: r: m: {
+          expr = builtins.seq (step r) true;
           expectedError = {
             type = "ThrownError";
             msg = exactly m;
           };
         };
+        nameOf = n: d: "gen-graph.${d.name or n}";
         missing =
           n: d:
-          cell d (builtins.removeAttrs d.good [ d.drop ])
-            "gen-graph.${n}: required field '${d.drop}' is missing (required: ${quoted d.required}) (in prelude.checkRequired)";
+          cell d.step (builtins.removeAttrs d.good [ d.drop ])
+            "${nameOf n d}: required field '${d.drop}' is missing (required: ${quoted d.required}) (in prelude.checkRequired)";
         unknown =
           n: d:
-          cell d (d.good // { ${F.unknown} = 1; })
-            "gen-graph.${n}: '${F.unknown}' is not an option of this door; the options are closed (accepted: ${quoted d.accepted}) (in prelude.checkOptions)";
+          cell d.door
+            {
+              ${F.unknown} = 1;
+            }
+            "${nameOf n d}: '${F.unknown}' is not an option of this door; the options are closed (accepted: ${quoted d.optional}) (in prelude.checkOptions)";
+        misplaced =
+          n: d:
+          cell d.step (d.good // { ${d.misplaced} = 1; })
+            "${nameOf n d}: '${d.misplaced}' is an option of ${nameOf n d}, not a field of this record (in prelude.checkGuarded)";
         family =
           suffix: f: doors:
           builtins.listToAttrs (
@@ -2136,8 +2203,13 @@ in
             }) (builtins.attrNames doors)
           );
       in
-      family "missing-field-is-refused-by-name" missing (F.records // F.mixed)
-      // family "unknown-option-is-refused-by-name" unknown (F.options // F.mixed);
+      family "missing-field-is-refused-by-name" missing F.records
+      // family "unknown-option-is-refused-by-name" unknown F.options
+      // family "misplaced-option-is-refused-by-name" misplaced (
+        builtins.removeAttrs F.records (
+          builtins.filter (n: !(F.records.${n} ? misplaced)) (builtins.attrNames F.records)
+        )
+      );
 
     # ── R6: A PRIMITIVE REACHED THROUGH A DOOR REFUSES UNDER THE DOOR'S NAME (den-hoag-7gp66 P1) ──
     # `gen-graph.<door>: … (in <primitive>)` (spec R6 construction; cell 5 is `cycles`). Each door is

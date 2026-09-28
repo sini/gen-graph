@@ -40,13 +40,13 @@ let
 
   arms = {
     expandPreorder =
-      (g.expandPreorder {
+      (g.expandPreorder { } {
         roots = [ "n0" ];
         key = f: f;
         inherit edges;
       }).nodes;
     foldReach =
-      (g.foldReach {
+      (g.foldReach { } {
         roots = [ { to = "n0"; } ];
         edges = id: map (t: { to = t; }) (edges id);
         target = e: e.to;
@@ -56,7 +56,7 @@ let
     # a scalar accumulator isolates the core's own cost from the caller's
     foldPreorder =
       builtins.attrNames
-        (g.foldPreorder {
+        (g.foldPreorder { } {
           roots = [ "n0" ];
           key = f: f;
           acc = 0;
@@ -65,7 +65,9 @@ let
             children = edges f;
           };
         }).visited;
-    ancestorsOf = g.ancestorsOf { inherit parent; } (nm (n - 1));
+    ancestorsOf = g.ancestorsOf { } {
+      inherit parent;
+    } (nm (n - 1));
     materializeParents = builtins.attrNames (
       g.materializeParents {
         nodes = builtins.genList nm n;

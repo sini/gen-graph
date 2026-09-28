@@ -28,6 +28,19 @@ let
   # The key of the empty language: a step deriving it can reach no accepting state, so the
   # walks prune there. Compared as a key, never as a rendering — `stateKey` is a digest.
   emptyKey = regex.stateKey regex.empty;
+  inherit (prelude) door;
+  # A labeled graph is R5's data record: open, its missing fields refused by name at the door's
+  # application (P2 rule 3).
+  labeledDoor =
+    name:
+    door {
+      name = "gen-graph.${name}";
+      required = [
+        "labeledEdges"
+        "nodes"
+      ];
+      open = true;
+    };
   global = import ./global.nix { inherit prelude; };
   partition = import ./partition.nix { inherit prelude; };
 
@@ -47,17 +60,12 @@ let
   # would answer, and answer about a domain the caller never stated. A required formal makes
   # the omission report itself at the constructor, naming the missing argument, which is the
   # loudest thing the substrate offers.
-  # RECORD door (den-hoag-7gp66 P1, R5): every field required and none closed — a missing one is
-  # refused by name, catchably, and an extra one is admitted. The check is seq'd onto the result, so
-  # it fires when the record is applied.
+  # `labeledFrom perLabel nodes` (P2, R7): two operands, positional — `perLabel` configures the
+  # edges and `nodes` is the domain they are read over, so it comes last. Positional arity is
+  # structural, so the record check P1 carried here retires.
   labeledFrom =
-    args:
+    perLabel: nodes:
     let
-      checked = prelude.checkRequired "gen-graph.labeledFrom" [
-        "perLabel"
-        "nodes"
-      ] args;
-      inherit (checked) perLabel nodes;
       perLabel' =
         if builtins.isAttrs perLabel then
           perLabel
@@ -70,7 +78,7 @@ let
         label: f: callableAt "labeledFrom" "perLabel.${label}" "a list of node ids" f
       ) perLabel';
     in
-    builtins.seq checked {
+    {
       inherit nodes;
       labeledEdges =
         id:
@@ -177,7 +185,8 @@ let
   # (`lib/registry.nix`, `edges = id: prelude.unique …`). Multiplicity is a labeled-layer
   # fact, and a projection that leaked it would hand the global surfaces a number none of
   # them has a meaning for — `cycles` and `condensation` read reachability, not counts.
-  forgetLabels =
+  forgetLabels = labeledDoor "forgetLabels" forgetLabelsCore;
+  forgetLabelsCore =
     graph@{
       labeledEdges,
       nodes,
@@ -217,7 +226,7 @@ let
   # source's own edge order. So the transpose is a function of the graph and not of when it
   # was asked, and `labeledTranspose (labeledTranspose g)` restores `g`'s edge relation
   # with each node's out-edges re-sorted into `nodes` order.
-  labeledTranspose =
+  labeledTranspose = labeledDoor "labeledTranspose" (
     graph@{
       labeledEdges,
       nodes,
@@ -244,7 +253,8 @@ let
           inherit (e) label;
           target = e.from;
         }) (incoming.${toKey id} or [ ]);
-    };
+    }
+  );
 
   # ── THE BOUNDARY MARKS, AND THE DIAGNOSTIC THAT MAKES THEM VISIBLE ──
   # `boundedBy : labeledGraph → (nodeId → [ mark ]) → boundedLabeledGraph`, where a mark is
@@ -273,8 +283,9 @@ let
   # LAZINESS is preserved node-wise: the per-node verdict is memoized as a thunk so the two
   # accessors share one classification, and no node's edges are forced until it is asked
   # for. Only the memo's spine — one name per member of `nodes` — is built eagerly.
+  # `boundedBy marksOf graph` (P2, R7): the marks configure, the labeled graph is the subject.
   boundedBy =
-    graph: marksOf:
+    marksOf: graph:
     let
       toKey = attrKey "boundedBy";
       # A mark is read for `admits` wherever an edge is classified, so its shape is checked
@@ -407,11 +418,12 @@ let
   # p-edges bounds it, and routing between arms by that count inside the binder would be a
   # second default beside the door's (README, *The partition routing contract*). `p` never true
   # costs 50,021 either way. A target outside `nodes` is refused by this door's name, `(in lowlink)`.
+  # `cyclicEdgesWhere p graph` (P2, R7): the predicate configures, the labeled graph is the subject.
   cyclicEdgesWhere =
-    graph: p:
+    p: graph:
     let
       toKey = attrKey "cyclicEdgesWhere";
-      plain = forgetLabels graph;
+      plain = forgetLabelsCore graph;
       # The partition ARM by name, never the door: this consumer reads the tag map and
       # nothing else, so it has no stake in which algorithm the door defaults to.
       inherit (partition.threaded.lowlink (within "cyclicEdgesWhere" "lowlink") plain) sccOf;
@@ -461,25 +473,13 @@ let
   # over the whole set — an unknown or missing field is refused by name, catchably, naming the
   # door the caller called, when the record is applied.
   queryAll =
-    door: args:
+    {
+      graph,
+      from,
+      follow,
+      where,
+    }:
     let
-      checked =
-        prelude.checkOptions door
-          [
-            "graph"
-            "from"
-            "follow"
-            "where"
-          ]
-          (
-            prelude.checkRequired door [
-              "graph"
-              "from"
-              "follow"
-            ] args
-          );
-      inherit (checked) graph from follow;
-      where = checked.where or (_: true);
       toKey = attrKey "query";
       st0 = follow;
       # composite seen-key: JSON of the pair — collision-free by construction for ANY
@@ -549,10 +549,9 @@ let
           )
       );
     in
-    builtins.seq checked (
-      builtins.seq (identifier "query" from) (
-        builtins.seq (callableAt "query" "where" "a bool" where) (builtins.attrValues answers)
-      )
+
+    builtins.seq (identifier "query" from) (
+      builtins.seq (callableAt "query" "where" "a bool" where) (builtins.attrValues answers)
     );
 
   # ── `series` MODE: THE ANSWERS AS A SEQUENCE, IN VISITATION ORDER ──
@@ -713,35 +712,36 @@ let
   # `admission` is the canonical key of the residual follow expression at the arrival: the
   # admission policy that remains in force there, and the component a caller needs to state
   # a ⟨node, derivative-state⟩ collapse of its own.
-  # MIXED door (den-hoag-7gp66 P1, §v1.2): `checkOptions` over `checkRequired`, closed over the whole
-  # set — a missing field or an unknown one is refused by name, catchably, when the record is applied.
-  queryArrivals =
-    args:
+  # `queryArrivals { where ? (_: true); } { graph; from; follow; advance; }` (P2, R7): the options
+  # first, closed, then the four operands as ONE open record — rule 5's record, read at the unit:
+  # `graph`, `from`, `follow` and `advance` are four sorts (a labeled graph, a node, a path
+  # expression, a charge function) with no order among them that makes one the subject the others
+  # configure. A `where` given on the record is refused as misplaced (`optionsStep`).
+  queryArrivals = door {
+    name = "gen-graph.queryArrivals";
+    optional = [ "where" ];
+  } (o: queryArrivalsRecord (queryArrivalsCore (o.where or (_: true))));
+  queryArrivalsRecord = door {
+    name = "gen-graph.queryArrivals";
+    required = [
+      "graph"
+      "from"
+      "follow"
+      "advance"
+    ];
+    open = true;
+    optionsStep = queryArrivals;
+  };
+  queryArrivalsCore =
+    where:
+    {
+      graph,
+      from,
+      follow,
+      advance,
+      ...
+    }:
     let
-      checked =
-        prelude.checkOptions "gen-graph.queryArrivals"
-          [
-            "graph"
-            "from"
-            "follow"
-            "advance"
-            "where"
-          ]
-          (
-            prelude.checkRequired "gen-graph.queryArrivals" [
-              "graph"
-              "from"
-              "follow"
-              "advance"
-            ] args
-          );
-      inherit (checked)
-        graph
-        from
-        follow
-        advance
-        ;
-      where = checked.where or (_: true);
       closure = builtins.genericClosure {
         startSet = [
           {
@@ -807,28 +807,27 @@ let
     # raw id, so a scalar `from` never reaches `genericClosure`'s native comparator and den-hoag-7gp66
     # OQ13's string-only ruling does not reach this guard (den-hoag-3w9e7's rescope names the 8
     # doors it does reach; this is not one of them).
-    builtins.seq checked (
-      builtins.seq (nodeKey "queryArrivals" from) (
-        builtins.seq (callableAt "queryArrivals" "where" "a bool" where) (
-          builtins.seq (callableAt "queryArrivals" "advance" "an int" advance) (
-            map
-              (item: {
-                inherit (item) node distance via;
-                admission = regex.stateKey item.st;
-              })
-              (
-                builtins.filter (
-                  item:
-                  regex.nullable item.st
-                  && (
-                    let
-                      w = where item.node;
-                    in
-                    if builtins.isBool w then w else badResult "queryArrivals" "where" (renderId item.node) "a bool" w
-                  )
-                ) closure
-              )
-          )
+
+    builtins.seq (nodeKey "queryArrivals" from) (
+      builtins.seq (callableAt "queryArrivals" "where" "a bool" where) (
+        builtins.seq (callableAt "queryArrivals" "advance" "an int" advance) (
+          map
+            (item: {
+              inherit (item) node distance via;
+              admission = regex.stateKey item.st;
+            })
+            (
+              builtins.filter (
+                item:
+                regex.nullable item.st
+                && (
+                  let
+                    w = where item.node;
+                  in
+                  if builtins.isBool w then w else badResult "queryArrivals" "where" (renderId item.node) "a bool" w
+                )
+              ) closure
+            )
         )
       )
     );
@@ -842,25 +841,13 @@ let
   # same reasoning as `queryAll`'s applies — `door` is the caller's own name, supplied at each
   # call site, never `queryPaths`'s own.
   queryPaths =
-    door: args:
+    {
+      graph,
+      from,
+      follow,
+      where,
+    }:
     let
-      checked =
-        prelude.checkOptions door
-          [
-            "graph"
-            "from"
-            "follow"
-            "where"
-          ]
-          (
-            prelude.checkRequired door [
-              "graph"
-              "from"
-              "follow"
-            ] args
-          );
-      inherit (checked) graph from follow;
-      where = checked.where or (_: true);
       toKey = attrKey "query";
       go =
         visited: pathAcc: node: st:
@@ -908,10 +895,9 @@ let
         in
         here ++ steps;
     in
-    builtins.seq checked (
-      builtins.seq (callableAt "query" "where" "a bool" where) (
-        go { ${toKey from} = true; } [ ] from follow
-      )
+
+    builtins.seq (callableAt "query" "where" "a bool" where) (
+      go { ${toKey from} = true; } [ ] from follow
     );
 
   # ── per-query label order: compare witness paths lexicographically on label ranks;
@@ -1005,26 +991,12 @@ let
   # The `null` sentinel is caught and refused explicitly below; the API contract — REQUIRED,
   # TOTAL, never a silent behavioural default — is unaffected.
   queryVisible =
-    args@{
-      order ? {
-        labels = [ ];
-      },
-      groupBy ? null,
-      ...
-    }:
-    assert
-      groupBy == null
-      -> throw "gen-graph.queryVisible: groupBy is required and is never defaulted (den-hoag-l7af / ADR-0024 ruling 3); a caller wanting the per-node reading states `groupBy = ans: ans.node;` explicitly";
+    o: q:
     let
+      order = o.order or { labels = [ ]; };
+      inherit (o) groupBy;
       toKey = attrKey "queryVisible";
-      # `queryVisible` is itself reached only through `query` (mode `visible`), so the door
-      # blamed at `queryPaths`'s formals is `query`'s, not this function's own.
-      answers = queryPaths "gen-graph.query" (
-        builtins.removeAttrs args [
-          "order"
-          "groupBy"
-        ]
-      );
+      answers = queryPaths q;
       groups = builtins.groupBy (
         a:
         let
@@ -1057,22 +1029,37 @@ let
     };
 
   queryLayers =
-    args@{
-      order ? {
-        labels = [ ];
-      },
-      ...
-    }:
+    o: q:
     let
-      # `queryLayers` is itself reached only through `query` (mode `layers`); same reasoning
-      # as `queryVisible`'s above.
-      answers = queryPaths "gen-graph.query" (builtins.removeAttrs args [ "order" ]);
+      order = o.order or { labels = [ ]; };
+      answers = queryPaths q;
       # layer key = the rank word as JSON (parses back losslessly; no digit-string fragility)
       keyed = builtins.groupBy (ans: builtins.toJSON (rankWordOf order ans.path)) answers;
       words = builtins.attrNames keyed;
       less = ka: kb: wordLess (order.endOfPath or (-1)) (builtins.fromJSON ka) (builtins.fromJSON kb);
     in
     map (k: keyed.${k}) (builtins.sort less words);
+
+  # ── THE QUERY RECORD: `{ graph; from; follow; }` ──
+  # Every mode of `query`, and `queryFold`, walks the same three operands: a labeled graph, the
+  # node the walk starts from and the path expression it follows. They are ONE open record (P2,
+  # rule 5, read at the unit): `graph` is the subject rule 4 could name, but `from` and `follow`
+  # are a node and an expression with no natural order between them, so the doubt is recorded
+  # here and the record kept — the same reading as `queryArrivals`'s. Each door that takes it
+  # binds its own record door once, guarded against that door's own options (`optionsStep`), so
+  # an option placed in the record is refused by name rather than silently ignored.
+  queryRecordOf =
+    optionsStep:
+    door {
+      inherit (optionsStep.__contract) name;
+      required = [
+        "graph"
+        "from"
+        "follow"
+      ];
+      open = true;
+      inherit optionsStep;
+    };
 
   # Fold a combining operation over a query's answer set, in canonical
   # (sorted-node) order. The caller's (empty, combine) is expected to be a
@@ -1081,20 +1068,34 @@ let
   # bounded join-semilattices for exactly this reason). Recursive node-valued
   # fixpoints (a node's value depending on neighbors' values) are fixpoint.nix
   # territory, not this fold.
+  #
+  # `queryFold { valueOf ? (id: id); where ? (_: true); } combine empty { graph; from; follow; }`
+  # (P2, R7): the options first, closed; `combine` and `empty` are the monoid, positional in
+  # `foldl'`'s order; the query record is the subject, last.
   queryFold =
-    args@{
-      empty,
-      combine,
-      valueOf ? (id: id),
-      ...
-    }:
+    door
+      {
+        name = "gen-graph.queryFold";
+        optional = [
+          "valueOf"
+          "where"
+        ];
+      }
+      (
+        o: combine: empty:
+        queryFoldRecord (queryFoldCore o combine empty)
+      );
+  queryFoldRecord = queryRecordOf queryFold;
+  queryFoldCore =
+    o: combine: empty: r:
     let
+      valueOf = o.valueOf or (id: id);
       # applied, never read: lazy doors (den-hoag-hekcx), and `combine`'s first application must
       # return a function
       cb = callableAt "queryFold" "combine" "a function from a value to the next accumulator" combine;
       vo = callableAt "queryFold" "valueOf" "a value" valueOf;
     in
-    builtins.seq (if args ? from then identifier "queryFold" args.from else null) (
+    builtins.seq (identifier "queryFold" r.from) (
       builtins.foldl'
         (
           acc: id:
@@ -1109,55 +1110,94 @@ let
               h
         )
         empty
-        (
-          # den-hoag-7gp66 P1, P-1: `queryFold` is a published door — called directly or via
-          # `query { mode = "fixpoint"; … }`, either way it is the door that named itself here,
-          # so `queryAll`'s formals check blames `queryFold`, never `queryAll`.
-          queryAll "gen-graph.queryFold" (
-            builtins.removeAttrs args [
-              "empty"
-              "combine"
-              "valueOf"
-              "mode" # `query { mode = "fixpoint"; … }` dispatches here — strip the alias
-            ]
-          )
-        )
+        (queryAll {
+          inherit (r) graph from follow;
+          where = o.where or (_: true);
+        })
     );
 
   # ── THE complete mode dispatch (final form) ────────────────────────────────
+  # `query { mode ? "all"; where ?; order ?; groupBy ?; combine ?; empty ?; valueOf ?; }
+  # { graph; from; follow; }` (P2, R7; den-hoag-nvrl1): ONE closed options set, the same in every
+  # mode, so an unknown option is refused by name at `query opts`'s WHNF whatever the mode — where
+  # it once aborted uncatchably naming an internal (`all`, `paths`) or was dropped silently
+  # (`series`). An option a mode does not read is admitted at every mode; an option a mode
+  # REQUIRES (`visible`'s `groupBy`, `fixpoint`'s `combine` and `empty`) and an unknown mode are
+  # refused by name at the same point, before any graph is supplied.
+  queryModes = [
+    "all"
+    "series"
+    "paths"
+    "visible"
+    "layers"
+    "fixpoint"
+  ];
   query =
-    args@{
-      mode ? "all",
-      ...
-    }:
+    door
+      {
+        name = "gen-graph.query";
+        optional = [
+          "mode"
+          "where"
+          "order"
+          "groupBy"
+          "combine"
+          "empty"
+          "valueOf"
+        ];
+      }
+      (
+        o:
+        let
+          mode = o.mode or "all";
+          missing = builtins.filter (f: !(o ? ${f})) (
+            if mode == "fixpoint" then
+              [
+                "combine"
+                "empty"
+              ]
+            else
+              [ ]
+          );
+        in
+        if !builtins.elem mode queryModes then
+          throw "gen-graph.query: unknown mode '${mode}'"
+        else if mode == "visible" && (o.groupBy or null) == null then
+          throw "gen-graph.queryVisible: groupBy is required and is never defaulted (den-hoag-l7af / ADR-0024 ruling 3); a caller wanting the per-node reading states `groupBy = ans: ans.node;` explicitly"
+        else if missing != [ ] then
+          throw "gen-graph.query: mode \"fixpoint\" requires the option '${builtins.head missing}' (the fold's monoid is `combine` and `empty`)"
+        else
+          queryRecord (queryCore mode o)
+      );
+  queryRecord = queryRecordOf query;
+  queryCore =
+    mode: o: r:
     let
-      core = builtins.removeAttrs args [
-        "mode"
-        "order"
-        "groupBy"
-      ];
+      q = {
+        inherit (r) graph from follow;
+        where = o.where or (_: true);
+      };
     in
     # `nodeKey`, not `identifier`, for the same reason as `queryArrivals` above: every mode's
     # closure keys on a `toJSON […]` composite, not the raw id (`queryAll`'s `from` is re-checked by
     # `identifier` regardless, at `queryAll`'s own door). Not one of OQ13's 8 doors.
-    builtins.seq (if args ? from then nodeKey "query" args.from else null) (
+    builtins.seq (nodeKey "query" r.from) (
       if mode == "all" then
-        queryAll "gen-graph.query" core
+        queryAll q
       else if mode == "series" then
-        querySeries core
+        querySeries q
       else if mode == "paths" then
-        queryPaths "gen-graph.query" core
+        queryPaths q
       else if mode == "visible" then
-        queryVisible (builtins.removeAttrs args [ "mode" ])
+        queryVisible o q
       else if mode == "layers" then
-        queryLayers (builtins.removeAttrs args [ "mode" ])
-      else if mode == "fixpoint" then
+        queryLayers o q
+      else
         # fixpoint consumption IS the ACI fold — the mode string dispatches to it;
         # lawfulness (commutative-idempotent combine) is the caller's contract
-        queryFold (builtins.removeAttrs args [ "mode" ])
-      else
-        throw "gen-graph.query: unknown mode '${mode}'"
+        queryFoldCore o o.combine o.empty r
     );
+
 in
 {
   inherit

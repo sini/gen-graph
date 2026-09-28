@@ -330,7 +330,7 @@ in
     };
 
     test-dependents-cedar = {
-      expr = builtins.sort builtins.lessThan (dependents fixtures.attributed "cedar");
+      expr = builtins.sort builtins.lessThan (dependents { } fixtures.attributed "cedar");
       expected = [
         "alder"
         "elm"
@@ -338,12 +338,12 @@ in
       ];
     };
     test-dependents-leaf = {
-      expr = dependents fixtures.chain "a";
+      expr = dependents { } fixtures.chain "a";
       expected = [ ];
     };
     test-dependents-equals-impact = {
       expr = impactOf fixtures.attributed "cedar";
-      expected = dependents fixtures.attributed "cedar";
+      expected = dependents { } fixtures.attributed "cedar";
     };
     test-transpose-chain = {
       expr =
@@ -384,7 +384,7 @@ in
       ];
     };
     test-transpose-composes-with-ancestorsOf = {
-      expr = ancestorsOf (transpose fixtures.tree) "grandchild";
+      expr = ancestorsOf { } (transpose fixtures.tree) "grandchild";
       expected = [
         "child1"
         "root"
@@ -409,7 +409,7 @@ in
               }
             ];
           };
-          closure = genGraph.transitiveClosure g;
+          closure = genGraph.transitiveClosure { } g;
         in
         closure."a" or [ ];
       expected = [ "a" ];
@@ -431,7 +431,7 @@ in
     };
     test-dependentsOf-matches-dependents = {
       expr = dependentsOf fixtures.attributed "dogwood";
-      expected = dependents fixtures.attributed "dogwood";
+      expected = dependents { } fixtures.attributed "dogwood";
     };
     test-impactOf-uses-dependentsOf = {
       expr = impactOf fixtures.attributed "birch";

@@ -125,14 +125,25 @@ in
             x = [ "b" ];
           };
         in
-        builtins.sort builtins.lessThan (differenceEdges a b).x;
+        builtins.sort builtins.lessThan
+          (differenceEdges {
+            minuend = a;
+            subtrahend = b;
+          }).x;
       expected = [
         "a"
         "c"
       ];
     };
     test-difference-empty = {
-      expr = differenceEdges { x = [ "a" ]; } { x = [ "a" ]; };
+      expr = differenceEdges {
+        minuend = {
+          x = [ "a" ];
+        };
+        subtrahend = {
+          x = [ "a" ];
+        };
+      };
       expected = { };
     };
     test-materialize-parents-tree = {
@@ -193,7 +204,10 @@ in
             y = [ "z" ];
           };
         in
-        differenceEdges a b;
+        differenceEdges {
+          minuend = a;
+          subtrahend = b;
+        };
       expected = {
         x = [ "b" ];
       };

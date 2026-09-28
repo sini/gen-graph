@@ -59,7 +59,7 @@ in
       ];
     };
     test-scope-accessor-dependents = {
-      expr = builtins.sort builtins.lessThan (dependents scopeAccessor "host:glacier");
+      expr = builtins.sort builtins.lessThan (dependents { } scopeAccessor "host:glacier");
       expected = [
         "host:iceberg"
         "host:igloo"
@@ -111,10 +111,7 @@ in
               imports = [ ];
             };
           };
-          g = fromRegistry {
-            registry = nm;
-            edges = field "imports";
-          };
+          g = fromRegistry { } (field "imports") nm;
         in
         builtins.sort builtins.lessThan (reachableFrom g "svc:web");
       expected = [

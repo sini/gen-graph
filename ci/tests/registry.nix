@@ -105,10 +105,8 @@ in
             };
           };
           g = fromRegistry {
-            registry = nm;
-            edges = field "imports";
             parent = _id: entry: entry.parent or null;
-          };
+          } (field "imports") nm;
         in
         {
           edges = g.edges "host:a";
@@ -181,13 +179,10 @@ in
     test-from-registry-missing-node = {
       expr =
         let
-          g = fromRegistry {
-            registry = {
-              a = {
-                deps = [ "b" ];
-              };
+          g = fromRegistry { } (field "deps") {
+            a = {
+              deps = [ "b" ];
             };
-            edges = field "deps";
           };
         in
         {

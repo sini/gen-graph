@@ -482,10 +482,15 @@ let
     let
       mat = g.materialize { inherit edges nodes; };
     in
-    g.fixpoint {
-      seed = mat;
-      step = current: g.unionEdges current (g.compose current mat);
-    };
+    g.fixpoint { } (
+      current:
+      g.unionEdges current (
+        g.compose {
+          first = current;
+          second = mat;
+        }
+      )
+    ) mat;
 
   # ── THE DEDUP'S OWN COST, AT A FIXED L ──
   # The batch's central law as a reading rather than a recollection. `prelude.unique` is
@@ -529,7 +534,9 @@ let
               map (
                 v:
                 let
-                  ps = g.pathsBetween { inherit edges; } v u;
+                  ps = g.pathsBetween { } {
+                    inherit edges;
+                  } v u;
                 in
                 if ps == [ ] then [ ] else builtins.head ps
               ) (builtins.filter (v: sccOf.${v} == sccOf.${u}) (edges u))
@@ -1226,11 +1233,11 @@ let
     # partition; none forces no tag at all. The `len` control is the witness count: n on `cycle`
     # under all, 1 under one, 0 under none.
     else if arm == "cyclicEdgesWhere" then
-      g.cyclicEdgesWhere labeled (_: true)
+      g.cyclicEdgesWhere (_: true) labeled
     else if arm == "cyclicEdgesWhereOne" then
-      g.cyclicEdgesWhere labeled (l: l == "hit")
+      g.cyclicEdgesWhere (l: l == "hit") labeled
     else if arm == "cyclicEdgesWhereNone" then
-      g.cyclicEdgesWhere labeled (_: false)
+      g.cyclicEdgesWhere (_: false) labeled
     # ── THE DECOMPOSITION, AND ITS TWO HALVES ARE READ TOGETHER ── `fbNodeTags` forces the
     # tag map ALONE, through the field `condensationOf` publishes it as, so `fbNode` minus this
     # arm is the finisher. `condensationOfDiscrete` is the finisher standing alone on an acyclic
@@ -1242,7 +1249,7 @@ let
     else if arm == "discreteTags" then
       discreteTagsOf acc
     else if arm == "condensationClosure" then
-      (g.condensationClosure acc).sccs
+      (g.condensationClosure { } acc).sccs
     # ── THE ACCESSOR HOIST, EACH SURFACE AGAINST THE CONSTRUCTION IT REPLACED ──
     # Read as PAIRS. A hoisted column alone says nothing: the hoist trades a per-visit cost for
     # a one-off whole-graph cost, so which way a cell goes is a property of how many closures
@@ -1274,9 +1281,9 @@ let
     # `dependents` is curried (accessor -> targetId) and computes the FULL closure
     # before filtering, so the closure cost is paid whichever target is named.
     else if arm == "dependents" then
-      g.dependents acc (builtins.head nodes)
+      g.dependents { } acc (builtins.head nodes)
     else if arm == "transitiveClosure" then
-      g.transitiveClosure acc
+      g.transitiveClosure { } acc
     # The round-schedule pair. `transitiveClosure` above IS the squared arm; this is the
     # schedule it replaced. Neither figure means anything without the other's on the same shape.
     else if arm == "closureNaive" then
@@ -1288,7 +1295,7 @@ let
     else if arm == "uniqueInts" then
       uniqueInts n
     else if arm == "transitiveReduction" then
-      g.transitiveReduction acc
+      g.transitiveReduction { } acc
     # The ORDERING loop. On an acyclic shape this returns `.order` and the emission loop
     # runs n steps; on `complete`/`cycle` it returns the cycle REPORT instead and prices the
     # failure path, which is arms 1 and 2 over again. `initialReady` below says which.
@@ -1359,7 +1366,7 @@ let
     else if arm == "sentinelPeerOrder" then
       (g.topoOrder { } (mkFixtures 64).wide).order
     else if arm == "sentinelPeerClosure" then
-      (g.condensationClosure (mkFixtures 32).cycle).sccs
+      (g.condensationClosure { } (mkFixtures 32).cycle).sccs
     else
       throw "unknown arm ${arm}";
 in

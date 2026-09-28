@@ -159,7 +159,7 @@ else if arm == "fbWork" then
 else if arm == "lowlink" then
   crossed (g.lowlink acc)
 else if arm == "closure" then
-  crossed (g.condensationClosure acc)
+  crossed (g.condensationClosure { } acc)
 else if arm == "legacy" then
   crossed (legacyRecord acc)
 else if arm == "fnControl" then

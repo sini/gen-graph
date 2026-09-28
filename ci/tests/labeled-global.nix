@@ -30,13 +30,10 @@ let
   # fixture because the contract requires it, not because these cases need a wide domain.
   lf =
     nodes: pairs:
-    labeledFrom {
-      inherit nodes;
-      perLabel = builtins.mapAttrs (
-        _: m: id:
-        m.${id} or [ ]
-      ) pairs;
-    };
+    labeledFrom (builtins.mapAttrs (
+      _: m: id:
+      m.${id} or [ ]
+    ) pairs) nodes;
 
   # The negativity of a label is the CALLER's — the library is label-agnostic, so the
   # predicate arrives from here and the word "neg" is this file's, not gen-graph's.
@@ -299,7 +296,7 @@ in
     # the query found the edge on the cycle or the one off it, so a boolean cell passes
     # without discriminating.
     test-cyclic-edges-where-f1-names-the-edge = {
-      expr = cyclicEdgesWhere f1 isNeg;
+      expr = cyclicEdgesWhere isNeg f1;
       expected = [
         {
           from = "a";
@@ -311,18 +308,18 @@ in
     # ARMED CONTROL 1 — same cycle, no matching label. A run in which this and the next
     # cell do not BOTH come back empty says nothing about the cell above it.
     test-cyclic-edges-where-f2-control-no-matching-label = {
-      expr = cyclicEdgesWhere f2 isNeg;
+      expr = cyclicEdgesWhere isNeg f2;
       expected = [ ];
     };
     # ARMED CONTROL 2 — matching label, no cycle.
     test-cyclic-edges-where-f3-control-no-cycle = {
-      expr = cyclicEdgesWhere f3 isNeg;
+      expr = cyclicEdgesWhere isNeg f3;
       expected = [ ];
     };
     # DISCRIMINATION — two edges satisfy the predicate; exactly the one on the cycle is
     # named, and the off-cycle one (a→d) is absent.
     test-cyclic-edges-where-f4-discriminates = {
-      expr = cyclicEdgesWhere f4 isNeg;
+      expr = cyclicEdgesWhere isNeg f4;
       expected = [
         {
           from = "c";
@@ -334,11 +331,13 @@ in
     # A self-loop IS a cycle, and a singleton component is where a partition-only reading
     # would lose it: the edge's endpoints share a component of size one.
     test-cyclic-edges-where-self-loop = {
-      expr = cyclicEdgesWhere (lf [ "u" ] {
-        neg = {
-          u = [ "u" ];
-        };
-      }) isNeg;
+      expr = cyclicEdgesWhere isNeg (
+        lf [ "u" ] {
+          neg = {
+            u = [ "u" ];
+          };
+        }
+      );
       expected = [
         {
           from = "u";
@@ -353,7 +352,7 @@ in
     # cycle and is named. This is the case ABW Definition 4's second sentence exists for,
     # and the only cell in this file whose answer changes when a sign stops being a set.
     test-cyclic-edges-where-both-signed-edge-in-cycle = {
-      expr = cyclicEdgesWhere f5 isNeg;
+      expr = cyclicEdgesWhere isNeg f5;
       expected = [
         {
           from = "p";
@@ -368,7 +367,7 @@ in
     # cell records what a caller gets for making it, which is what makes the cell above a
     # measurement of the encoding rather than a restatement of F1.
     test-control-cyclic-edges-where-one-sign-encoding-admits = {
-      expr = cyclicEdgesWhere f5one isNeg;
+      expr = cyclicEdgesWhere isNeg f5one;
       expected = [ ];
     };
     # THE TWO HAZARDS AT ONCE, which is the one shape neither cell above holds. The join has
@@ -377,7 +376,7 @@ in
     # positive edge standing right beside it on the same self-pair. Each hazard alone has a
     # cell; a reading that fails either one answers `[ ]` here.
     test-cyclic-edges-where-both-signed-self-loop = {
-      expr = cyclicEdgesWhere f6 isNeg;
+      expr = cyclicEdgesWhere isNeg f6;
       expected = [
         {
           from = "u";
@@ -390,7 +389,7 @@ in
     # nowhere to put `p ← ¬p`, so the self-loop reads ADMISSIBLE: the caller-side unsoundness
     # ARMED CONTROL 3 records, on the singleton-component regime instead of the two-node one.
     test-control-cyclic-edges-where-one-sign-self-loop-admits = {
-      expr = cyclicEdgesWhere f6one isNeg;
+      expr = cyclicEdgesWhere isNeg f6one;
       expected = [ ];
     };
     # BOTH SIGNS NAMED, NOT ONE PER PAIR. Every other cell in this file filters down to a
@@ -404,7 +403,7 @@ in
     # THE ORDER IS ASSERTED because the contract states it: (from, label, to) ascending, so
     # the answer is a function of the graph rather than of accessor enumeration.
     test-cyclic-edges-where-both-signs-are-named-on-a-cycle = {
-      expr = cyclicEdgesWhere f5 (_: true);
+      expr = cyclicEdgesWhere (_: true) f5;
       expected = [
         {
           from = "p";
@@ -427,7 +426,7 @@ in
     # second half of the one above: a singleton component behaving like any other is the
     # assumption this file keeps finding false.
     test-cyclic-edges-where-both-signs-are-named-on-a-self-loop = {
-      expr = cyclicEdgesWhere f6 (_: true);
+      expr = cyclicEdgesWhere (_: true) f6;
       expected = [
         {
           from = "u";
@@ -445,8 +444,8 @@ in
     # answers about whichever labels the caller asks about, including all of them.
     test-cyclic-edges-where-predicate-is-the-callers = {
       expr = {
-        anyLabel = cyclicEdgesWhere f4 (_: true);
-        noLabel = cyclicEdgesWhere f4 (_: false);
+        anyLabel = cyclicEdgesWhere (_: true) f4;
+        noLabel = cyclicEdgesWhere (_: false) f4;
       };
       expected = {
         anyLabel = [

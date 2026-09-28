@@ -461,13 +461,10 @@ let
 
   # OPTIONS door (den-hoag-7gp66 P1, §v1.2): closed — an unknown option is refused by name,
   # catchably, when the options are applied, before the pattern is.
-  parseWith =
-    opts:
-    let
-      checked = prelude.checkOptions "gen-graph.regex.parseWith" [ "maxLength" ] opts;
-      maxLength = checked.maxLength or parseMaxLength;
-    in
-    builtins.seq checked (parseWithMax maxLength);
+  parseWith = prelude.door {
+    name = "gen-graph.regex.parseWith";
+    optional = [ "maxLength" ];
+  } (o: parseWithMax (o.maxLength or parseMaxLength));
   parseWithMax =
     maxLength: s:
     let

@@ -39,102 +39,127 @@ let
   addrC = "f1f2f3f4:theme";
 
   # A -> B -> C, no cycle.
-  acyclic = fromScan {
-    items = [
-      (item addrA [ (refTo addrB "hop-1") ])
-      (item addrB [ (refTo addrC "hop-2") ])
-      (item addrC [ ])
-    ];
-    inherit scan project;
-    nodeData = {
-      ${addrA} = {
-        field = "font";
+  acyclic =
+    fromScan
+      {
+        nodeData = {
+          ${addrA} = {
+            field = "font";
+          };
+          ${addrC} = {
+            field = "theme";
+          };
+        };
+      }
+      {
+        items = [
+          (item addrA [ (refTo addrB "hop-1") ])
+          (item addrB [ (refTo addrC "hop-2") ])
+          (item addrC [ ])
+        ];
+        inherit scan;
+        inherit project;
       };
-      ${addrC} = {
-        field = "theme";
-      };
-    };
-  };
 
   # A -> B -> C -> A.
-  cyclic = fromScan {
+  cyclic = fromScan { } {
     items = [
       (item addrA [ (refTo addrB "hop-1") ])
       (item addrB [ (refTo addrC "hop-2") ])
       (item addrC [ (refTo addrA "hop-3") ])
     ];
-    inherit scan project;
+    inherit scan;
+    inherit project;
   };
 
   # An item the scan finds nothing in, which nothing references: edges alone cannot know it.
-  itemOnly = fromScan {
+  itemOnly = fromScan { } {
     items = [ (item addrA [ ]) ];
-    inherit scan project;
+    inherit scan;
+    inherit project;
   };
-  seeded = fromScan {
-    items = [ (item addrA [ ]) ];
-    inherit scan project;
-    nodeData = {
-      ${addrA} = {
-        field = "font";
+  seeded =
+    fromScan
+      {
+        nodeData = {
+          ${addrA} = {
+            field = "font";
+          };
+        };
+      }
+      {
+        items = [ (item addrA [ ]) ];
+        inherit scan;
+        inherit project;
       };
-    };
-  };
 
   # Two references from one item to the same target: the derivation keeps both hops, the accessor
   # reports one successor.
-  parallel = fromScan {
+  parallel = fromScan { } {
     items = [
       (item addrA [
         (refTo addrB "hop-1")
         (refTo addrB "hop-2")
       ])
     ];
-    inherit scan project;
+    inherit scan;
+    inherit project;
   };
 
-  empty = fromScan {
+  empty = fromScan { } {
     items = [ ];
-    inherit scan project;
+    inherit scan;
+    inherit project;
   };
 
   # A derived graph still has a containment dimension. `parents` rides through to mkGraph beside
   # the derived edges; gen-schema's kind topology is the live case, unioning a parent edge set
   # with the ref edges a scan derives. A constructor that dropped it would push that caller back
   # to mkGraph and out of the derivation entirely.
-  parented = fromScan {
-    items = [ (item addrA [ (refTo addrB "hop-1") ]) ];
-    inherit scan project;
-    parents = [
+  parented =
+    fromScan
       {
-        from = addrA;
-        to = addrC;
+        parents = [
+          {
+            from = addrA;
+            to = addrC;
+          }
+        ];
       }
-    ];
-  };
+      {
+        items = [ (item addrA [ (refTo addrB "hop-1") ]) ];
+        inherit scan;
+        inherit project;
+      };
 
   # A parent edge that CONTRADICTS a derived one: the scan derives addrA -> addrB, the caller
   # declares addrB's parent to be addrA. The two indices are disjoint in mkGraph, so neither can
   # answer for the other — and in particular a parent cannot close a cycle in the derived graph.
-  parentAgainstEdge = fromScan {
-    items = [ (item addrA [ (refTo addrB "hop-1") ]) ];
-    inherit scan project;
-    parents = [
+  parentAgainstEdge =
+    fromScan
       {
-        from = addrB;
-        to = addrA;
+        parents = [
+          {
+            from = addrB;
+            to = addrA;
+          }
+        ];
       }
-    ];
-  };
+      {
+        items = [ (item addrA [ (refTo addrB "hop-1") ]) ];
+        inherit scan;
+        inherit project;
+      };
   # The positive control for that last claim: the SAME shape with the back-hop DERIVED rather than
   # declared is a real cycle, so a `[ ]` above is the parent index staying out of it, not
   # cyclePaths failing to fire.
-  derivedBackEdge = fromScan {
+  derivedBackEdge = fromScan { } {
     items = [
       (item addrA [ (refTo addrB "hop-1") ])
       (item addrB [ (refTo addrA "hop-2") ])
     ];
-    inherit scan project;
+    inherit scan;
+    inherit project;
   };
 
   throws = e: !(builtins.tryEval (builtins.deepSeq e true)).success;
@@ -280,7 +305,7 @@ in
     # Construction forces neither: the result is an accessor before anything is scanned.
     test-throwing-scan-not-forced-by-construction = {
       expr =
-        (fromScan {
+        (fromScan { } {
           items = [ (item addrA [ (refTo addrB "hop-1") ]) ];
           scan = _: throw "scan boom";
           inherit project;
@@ -291,7 +316,7 @@ in
     test-throwing-scan-propagates-on-force = {
       expr =
         throws
-          (fromScan {
+          (fromScan { } {
             items = [ (item addrA [ (refTo addrB "hop-1") ]) ];
             scan = _: throw "scan boom";
             inherit project;
@@ -301,7 +326,7 @@ in
     test-throwing-projection-propagates-on-force = {
       expr =
         throws
-          (fromScan {
+          (fromScan { } {
             items = [ (item addrA [ (refTo addrB "hop-1") ]) ];
             inherit scan;
             project = _: throw "project boom";

@@ -37,13 +37,10 @@ let
     reachableVia = G.reachableVia (G.hoistEdges (acc e)) "a";
     selfReachableVia = G.selfReachableVia (G.hoistEdges (acc e)) "a";
     coScc = G.coScc (acc e) "a" "c";
-    fromRegistryDown = G.reachableFrom (G.fromRegistry {
-      registry = {
-        a = { };
-        b = { };
-        c = { };
-      };
-      edges = id: _entry: e id;
+    fromRegistryDown = G.reachableFrom (G.fromRegistry { } (id: _entry: e id) {
+      a = { };
+      b = { };
+      c = { };
     }) "a";
   };
   # Every shape `identifier` refuses a target for: the 4 non-scalar shapes (den-hoag-3w9e7) plus the

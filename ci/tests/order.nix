@@ -71,7 +71,10 @@ in
       };
     };
     test-entry-between-shape = {
-      expr = entryBetween [ "c" ] [ "a" ];
+      expr = entryBetween {
+        before = [ "c" ];
+        after = [ "a" ];
+      };
       expected = {
         before = [ "c" ];
         after = [ "a" ];

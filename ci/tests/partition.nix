@@ -348,19 +348,21 @@ in
   flake.tests.partition = {
     # ── the per-node arm against the closure reference, whole record, every fixture ──
     test-fbnode-equals-closure-reference = {
-      expr = builtins.mapAttrs (_: fx: fbNode fx == condensationClosure fx) allFixtures;
+      expr = builtins.mapAttrs (_: fx: fbNode fx == condensationClosure { } fx) allFixtures;
       expected = builtins.mapAttrs (_: _: true) allFixtures;
     };
     # And the tag map on its own, VALUE FOR VALUE, so the cell above cannot be passing on a
     # field that happens to agree while the naming does not.
     test-fbnode-tag-map-value-for-value = {
-      expr = builtins.mapAttrs (_: fx: (fbNode fx).sccOf == (condensationClosure fx).sccOf) allFixtures;
+      expr = builtins.mapAttrs (
+        _: fx: (fbNode fx).sccOf == (condensationClosure { } fx).sccOf
+      ) allFixtures;
       expected = builtins.mapAttrs (_: _: true) allFixtures;
     };
 
     # ── the worklist arm, against the reference AND against the other arm ──
     test-fbwork-equals-closure-reference = {
-      expr = builtins.mapAttrs (_: fx: fbWork fx == condensationClosure fx) allFixtures;
+      expr = builtins.mapAttrs (_: fx: fbWork fx == condensationClosure { } fx) allFixtures;
       expected = builtins.mapAttrs (_: _: true) allFixtures;
     };
     test-fbwork-equals-fbnode = {
@@ -368,17 +370,21 @@ in
       expected = builtins.mapAttrs (_: _: true) allFixtures;
     };
     test-fbwork-tag-map-value-for-value = {
-      expr = builtins.mapAttrs (_: fx: (fbWork fx).sccOf == (condensationClosure fx).sccOf) allFixtures;
+      expr = builtins.mapAttrs (
+        _: fx: (fbWork fx).sccOf == (condensationClosure { } fx).sccOf
+      ) allFixtures;
       expected = builtins.mapAttrs (_: _: true) allFixtures;
     };
 
     # ── the lowlink arm, against the reference AND against `fbNode` ──
     test-lowlink-equals-closure-reference = {
-      expr = builtins.mapAttrs (_: fx: lowlink fx == condensationClosure fx) allFixtures;
+      expr = builtins.mapAttrs (_: fx: lowlink fx == condensationClosure { } fx) allFixtures;
       expected = builtins.mapAttrs (_: _: true) allFixtures;
     };
     test-lowlink-tag-map-value-for-value = {
-      expr = builtins.mapAttrs (_: fx: (lowlink fx).sccOf == (condensationClosure fx).sccOf) allFixtures;
+      expr = builtins.mapAttrs (
+        _: fx: (lowlink fx).sccOf == (condensationClosure { } fx).sccOf
+      ) allFixtures;
       expected = builtins.mapAttrs (_: _: true) allFixtures;
     };
     test-lowlink-equals-fbnode = {
@@ -627,7 +633,7 @@ in
         {
           node = (fbNode g).sccs;
           work = (fbWork g).sccs;
-          closure = (condensationClosure g).sccs;
+          closure = (condensationClosure { } g).sccs;
         };
       expected = {
         node = [

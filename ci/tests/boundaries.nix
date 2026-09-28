@@ -18,17 +18,17 @@ let
   r = regex;
   sorted = builtins.sort builtins.lessThan;
 
-  gate = labeledFrom {
-    nodes = [
-      "gate"
-      "no"
-      "ok"
-    ];
-    perLabel = {
-      e = id: if id == "gate" then [ "ok" ] else [ ];
-      q = id: if id == "gate" then [ "no" ] else [ ];
-    };
-  };
+  gate =
+    labeledFrom
+      {
+        e = id: if id == "gate" then [ "ok" ] else [ ];
+        q = id: if id == "gate" then [ "no" ] else [ ];
+      }
+      [
+        "gate"
+        "no"
+        "ok"
+      ];
   sealed = {
     name = "sealed";
     admits = l: l == "e";
@@ -37,9 +37,9 @@ let
     name = "quiet";
     admits = l: l != "q";
   };
-  marked = boundedBy gate (id: if id == "gate" then [ sealed ] else [ ]);
-  unmarked = boundedBy gate (_: [ ]);
-  doublyMarked = boundedBy gate (
+  marked = boundedBy (id: if id == "gate" then [ sealed ] else [ ]) gate;
+  unmarked = boundedBy (_: [ ]) gate;
+  doublyMarked = boundedBy (
     id:
     if id == "gate" then
       [
@@ -48,7 +48,7 @@ let
       ]
     else
       [ ]
-  );
+  ) gate;
   bothLabels = r.alt [
     (r.lit "e")
     (r.lit "q")
@@ -106,12 +106,12 @@ in
     test-bounded-a-mark-that-withholds-nothing-reports-nothing = {
       expr =
         let
-          permissive = boundedBy gate (_: [
+          permissive = boundedBy (_: [
             {
               name = "open";
               admits = _: true;
             }
-          ]);
+          ]) gate;
         in
         {
           edges = permissive.labeledEdges "gate";
@@ -134,21 +134,31 @@ in
 
     # ── the mark reaches the query, and only ever narrows it ──
     test-bounded-query-through-a-mark-narrows = {
-      expr = sorted (query {
-        graph = marked;
-        from = "gate";
-        follow = bothLabels;
-        mode = "all";
-      });
+      expr = sorted (
+        query
+          {
+            mode = "all";
+          }
+          {
+            graph = marked;
+            from = "gate";
+            follow = bothLabels;
+          }
+      );
       expected = [ "ok" ];
     };
     test-bounded-CONTROL-the-same-query-unmarked-answers-in-full = {
-      expr = sorted (query {
-        graph = unmarked;
-        from = "gate";
-        follow = bothLabels;
-        mode = "all";
-      });
+      expr = sorted (
+        query
+          {
+            mode = "all";
+          }
+          {
+            graph = unmarked;
+            from = "gate";
+            follow = bothLabels;
+          }
+      );
       expected = [
         "no"
         "ok"
@@ -160,12 +170,12 @@ in
       expr = builtins.all (
         n:
         builtins.all (e: builtins.elem e (labeledFixtures.world.labeledEdges n)) (
-          (boundedBy labeledFixtures.world (_: [
+          (boundedBy (_: [
             {
               name = "contains-only";
               admits = l: l == "contains";
             }
-          ])).labeledEdges
+          ]) labeledFixtures.world).labeledEdges
             n
         )
       ) labeledFixtures.world.nodes;
@@ -175,12 +185,12 @@ in
       expr = builtins.all (
         n:
         let
-          b = boundedBy labeledFixtures.world (_: [
+          b = boundedBy (_: [
             {
               name = "contains-only";
               admits = l: l == "contains";
             }
-          ]);
+          ]) labeledFixtures.world;
         in
         builtins.length (b.labeledEdges n) + builtins.length (b.withheld n)
         == builtins.length (labeledFixtures.world.labeledEdges n)
@@ -188,18 +198,22 @@ in
       expected = true;
     };
     test-bounded-preserves-the-node-set = {
-      expr = (boundedBy labeledFixtures.world (_: [ ])).nodes;
+      expr = (boundedBy (_: [ ]) labeledFixtures.world).nodes;
       expected = labeledFixtures.world.nodes;
     };
     test-bounded-laziness-poison-unreached = {
       # the per-node memo builds a spine, never a forced classification: a node the
       # walk does not reach keeps its throwing accessor unforced
-      expr = query {
-        graph = boundedBy labeledFixtures.poisoned (_: [ ]);
-        from = "a";
-        follow = r.parse "safe";
-        mode = "all";
-      };
+      expr =
+        query
+          {
+            mode = "all";
+          }
+          {
+            graph = boundedBy (_: [ ]) labeledFixtures.poisoned;
+            from = "a";
+            follow = r.parse "safe";
+          };
       expected = [ "b" ];
     };
     test-bounded-composes-under-transposition = {

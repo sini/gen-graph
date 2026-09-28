@@ -22,14 +22,14 @@ let
   starOf = n: id: if id == "n0" then builtins.genList (i: nm (i + 1)) (n - 1) else [ ];
   ep =
     edges:
-    (G.expandPreorder {
+    (G.expandPreorder { } {
       roots = [ "n0" ];
       key = f: f;
       inherit edges;
     }).nodes;
   fr =
     edges:
-    (G.foldReach {
+    (G.foldReach { } {
       roots = [ { to = "n0"; } ];
       edges = id: map (t: { to = t; }) (edges id);
       target = e: e.to;
@@ -38,7 +38,7 @@ let
     }).nodes;
   fp =
     edges:
-    (G.foldPreorder {
+    (G.foldPreorder { } {
       roots = [ "n0" ];
       key = f: f;
       acc = 0;
@@ -82,68 +82,91 @@ let
       g = graph seed;
     in
     {
-      ep = G.expandPreorder {
-        inherit (g) roots edges;
-        key = f: f;
-        emit = f: p: "${f}:${toString (builtins.length (g.edges p))}";
-      };
-      epSeed = G.expandPreorder {
-        inherit (g) roots edges;
-        key = f: f;
-        seen0 = g.seeded;
-        nodes0 = [ "pre" ];
-      };
-      fr = G.foldReach {
-        roots = map (t: {
-          to = t;
-          l = "r";
-        }) g.roots;
-        edges =
-          id:
-          map (t: {
-            to = t;
-            l = id;
-          }) (g.edges id);
-        target = e: e.to;
-        project =
-          e:
-          [
-            "${e.to}"
-            "${e.l}>${e.to}"
-          ]
-          ++ (if g.anon e.to then [ { anon = e.to; } ] else [ ]);
-        itemKey = i: if builtins.isAttrs i then null else i;
-        visited0 = g.seeded;
-        seen0 = {
-          "n1" = "seed";
-        };
-        nodes0 = [ "pre" ];
-      };
+      ep =
+        G.expandPreorder
+          {
+            emit = f: p: "${f}:${toString (builtins.length (g.edges p))}";
+          }
+          {
+            inherit (g) roots;
+            inherit (g) edges;
+            key = f: f;
+          };
+      epSeed =
+        G.expandPreorder
+          {
+            seen0 = g.seeded;
+            nodes0 = [ "pre" ];
+          }
+          {
+            inherit (g) roots;
+            inherit (g) edges;
+            key = f: f;
+          };
+      fr =
+        G.foldReach
+          {
+            visited0 = g.seeded;
+            seen0 = {
+              "n1" = "seed";
+            };
+            nodes0 = [ "pre" ];
+          }
+          {
+            roots = map (t: {
+              to = t;
+              l = "r";
+            }) g.roots;
+            edges =
+              id:
+              map (t: {
+                to = t;
+                l = id;
+              }) (g.edges id);
+            target = e: e.to;
+            project =
+              e:
+              [
+                "${e.to}"
+                "${e.l}>${e.to}"
+              ]
+              ++ (if g.anon e.to then [ { anon = e.to; } ] else [ ]);
+            itemKey = i: if builtins.isAttrs i then null else i;
+          };
       # Keyless frames: `{ id; k; }` has a `null` key when `anon id`, so it expands every time;
       # its children are made keyed, which keeps the unfolding finite.
-      fp = G.foldPreorder {
-        roots = map (id: {
-          inherit id;
-          k = true;
-        }) g.roots;
-        key = f: if f.k && g.anon f.id then null else f.id;
-        acc = {
-          xs = [ ];
-          c = 0;
-        };
-        visited = g.seeded;
-        expand = a: f: {
-          acc = {
-            xs = a.xs ++ [ f.id ];
-            c = a.c + 1;
+      fp =
+        G.foldPreorder
+          {
+            visited = g.seeded;
+          }
+          {
+            roots = map (id: {
+              inherit id;
+              k = true;
+            }) g.roots;
+            key = f: if f.k && g.anon f.id then null else f.id;
+            acc = {
+              xs = [ ];
+              c = 0;
+            };
+            expand = a: f: {
+              acc = {
+                xs = a.xs ++ [ f.id ];
+                c = a.c + 1;
+              };
+              children = map (id: {
+                inherit id;
+                k = !(f.k && g.anon f.id);
+              }) (g.edges f.id);
+            };
           };
-          children = map (id: {
-            inherit id;
-            k = !(f.k && g.anon f.id);
-          }) (g.edges f.id);
-        };
-      };
-      anc = builtins.genList (i: G.ancestorsOf { inherit (g) parent; } (nm i)) 20;
+      anc = builtins.genList (
+        i:
+        G.ancestorsOf { } {
+          inherit (g) parent;
+        } (nm i)
+      ) 20;
     };
 in
 {
@@ -162,7 +185,9 @@ in
         fr = len (fr (chainOf 20000));
         fp = fp (chainOf 20000);
         anc = len (
-          G.ancestorsOf { parent = id: if idx id == 0 then null else nm (idx id - 1); } (nm 19999)
+          G.ancestorsOf { } {
+            parent = id: if idx id == 0 then null else nm (idx id - 1);
+          } (nm 19999)
         );
       };
       expected = {

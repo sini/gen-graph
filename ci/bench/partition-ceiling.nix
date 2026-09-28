@@ -234,7 +234,7 @@ else if arm == "fbWork" then
 else if arm == "lowlink" then
   doorReport (g.lowlink acc)
 else if arm == "closure" then
-  doorReport (g.condensationClosure acc)
+  doorReport (g.condensationClosure { } acc)
 else if arm == "unforced" then
   report (workUnforced acc)
 else if arm == "okControl" then

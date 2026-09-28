@@ -154,12 +154,12 @@ let
   ];
 
   # The live counterpart to `forbidden`: the name this library reaches for where a tether would
-  # reach for nixpkgs. Every gen-graph source but TWO carries it, and both exclusions are modules
-  # that depend on nothing: `lib/traverse.nix` is the `genericClosure`-based BFS core written in
-  # `builtins` alone, and `lib/key.nix` is the text key a caller's name is filed under, two `builtins`
-  # bindings. `lib/declared-edges.nix` takes prelude for its two doors' shared record check
-  # (`checkRequired`, den-hoag-7gp66 P1); its accept-list, force and tag are still `builtins` alone.
-  # Those exclusions are what give
+  # reach for nixpkgs. Every gen-graph source but ONE carries it, and the exclusion is a module that
+  # depends on nothing: `lib/key.nix` is the text key a caller's name is filed under, two `builtins`
+  # bindings. `lib/traverse.nix` is the `genericClosure`-based BFS core written in `builtins`, and
+  # takes prelude for `door` alone (den-hoag-7gp66 P2); `lib/declared-edges.nix` is passed prelude
+  # and reads none of it since its doors went positional (P2).
+  # That exclusion is what gives
   # the assertion its teeth: the expected
   # list is a PROPER subset of the manifest, so a read returning one fixed text for every file
   # lands outside it either way — without the token the list collapses toward empty, with it the
@@ -231,6 +231,7 @@ in
       "lib/query.nix"
       "lib/regex.nix"
       "lib/registry.nix"
+      "lib/traverse.nix"
       "flake.nix"
       "default.nix"
     ];

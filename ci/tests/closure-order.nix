@@ -53,94 +53,106 @@ let
       a2 = [ "a3" ];
     }
     .${id} or [ ];
-  skew = labeledFrom {
-    nodes = [
-      "a"
-      "a2"
-      "a3"
-      "s"
-      "z"
-    ];
-    perLabel.e = skewSucc;
-  };
-  skewClosureDepths = map (x: x.distance) (queryArrivals {
-    graph = skew;
-    from = "s";
-    follow = r.plus (r.lit "e");
-    advance = hop;
-  });
+  skew =
+    labeledFrom
+      {
+        e = skewSucc;
+      }
+      [
+        "a"
+        "a2"
+        "a3"
+        "s"
+        "z"
+      ];
+  skewClosureDepths = map (x: x.distance) (
+    queryArrivals { } {
+      graph = skew;
+      from = "s";
+      follow = r.plus (r.lit "e");
+      advance = hop;
+    }
+  );
   # the seeded violation: same graph, same depths, depth-first order
   skewPreorderDepths =
-    (expandPreorder {
-      roots = [
-        {
-          id = "s";
-          depth = 0;
-        }
-      ];
-      key = f: f.id;
-      edges =
-        f:
-        map (t: {
-          id = t;
-          depth = f.depth + 1;
-        }) (skewSucc f.id);
-      emit = f: _: f.depth;
-    }).nodes;
+    (expandPreorder
+      {
+        emit = f: _: f.depth;
+      }
+      {
+        roots = [
+          {
+            id = "s";
+            depth = 0;
+          }
+        ];
+        key = f: f.id;
+        edges =
+          f:
+          map (t: {
+            id = t;
+            depth = f.depth + 1;
+          }) (skewSucc f.id);
+      }
+    ).nodes;
 
   # The trap graphs enumerate the LONG route to `t` first and the short one last, so a
   # LIFO worklist would record the long distance for it.
-  trap1 = labeledFrom {
-    nodes = [
-      "b"
-      "c"
-      "s"
-      "t"
-      "x"
-    ];
-    perLabel.e =
-      id:
+  trap1 =
+    labeledFrom
       {
-        s = [
-          "b"
-          "t"
-        ];
-        b = [ "c" ];
-        c = [ "x" ];
-        x = [ "t" ];
+        e =
+          id:
+          {
+            s = [
+              "b"
+              "t"
+            ];
+            b = [ "c" ];
+            c = [ "x" ];
+            x = [ "t" ];
+          }
+          .${id} or [ ];
       }
-      .${id} or [ ];
-  };
-  trap2 = labeledFrom {
-    nodes = [
-      "p"
-      "p2"
-      "q"
-      "q2"
-      "r"
-      "s"
-      "t"
-    ];
-    perLabel.e =
-      id:
+      [
+        "b"
+        "c"
+        "s"
+        "t"
+        "x"
+      ];
+  trap2 =
+    labeledFrom
       {
-        s = [
-          "p"
-          "q"
-          "r"
-          "t"
-        ];
-        p = [ "p2" ];
-        p2 = [ "t" ];
-        q = [ "q2" ];
-        q2 = [ "t" ];
-        r = [ "t" ];
+        e =
+          id:
+          {
+            s = [
+              "p"
+              "q"
+              "r"
+              "t"
+            ];
+            p = [ "p2" ];
+            p2 = [ "t" ];
+            q = [ "q2" ];
+            q2 = [ "t" ];
+            r = [ "t" ];
+          }
+          .${id} or [ ];
       }
-      .${id} or [ ];
-  };
+      [
+        "p"
+        "p2"
+        "q"
+        "q2"
+        "r"
+        "s"
+        "t"
+      ];
   walk =
     graph:
-    queryArrivals {
+    queryArrivals { } {
       inherit graph;
       from = "s";
       follow = r.plus (r.lit "e");

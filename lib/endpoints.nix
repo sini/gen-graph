@@ -132,15 +132,8 @@ in
   # refused by name, catchably, and an extra one is admitted. The check is seq'd onto the result, so
   # it fires when the record is applied.
   mkEndpointProjection =
-    args:
-    let
-      checked = prelude.checkRequired "gen-graph.mkEndpointProjection" [
-        "childBearing"
-        "isNode"
-      ] args;
-      inherit (checked) childBearing isNode;
-    in
-    builtins.seq checked (
+    childBearing: isNode:
+    (
       structuralAttributesOf:
       let
         who = "mkEndpointProjection";
@@ -198,15 +191,8 @@ in
   # refused by name, catchably, and an extra one is admitted. The check is seq'd onto the result, so
   # it fires when the record is applied.
   mkProjectionFindings =
-    args:
-    let
-      checked = prelude.checkRequired "gen-graph.mkProjectionFindings" [
-        "childBearing"
-        "isNode"
-      ] args;
-      inherit (checked) childBearing isNode;
-    in
-    builtins.seq checked (
+    childBearing: isNode:
+    (
       structuralAttributesOf:
       let
         who = "mkProjectionFindings";

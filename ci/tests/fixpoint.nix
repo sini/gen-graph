@@ -17,7 +17,7 @@ in
     test-closure-chain = {
       expr =
         let
-          closure = transitiveClosure fixtures.chain;
+          closure = transitiveClosure { } fixtures.chain;
         in
         builtins.sort builtins.lessThan (closure."a" or [ ]);
       expected = [
@@ -29,7 +29,7 @@ in
     test-closure-diamond = {
       expr =
         let
-          closure = transitiveClosure fixtures.diamond;
+          closure = transitiveClosure { } fixtures.diamond;
         in
         builtins.sort builtins.lessThan (closure."a" or [ ]);
       expected = [
@@ -41,7 +41,7 @@ in
     test-closure-leaf-empty = {
       expr =
         let
-          closure = transitiveClosure fixtures.chain;
+          closure = transitiveClosure { } fixtures.chain;
         in
         closure."d" or [ ];
       expected = [ ];
@@ -49,7 +49,7 @@ in
     test-reduction-chain-unchanged = {
       expr =
         let
-          red = transitiveReduction fixtures.chain;
+          red = transitiveReduction { } fixtures.chain;
         in
         builtins.sort builtins.lessThan (red."a" or [ ]);
       expected = [ "b" ];
@@ -73,7 +73,7 @@ in
               }
             ];
           };
-          red = transitiveReduction g;
+          red = transitiveReduction { } g;
         in
         builtins.sort builtins.lessThan (red."a" or [ ]);
       expected = [ "b" ];
@@ -82,7 +82,10 @@ in
       expr =
         let
           mat = materialize fixtures.chain;
-          comp = compose mat mat;
+          comp = compose {
+            first = mat;
+            second = mat;
+          };
         in
         builtins.sort builtins.lessThan (comp."a" or [ ]);
       expected = [ "c" ];
@@ -91,7 +94,10 @@ in
       expr =
         let
           mat = materialize fixtures.chain;
-          comp = compose mat mat;
+          comp = compose {
+            first = mat;
+            second = mat;
+          };
         in
         comp."d" or [ ];
       expected = [ ];
@@ -99,17 +105,18 @@ in
     test-fixpoint-converges = {
       expr =
         let
-          result = fixpoint {
-            seed = {
-              a = [ ];
-            };
-            step =
-              current:
-              if builtins.length (current.a or [ ]) < 3 then
-                current // { a = (current.a or [ ]) ++ [ "x" ]; }
-              else
-                current;
-          };
+          result =
+            fixpoint { }
+              (
+                current:
+                if builtins.length (current.a or [ ]) < 3 then
+                  current // { a = (current.a or [ ]) ++ [ "x" ]; }
+                else
+                  current
+              )
+              {
+                a = [ ];
+              };
         in
         builtins.length (result.a or [ ]);
       expected = 3;
@@ -131,11 +138,11 @@ in
     # A surface off the list cannot be constructed, so no refusal can name a surface the
     # library does not have. Positive control: a member constructs and answers.
     test-closureOf-refuses-a-non-member-surface = {
-      expr = (builtins.tryEval (closureOf "notAClosureSurface" fixtures.chain)).success;
+      expr = (builtins.tryEval (closureOf "notAClosureSurface" { } fixtures.chain)).success;
       expected = false;
     };
     test-closureOf-member-control = {
-      expr = builtins.sort builtins.lessThan ((closureOf "dependents" fixtures.chain)."a" or [ ]);
+      expr = builtins.sort builtins.lessThan ((closureOf "dependents" { } fixtures.chain)."a" or [ ]);
       expected = [
         "b"
         "c"
@@ -148,15 +155,14 @@ in
     # (`closure-refusal.test-generic-fixpoint-shrinking-step-is-refused-by-the-subset-guard`).
     test-fixpoint-withdrawing-step-is-refused = {
       expr =
-        !(builtins.tryEval (fixpoint {
-          seed = {
+        !(builtins.tryEval (
+          fixpoint { } (_: { a = [ "x" ]; }) {
             a = [
               "x"
               "y"
             ];
-          };
-          step = _: { a = [ "x" ]; };
-        })).success;
+          }
+        )).success;
       expected = true;
     };
     # ★ THE ORDER THE GUARD TESTS IS EDGE CONTENT, AND THIS CELL IS WHY THE CLOSURE CELLS ARE
@@ -169,8 +175,10 @@ in
     test-fixpoint-guard-order-is-edge-content-not-the-literal-key-set = {
       expr = {
         seedHoldsTheSinkRow = (materialize fixtures.chain) ? d;
-        closureDropsTheSinkRow = (transitiveClosure fixtures.chain) ? d;
-        andStillReturns = builtins.sort builtins.lessThan ((transitiveClosure fixtures.chain)."a" or [ ]);
+        closureDropsTheSinkRow = (transitiveClosure { } fixtures.chain) ? d;
+        andStillReturns = builtins.sort builtins.lessThan (
+          (transitiveClosure { } fixtures.chain)."a" or [ ]
+        );
       };
       expected = {
         seedHoldsTheSinkRow = true;
@@ -186,16 +194,18 @@ in
     # asserts is the ELEMENT TYPE and nothing wider. Same shape, string targets, straight through
     # `differenceEdges` — it returns.
     test-fixpoint-string-edge-target-control = {
-      expr = fixpoint {
-        seed = {
-          a = [
-            "1"
-            "2"
-          ];
-        };
-        step = cur: cur;
-        maxIter = 5;
-      };
+      expr =
+        fixpoint
+          {
+            maxIter = 5;
+          }
+          (cur: cur)
+          {
+            a = [
+              "1"
+              "2"
+            ];
+          };
       expected = {
         a = [
           "1"
@@ -205,32 +215,40 @@ in
     };
     test-fixpoint-max-iter = {
       expr =
-        !(builtins.tryEval (fixpoint {
-          seed = {
-            a = [ ];
-          };
-          step = current: current // { a = current.a ++ [ "x" ]; };
-          maxIter = 5;
-        })).success;
+        !(builtins.tryEval (
+          fixpoint
+            {
+              maxIter = 5;
+            }
+            (current: current // { a = current.a ++ [ "x" ]; })
+            {
+              a = [ ];
+            }
+        )).success;
       expected = true;
     };
     test-compose-empty = {
-      expr = compose { } { };
+      expr = compose {
+        first = { };
+        second = { };
+      };
       expected = { };
     };
     test-compose-with-empty = {
-      expr = compose { a = [ "b" ]; } { };
+      expr = compose {
+        first = {
+          a = [ "b" ];
+        };
+        second = { };
+      };
       expected = {
         a = [ ];
       };
     };
     test-fixpoint-already-converged = {
-      expr = fixpoint {
-        seed = {
-          a = [ "b" ];
-          b = [ ];
-        };
-        step = current: current;
+      expr = fixpoint { } (current: current) {
+        a = [ "b" ];
+        b = [ ];
       };
       expected = {
         a = [ "b" ];
@@ -248,7 +266,7 @@ in
               }
             ];
           };
-          closure = transitiveClosure g;
+          closure = transitiveClosure { } g;
         in
         closure."a" or [ ];
       expected = [ "a" ];
@@ -259,35 +277,50 @@ in
       expr =
         let
           mat = materialize fixtures.chain;
-          sn = seededFixpoint {
+          sn = seededFixpoint { } {
             seed = mat;
             frontier = mat;
-            step = dF: _: compose dF mat;
+            step =
+              dF: _:
+              compose {
+                first = dF;
+                second = mat;
+              };
           };
         in
         builtins.sort builtins.lessThan (sn."a" or [ ]);
-      expected = builtins.sort builtins.lessThan ((transitiveClosure fixtures.chain)."a" or [ ]);
+      expected = builtins.sort builtins.lessThan ((transitiveClosure { } fixtures.chain)."a" or [ ]);
     };
     test-seeded-closure-equals-transitiveClosure-diamond = {
       expr =
         let
           mat = materialize fixtures.diamond;
-          sn = seededFixpoint {
+          sn = seededFixpoint { } {
             seed = mat;
             frontier = mat;
-            step = dF: _: compose dF mat;
+            step =
+              dF: _:
+              compose {
+                first = dF;
+                second = mat;
+              };
           };
         in
         builtins.sort builtins.lessThan (sn."a" or [ ]);
-      expected = builtins.sort builtins.lessThan ((transitiveClosure fixtures.diamond)."a" or [ ]);
+      expected = builtins.sort builtins.lessThan ((transitiveClosure { } fixtures.diamond)."a" or [ ]);
     };
     test-seeded-empty-frontier-returns-seed = {
-      expr = seededFixpoint {
+      expr = seededFixpoint { } {
         seed = {
           a = [ "b" ];
         };
         frontier = { };
-        step = dF: _: compose dF { };
+        step =
+          dF: _:
+          compose {
+            first = dF;
+            second = { };
+          };
       };
       expected = {
         a = [ "b" ];
@@ -296,16 +329,21 @@ in
     test-seeded-max-iter-throws = {
       # A non-converging step (always produces a fresh fact) must throw at maxIter.
       expr =
-        !(builtins.tryEval (seededFixpoint {
-          seed = {
-            a = [ "n0" ];
-          };
-          frontier = {
-            a = [ "n0" ];
-          };
-          step = dF: _: lib.mapAttrs (_: ts: map (t: t + "x") ts) dF;
-          maxIter = 5;
-        })).success;
+        !(builtins.tryEval (
+          seededFixpoint
+            {
+              maxIter = 5;
+            }
+            {
+              seed = {
+                a = [ "n0" ];
+              };
+              frontier = {
+                a = [ "n0" ];
+              };
+              step = dF: _: lib.mapAttrs (_: ts: map (t: t + "x") ts) dF;
+            }
+        )).success;
       expected = true;
     };
     test-seeded-property-equals-naive-over-fixtures = {
@@ -318,12 +356,17 @@ in
             g:
             let
               mat = materialize g;
-              sn = seededFixpoint {
+              sn = seededFixpoint { } {
                 seed = mat;
                 frontier = mat;
-                step = dF: _: compose dF mat;
+                step =
+                  dF: _:
+                  compose {
+                    first = dF;
+                    second = mat;
+                  };
               };
-              tc = transitiveClosure g;
+              tc = transitiveClosure { } g;
             in
             builtins.all (
               n:
@@ -349,15 +392,17 @@ in
     # on `./ci#testsError`, the only runner that can read a message.
     test-seeded-refuses-a-conclusion-the-converged-graph-withdraws = {
       expr =
-        !(builtins.tryEval (seededFixpoint {
-          seed = {
-            root = [ "a" ];
-          };
-          frontier = {
-            root = [ "a" ];
-          };
-          step = _dF: acc: if builtins.elem "y" (acc.root or [ ]) then { } else { root = [ "y" ]; };
-        })).success;
+        !(builtins.tryEval (
+          seededFixpoint { } {
+            seed = {
+              root = [ "a" ];
+            };
+            frontier = {
+              root = [ "a" ];
+            };
+            step = _dF: acc: if builtins.elem "y" (acc.root or [ ]) then { } else { root = [ "y" ]; };
+          }
+        )).success;
       expected = true;
     };
     # ★ THE SAME WRONG ANSWER WITH `acc` DISCARDED, which is why the remedy is a check and
@@ -366,15 +411,17 @@ in
     # unsupported conclusion. The cell holds that refutation so it cannot be re-argued.
     test-seeded-refuses-the-same-oscillation-read-through-the-frontier-alone = {
       expr =
-        !(builtins.tryEval (seededFixpoint {
-          seed = {
-            root = [ "a" ];
-          };
-          frontier = {
-            root = [ "a" ];
-          };
-          step = dF: _acc: if builtins.elem "y" (dF.root or [ ]) then { } else { root = [ "y" ]; };
-        })).success;
+        !(builtins.tryEval (
+          seededFixpoint { } {
+            seed = {
+              root = [ "a" ];
+            };
+            frontier = {
+              root = [ "a" ];
+            };
+            step = dF: _acc: if builtins.elem "y" (dF.root or [ ]) then { } else { root = [ "y" ]; };
+          }
+        )).success;
       expected = true;
     };
     # ★★ THE CEILING, INSTRUMENTED — THIS CELL ASSERTS THE WRONG ANSWER IS RETURNED.
@@ -393,7 +440,7 @@ in
       expr =
         let
           has = m: x: builtins.elem x (m.root or [ ]);
-          answer = seededFixpoint {
+          answer = seededFixpoint { } {
             seed = {
               root = [ "a" ];
             };
@@ -422,13 +469,15 @@ in
     # rev, pinned rather than left for a caller to discover.
     test-seeded-empty-frontier-still-applies-the-step = {
       expr =
-        !(builtins.tryEval (seededFixpoint {
-          seed = {
-            root = [ "a" ];
-          };
-          frontier = { };
-          step = _dF: _acc: throw "step reached";
-        })).success;
+        !(builtins.tryEval (
+          seededFixpoint { } {
+            seed = {
+              root = [ "a" ];
+            };
+            frontier = { };
+            step = _dF: _acc: throw "step reached";
+          }
+        )).success;
       expected = true;
     };
     # LIVE CONTROL on the same predicate in the same run: a MONOTONE step that genuinely
@@ -440,11 +489,18 @@ in
         let
           mat = materialize fixtures.chain;
         in
-        (builtins.tryEval (seededFixpoint {
-          seed = mat;
-          frontier = mat;
-          step = dF: _: compose dF mat;
-        })).success;
+        (builtins.tryEval (
+          seededFixpoint { } {
+            seed = mat;
+            frontier = mat;
+            step =
+              dF: _:
+              compose {
+                first = dF;
+                second = mat;
+              };
+          }
+        )).success;
       expected = true;
     };
   };

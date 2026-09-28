@@ -59,12 +59,16 @@ in
       in
       {
         expr =
-          (expandPreorder {
-            roots = [ (node "a") ];
-            key = f: f.key;
-            edges = p: map node p.includes;
-            emit = f: _p: f.key;
-          }).nodes;
+          (expandPreorder
+            {
+              emit = f: _p: f.key;
+            }
+            {
+              roots = [ (node "a") ];
+              key = f: f.key;
+              edges = p: map node p.includes;
+            }
+          ).nodes;
         expected = [
           "a"
           "b"
@@ -84,12 +88,16 @@ in
       in
       {
         expr =
-          (expandPreorder {
-            roots = [ (node "a") ];
-            key = f: f.key;
-            edges = p: map node p.includes;
-            emit = f: _p: f.key;
-          }).nodes;
+          (expandPreorder
+            {
+              emit = f: _p: f.key;
+            }
+            {
+              roots = [ (node "a") ];
+              key = f: f.key;
+              edges = p: map node p.includes;
+            }
+          ).nodes;
         expected = [
           "a"
           "b"
@@ -114,15 +122,19 @@ in
       in
       {
         expr =
-          (expandPreorder {
-            roots = [ (node "a") ];
-            key = f: f.key;
-            edges = p: map node p.includes;
-            emit = f: _p: f.key;
-            seen0 = {
-              b = true;
-            };
-          }).nodes;
+          (expandPreorder
+            {
+              emit = f: _p: f.key;
+              seen0 = {
+                b = true;
+              };
+            }
+            {
+              roots = [ (node "a") ];
+              key = f: f.key;
+              edges = p: map node p.includes;
+            }
+          ).nodes;
         expected = [
           "a"
           "c"
@@ -147,15 +159,19 @@ in
       in
       {
         expr =
-          (expandPreorder {
-            roots = [ (node "a") ];
-            key = f: f.key;
-            edges = p: map node p.includes;
-            emit = f: _p: f.key;
-            seen0 = {
-              boom = true;
-            };
-          }).nodes;
+          (expandPreorder
+            {
+              emit = f: _p: f.key;
+              seen0 = {
+                boom = true;
+              };
+            }
+            {
+              roots = [ (node "a") ];
+              key = f: f.key;
+              edges = p: map node p.includes;
+            }
+          ).nodes;
         expected = [
           "a"
           "safe"
@@ -183,13 +199,17 @@ in
           content = "leaf";
           includes = [ ];
         };
-        res = expandPreorder {
-          roots = [ root ];
-          key = f: f.key;
-          resolve = f: if f.__wrap or false then f.fn ctx else f;
-          edges = p: p.includes;
-          emit = _f: p: p.content;
-        };
+        res =
+          expandPreorder
+            {
+              resolve = f: if f.__wrap or false then f.fn ctx else f;
+              emit = _f: p: p.content;
+            }
+            {
+              roots = [ root ];
+              key = f: f.key;
+              edges = p: p.includes;
+            };
       in
       {
         expr = res.nodes;
@@ -207,13 +227,17 @@ in
           b.includes = [ ];
         };
         node = k: { key = k; } // db.${k};
-        res = expandPreorder {
-          roots = [ (node "a") ];
-          key = f: f.key;
-          edges = p: map node p.includes;
-          emit = f: _p: f.key;
-          nodes0 = [ "SEED" ];
-        };
+        res =
+          expandPreorder
+            {
+              emit = f: _p: f.key;
+              nodes0 = [ "SEED" ];
+            }
+            {
+              roots = [ (node "a") ];
+              key = f: f.key;
+              edges = p: map node p.includes;
+            };
       in
       {
         expr = {
@@ -235,7 +259,7 @@ in
 
     test-expand-empty-roots = {
       expr =
-        (expandPreorder {
+        (expandPreorder { } {
           roots = [ ];
           key = f: f.key;
           edges = _p: [ ];
@@ -285,17 +309,21 @@ in
           ];
         };
         edgesAt = id: edgeMap.${id} or [ ];
-        res = foldReach {
-          roots = edgesAt "root";
-          edges = edgesAt;
-          target = e: e.target;
-          project =
-            e: builtins.filter (n: e.classFilter == null || n ? ${e.classFilter}) (content.${e.target} or [ ]);
-          itemKey = n: n.key;
-          visited0 = {
-            root = true;
-          };
-        };
+        res =
+          foldReach
+            {
+              visited0 = {
+                root = true;
+              };
+            }
+            {
+              roots = edgesAt "root";
+              edges = edgesAt;
+              target = e: e.target;
+              project =
+                e: builtins.filter (n: e.classFilter == null || n ? ${e.classFilter}) (content.${e.target} or [ ]);
+              itemKey = n: n.key;
+            };
       in
       {
         expr = map (n: n.key) res.nodes;
@@ -326,16 +354,20 @@ in
           api = true;
         };
         edgesAt = id: builtins.filter (e: !(suppressed ? ${e.target})) (edgeMap.${id} or [ ]);
-        res = foldReach {
-          roots = edgesAt "root";
-          edges = edgesAt;
-          target = e: e.target;
-          project = e: content.${e.target} or [ ];
-          itemKey = n: n.key;
-          visited0 = {
-            root = true;
-          };
-        };
+        res =
+          foldReach
+            {
+              visited0 = {
+                root = true;
+              };
+            }
+            {
+              roots = edgesAt "root";
+              edges = edgesAt;
+              target = e: e.target;
+              project = e: content.${e.target} or [ ];
+              itemKey = n: n.key;
+            };
       in
       {
         expr = map (n: n.key) res.nodes;
@@ -354,16 +386,20 @@ in
           db = [ { target = "api"; } ];
         };
         edgesAt = id: edgeMap.${id} or [ ];
-        res = foldReach {
-          roots = edgesAt "root";
-          edges = edgesAt;
-          target = e: e.target;
-          project = e: content.${e.target} or [ ];
-          itemKey = n: n.key;
-          visited0 = {
-            root = true;
-          };
-        };
+        res =
+          foldReach
+            {
+              visited0 = {
+                root = true;
+              };
+            }
+            {
+              roots = edgesAt "root";
+              edges = edgesAt;
+              target = e: e.target;
+              project = e: content.${e.target} or [ ];
+              itemKey = n: n.key;
+            };
       in
       {
         expr = map (n: n.key) res.nodes;
@@ -384,16 +420,20 @@ in
           db = [ { target = "root"; } ];
         };
         edgesAt = id: edgeMap.${id} or [ ];
-        res = foldReach {
-          roots = edgesAt "root";
-          edges = edgesAt;
-          target = e: e.target;
-          project = e: content.${e.target} or [ ];
-          itemKey = n: n.key;
-          visited0 = {
-            root = true;
-          };
-        };
+        res =
+          foldReach
+            {
+              visited0 = {
+                root = true;
+              };
+            }
+            {
+              roots = edgesAt "root";
+              edges = edgesAt;
+              target = e: e.target;
+              project = e: content.${e.target} or [ ];
+              itemKey = n: n.key;
+            };
       in
       {
         expr = map (n: n.key) res.nodes;
@@ -415,16 +455,20 @@ in
           ];
         };
         edgesAt = id: edgeMap.${id} or [ ];
-        res = foldReach {
-          roots = edgesAt "root";
-          edges = edgesAt;
-          target = e: e.target;
-          project = e: content.${e.target} or [ ];
-          itemKey = n: n.key;
-          visited0 = {
-            root = true;
-          };
-        };
+        res =
+          foldReach
+            {
+              visited0 = {
+                root = true;
+              };
+            }
+            {
+              roots = edgesAt "root";
+              edges = edgesAt;
+              target = e: e.target;
+              project = e: content.${e.target} or [ ];
+              itemKey = n: n.key;
+            };
       in
       {
         expr = map (n: n.key) res.nodes;
@@ -445,20 +489,24 @@ in
           root = [ { target = "db"; } ];
         };
         edgesAt = id: edgeMap.${id} or [ ];
-        res = foldReach {
-          roots = edgesAt "root";
-          edges = edgesAt;
-          target = e: e.target;
-          project = e: content.${e.target} or [ ];
-          itemKey = n: n.key;
-          visited0 = {
-            root = true;
-          };
-          seen0 = {
-            structural-1 = true;
-          };
-          nodes0 = [ { key = "structural-1"; } ];
-        };
+        res =
+          foldReach
+            {
+              visited0 = {
+                root = true;
+              };
+              seen0 = {
+                structural-1 = true;
+              };
+              nodes0 = [ { key = "structural-1"; } ];
+            }
+            {
+              roots = edgesAt "root";
+              edges = edgesAt;
+              target = e: e.target;
+              project = e: content.${e.target} or [ ];
+              itemKey = n: n.key;
+            };
       in
       {
         expr = map (n: n.key) res.nodes;
@@ -481,16 +529,20 @@ in
           root = [ { target = "db"; } ];
         };
         edgesAt = id: edgeMap.${id} or [ ];
-        res = foldReach {
-          roots = edgesAt "root";
-          edges = edgesAt;
-          target = e: e.target;
-          project = e: content.${e.target} or [ ];
-          itemKey = _n: null;
-          visited0 = {
-            root = true;
-          };
-        };
+        res =
+          foldReach
+            {
+              visited0 = {
+                root = true;
+              };
+            }
+            {
+              roots = edgesAt "root";
+              edges = edgesAt;
+              target = e: e.target;
+              project = e: content.${e.target} or [ ];
+              itemKey = _n: null;
+            };
       in
       {
         expr = builtins.length res.nodes;
@@ -524,7 +576,7 @@ in
             }
           ];
         };
-        res = foldPreorder {
+        res = foldPreorder { } {
           roots = [ root ];
           key = v: v.key or null;
           acc = {
@@ -563,7 +615,7 @@ in
     # expand (no false dedup), and they terminate by finite authored structure.
     test-foldpreorder-null-key-unguarded =
       let
-        res = foldPreorder {
+        res = foldPreorder { } {
           roots = [
             { tag = "x"; }
             { tag = "y"; }
@@ -587,18 +639,22 @@ in
     # Degenerate: empty roots return the seed accumulator and visited set untouched.
     test-foldpreorder-empty-roots =
       let
-        res = foldPreorder {
-          roots = [ ];
-          key = _v: null;
-          expand = acc: _v: {
-            inherit acc;
-            children = [ ];
-          };
-          acc = "seed";
-          visited = {
-            pre = true;
-          };
-        };
+        res =
+          foldPreorder
+            {
+              visited = {
+                pre = true;
+              };
+            }
+            {
+              roots = [ ];
+              key = _v: null;
+              expand = acc: _v: {
+                inherit acc;
+                children = [ ];
+              };
+              acc = "seed";
+            };
       in
       {
         expr = {
@@ -619,7 +675,7 @@ in
           b.includes = [ ];
         };
         node = k: { key = k; } // db.${k};
-        res = foldPreorder {
+        res = foldPreorder { } {
           roots = [ (node "a") ];
           key = v: v.key;
           acc = null;
@@ -654,12 +710,16 @@ in
     test-expandpreorder-refuses-a-retired-maxdepth-on-every-field =
       let
         c = chain 1;
-        r = expandPreorder {
-          roots = [ c.top ];
-          key = f: f;
-          inherit (c) edges;
-          maxDepth = 8;
-        };
+        r =
+          expandPreorder
+            {
+              maxDepth = 8;
+            }
+            {
+              roots = [ c.top ];
+              key = f: f;
+              inherit (c) edges;
+            };
       in
       {
         expr = {
@@ -675,14 +735,18 @@ in
     test-foldreach-refuses-a-retired-maxdepth-on-every-field =
       let
         c = chain 1;
-        r = foldReach {
-          roots = [ c.top ];
-          edges = t: c.edges t;
-          target = e: e;
-          project = e: [ e ];
-          itemKey = i: i;
-          maxDepth = 8;
-        };
+        r =
+          foldReach
+            {
+              maxDepth = 8;
+            }
+            {
+              roots = [ c.top ];
+              edges = t: c.edges t;
+              target = e: e;
+              project = e: [ e ];
+              itemKey = i: i;
+            };
       in
       {
         expr = {
@@ -700,16 +764,20 @@ in
     test-foldpreorder-refuses-a-retired-maxdepth-on-every-field =
       let
         c = chain 1;
-        r = foldPreorder {
-          roots = [ c.top ];
-          key = f: f;
-          acc = 0;
-          expand = acc: frame: {
-            acc = acc + 1;
-            children = c.edges frame;
-          };
-          maxDepth = 8;
-        };
+        r =
+          foldPreorder
+            {
+              maxDepth = 8;
+            }
+            {
+              roots = [ c.top ];
+              key = f: f;
+              acc = 0;
+              expand = acc: frame: {
+                acc = acc + 1;
+                children = c.edges frame;
+              };
+            };
       in
       {
         expr = {
@@ -727,19 +795,19 @@ in
     test-control-the-walks-return-without-maxdepth =
       let
         c = chain 1;
-        ep = expandPreorder {
+        ep = expandPreorder { } {
           roots = [ c.top ];
           key = f: f;
           inherit (c) edges;
         };
-        fr = foldReach {
+        fr = foldReach { } {
           roots = [ c.top ];
           edges = t: c.edges t;
           target = e: e;
           project = e: [ e ];
           itemKey = i: i;
         };
-        fp = foldPreorder {
+        fp = foldPreorder { } {
           roots = [ c.top ];
           key = f: f;
           acc = 0;

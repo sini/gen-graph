@@ -116,27 +116,33 @@ let
   # The stand-in moves the door's PICK and nothing else: the real door is applied to `opts` first, so
   # its options refusal fires where the door's own does — when the options are applied (den-hoag-7gp66).
   perturbed = mode: {
-    topoOrder =
-      opts:
-      let
-        door = genGraph.topoOrder opts;
-      in
-      builtins.seq door (
-        data:
+    # Both steps' published contracts are kept (`//` over each door, P2): only the ANSWER is
+    # perturbed, so a cell about a contract does not read a perturbation that moved no order.
+    topoOrder = genGraph.topoOrder // {
+      __functor =
+        _: opts:
         let
-          r = door data;
-          keyOf = opts.keyOf or (n: n);
+          door = genGraph.topoOrder opts;
         in
-        if r.ok or false then
-          r
-          // {
-            order = perturb mode keyOf (opts.lessThan or builtins.lessThan) (
-              n: map keyOf (data.edges n)
-            ) r.order;
-          }
-        else
-          r
-      );
+        door
+        // {
+          __functor =
+            _: data:
+            let
+              r = door data;
+              keyOf = opts.keyOf or (n: n);
+            in
+            if r.ok or false then
+              r
+              // {
+                order = perturb mode keyOf (opts.lessThan or builtins.lessThan) (
+                  n: map keyOf (data.edges n)
+                ) r.order;
+              }
+            else
+              r;
+        };
+    };
     phaseOrder =
       entries:
       let

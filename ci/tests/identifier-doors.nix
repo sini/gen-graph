@@ -2,7 +2,7 @@
 # that is never one, by name and catchably; the message cells live on `testsError`
 # (`identifier-refusal`). This file holds what the refusal must NOT change and the one thing an
 # error cell cannot say: that the refusal is a throw `tryEval` observes, not an interpreter abort.
-{ genGraph, ... }:
+{ genGraph, genPrelude, ... }:
 let
   G = genGraph;
   es = {
@@ -20,13 +20,15 @@ let
   X = {
     name = "a";
   };
-  lg = G.labeledFrom {
-    nodes = [
-      "a"
-      "b"
-    ];
-    perLabel.l = id: es.${id} or [ ];
-  };
+  lg =
+    G.labeledFrom
+      {
+        l = id: es.${id} or [ ];
+      }
+      [
+        "a"
+        "b"
+      ];
   qa = from: {
     graph = lg;
     inherit from;
@@ -58,9 +60,9 @@ in
         (G.canReach g X "b")
         (G.canReach g "a" X)
         (G.selfReachable g X)
-        (G.ancestorsOf g X)
-        (G.pathsBetween g X "b")
-        (G.dependents g X)
+        (G.ancestorsOf { } g X)
+        (G.pathsBetween { } g X "b")
+        (G.dependents { } g X)
         (G.dependentsOf g X)
         (G.dependentsFrontier g X (_: false))
         (G.impactOf g X)
@@ -68,8 +70,8 @@ in
         (G.coScc g X "b")
         (G.reachableVia (G.hoistEdges g) X)
         (G.selfReachableVia (G.hoistEdges g) X)
-        (G.query (qa X))
-        (G.queryArrivals (qa X // { advance = _: 1; }))
+        (G.query { } (qa X))
+        (G.queryArrivals { } (qa X // { advance = _: 1; }))
       ];
       expected = builtins.genList (_: true) 17;
     };
@@ -79,16 +81,16 @@ in
         (G.reachableWhere g "a" (_: true))
         (G.canReach g "a" "b")
         (G.selfReachable g "a")
-        (G.ancestorsOf g "b")
-        (G.pathsBetween g "a" "b")
-        (G.dependents g "b")
+        (G.ancestorsOf { } g "b")
+        (G.pathsBetween { } g "a" "b")
+        (G.dependents { } g "b")
         (G.dependentsOf g "b")
         (G.impactOf g "b")
         (G.directDependentsOf g "b")
         (G.coScc g "a" "b")
         (G.reachableVia (G.hoistEdges g) "a")
-        (G.query (qa "a"))
-        (map (a: a.node) (G.queryArrivals (qa "a" // { advance = _: 1; })))
+        (G.query { } (qa "a"))
+        (map (a: a.node) (G.queryArrivals { } (qa "a" // { advance = _: 1; })))
       ];
       expected = [
         [ "b" ]
@@ -139,8 +141,8 @@ in
     # doc comment): bkdkg C1's reasoning still holds for these two, unreached by OQ13's ruling.
     test-the-toJSON-keyed-doors-still-answer-on-integer-ids = {
       expr = [
-        (map (a: a.node) (G.queryArrivals (iq // { advance = _: 1; })))
-        (G.query (iq // { mode = "series"; }))
+        (map (a: a.node) (G.queryArrivals { } (iq // { advance = _: 1; })))
+        (G.query { mode = "series"; } iq)
       ];
       expected = [
         [ 0 ]
@@ -148,9 +150,11 @@ in
       ];
     };
     # The guards live in the door bodies, so the published formals survive: a guard at an export
-    # wrapper would read `{ }` here (measured on the rejected prototype, `roots`).
+    # wrapper would read `{ }` here (measured on the rejected prototype, `roots`). Each door is a
+    # `prelude.door` functor now (P2), so the formals are read through the functor-aware reader
+    # (OQ15), and a curried door publishes its FIRST step: `ancestorsOf`'s and `queryFold`'s options.
     test-the-published-argument-lists-survive = {
-      expr = map builtins.functionArgs [
+      expr = map genPrelude.functionArgs [
         G.roots
         G.reachableFrom
         G.ancestorsOf
@@ -164,10 +168,7 @@ in
           nodes = false;
         }
         { edges = false; }
-        {
-          parent = false;
-          maxDepth = true;
-        }
+        { maxDepth = true; }
         {
           edges = false;
           nodes = false;
@@ -177,9 +178,8 @@ in
           nodes = false;
         }
         {
-          empty = false;
-          combine = false;
           valueOf = true;
+          where = true;
         }
       ];
     };

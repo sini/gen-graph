@@ -15,12 +15,17 @@ in
 {
   flake.tests.query = {
     test-all-contains-closure = {
-      expr = sorted (query {
-        graph = labeledFixtures.world;
-        from = "root";
-        follow = r.star (r.lit "contains");
-        mode = "all";
-      });
+      expr = sorted (
+        query
+          {
+            mode = "all";
+          }
+          {
+            graph = labeledFixtures.world;
+            from = "root";
+            follow = r.star (r.lit "contains");
+          }
+      );
       # star is nullable → root included
       expected = [
         "h1"
@@ -32,12 +37,17 @@ in
       ];
     };
     test-all-non-nullable-excludes-from = {
-      expr = sorted (query {
-        graph = labeledFixtures.world;
-        from = "root";
-        follow = r.plus (r.lit "contains");
-        mode = "all";
-      });
+      expr = sorted (
+        query
+          {
+            mode = "all";
+          }
+          {
+            graph = labeledFixtures.world;
+            from = "root";
+            follow = r.plus (r.lit "contains");
+          }
+      );
       expected = [
         "h1"
         "h2"
@@ -48,12 +58,17 @@ in
     };
     test-all-two-step-word = {
       # contains contains → exactly depth-2 targets
-      expr = sorted (query {
-        graph = labeledFixtures.world;
-        from = "root";
-        follow = r.parse "contains contains";
-        mode = "all";
-      });
+      expr = sorted (
+        query
+          {
+            mode = "all";
+          }
+          {
+            graph = labeledFixtures.world;
+            from = "root";
+            follow = r.parse "contains contains";
+          }
+      );
       expected = [
         "u1"
         "vm1"
@@ -61,12 +76,17 @@ in
     };
     test-all-mixed-labels = {
       # member include? from g1 → members and what they include
-      expr = sorted (query {
-        graph = labeledFixtures.world;
-        from = "g1";
-        follow = r.parse "member include?";
-        mode = "all";
-      });
+      expr = sorted (
+        query
+          {
+            mode = "all";
+          }
+          {
+            graph = labeledFixtures.world;
+            from = "g1";
+            follow = r.parse "member include?";
+          }
+      );
       expected = [
         "shared"
         "u1"
@@ -74,62 +94,80 @@ in
       ];
     };
     test-all-where-filters = {
-      expr = query {
-        graph = labeledFixtures.world;
-        from = "root";
-        follow = r.parse "contains*";
-        mode = "all";
-        where = id: id == "vm1";
-      };
+      expr =
+        query
+          {
+            mode = "all";
+            where = id: id == "vm1";
+          }
+          {
+            graph = labeledFixtures.world;
+            from = "root";
+            follow = r.parse "contains*";
+          };
       expected = [ "vm1" ];
     };
     test-all-cycle-terminates = {
-      expr = sorted (query {
-        graph = labeledFixtures.cyclic;
-        from = "a";
-        follow = r.parse "contains* member";
-        mode = "all";
-      });
+      expr = sorted (
+        query
+          {
+            mode = "all";
+          }
+          {
+            graph = labeledFixtures.cyclic;
+            from = "a";
+            follow = r.parse "contains* member";
+          }
+      );
       expected = [ "m" ];
     };
     test-all-wrong-label-blocked = {
-      expr = query {
-        graph = labeledFixtures.world;
-        from = "g1";
-        follow = r.parse "contains";
-        mode = "all";
-      };
+      expr =
+        query
+          {
+            mode = "all";
+          }
+          {
+            graph = labeledFixtures.world;
+            from = "g1";
+            follow = r.parse "contains";
+          };
       expected = [ ];
     };
     test-labeled-from-adapter = {
       # per-label plain accessors (the gen-scope followEdge shape) → labeledEdges
-      expr = sorted (query {
-        graph = labeledFrom {
-          nodes = [
-            "g1"
-            "h1"
-            "h2"
-            "root"
-            "u1"
-          ];
-          perLabel = {
-            contains =
-              id:
-              {
-                root = [
+      expr = sorted (
+        query
+          {
+            mode = "all";
+          }
+          {
+            graph =
+              labeledFrom
+                {
+                  contains =
+                    id:
+                    {
+                      root = [
+                        "h1"
+                        "h2"
+                      ];
+                      h1 = [ "u1" ];
+                    }
+                    .${id} or [ ];
+                  member = id: { g1 = [ "u1" ]; }.${id} or [ ];
+                }
+                [
+                  "g1"
                   "h1"
                   "h2"
+                  "root"
+                  "u1"
                 ];
-                h1 = [ "u1" ];
-              }
-              .${id} or [ ];
-            member = id: { g1 = [ "u1" ]; }.${id} or [ ];
-          };
-        };
-        from = "root";
-        follow = r.parse "contains+";
-        mode = "all";
-      });
+            from = "root";
+            follow = r.parse "contains+";
+          }
+      );
       expected = [
         "h1"
         "h2"
@@ -147,15 +185,19 @@ in
               # the lift is total in both halves: the plain fixture's own node set is
               # what the labeled contract requires, so nothing is invented here.
               lifted = labeledFrom {
-                inherit (fx) nodes;
-                perLabel.edge = id: fx.edges id;
-              };
-              viaQuery = builtins.filter (x: x != from) (query {
-                graph = lifted;
-                inherit from;
-                follow = r.star r.any;
-                mode = "all";
-              });
+                edge = id: fx.edges id;
+              } fx.nodes;
+              viaQuery = builtins.filter (x: x != from) (
+                query
+                  {
+                    mode = "all";
+                  }
+                  {
+                    graph = lifted;
+                    inherit from;
+                    follow = r.star r.any;
+                  }
+              );
             in
             sorted viaQuery == sorted (reachableFrom fx from);
         in
@@ -163,41 +205,53 @@ in
       expected = true;
     };
     test-laziness-poison-unreached = {
-      expr = query {
-        graph = labeledFixtures.poisoned;
-        from = "a";
-        follow = r.parse "safe";
-        mode = "all";
-      };
+      expr =
+        query
+          {
+            mode = "all";
+          }
+          {
+            graph = labeledFixtures.poisoned;
+            from = "a";
+            follow = r.parse "safe";
+          };
       expected = [ "b" ];
     };
     test-all-dedup-across-nullable-states = {
       # n reached in TWO distinct nullable derivative states (residuals e and (e|'z));
       # answers are a SET — one entry. Also covers parallel same-target edges.
-      expr = query {
-        graph = labeledFrom {
-          nodes = [
-            "n"
-            "s"
-          ];
-          perLabel = {
-            x = id: { s = [ "n" ]; }.${id} or [ ];
-            y = id: { s = [ "n" ]; }.${id} or [ ];
+      expr =
+        query
+          {
+            mode = "all";
+          }
+          {
+            graph =
+              labeledFrom
+                {
+                  x = id: { s = [ "n" ]; }.${id} or [ ];
+                  y = id: { s = [ "n" ]; }.${id} or [ ];
+                }
+                [
+                  "n"
+                  "s"
+                ];
+            from = "s";
+            follow = r.parse "x | y z?";
           };
-        };
-        from = "s";
-        follow = r.parse "x | y z?";
-        mode = "all";
-      };
       expected = [ "n" ];
     };
     test-paths-witness-shape = {
-      expr = query {
-        graph = labeledFixtures.world;
-        from = "g1";
-        follow = r.parse "member include";
-        mode = "paths";
-      };
+      expr =
+        query
+          {
+            mode = "paths";
+          }
+          {
+            graph = labeledFixtures.world;
+            from = "g1";
+            follow = r.parse "member include";
+          };
       expected = [
         {
           node = "shared";
@@ -219,52 +273,68 @@ in
     test-paths-diamond-both-witnesses = {
       expr =
         let
-          g = labeledFrom {
-            nodes = [
-              "a"
-              "b"
-              "c"
-              "d"
-            ];
-            perLabel.e =
-              id:
+          g =
+            labeledFrom
               {
-                a = [
-                  "b"
-                  "c"
-                ];
-                b = [ "d" ];
-                c = [ "d" ];
+                e =
+                  id:
+                  {
+                    a = [
+                      "b"
+                      "c"
+                    ];
+                    b = [ "d" ];
+                    c = [ "d" ];
+                  }
+                  .${id} or [ ];
               }
-              .${id} or [ ];
-          };
-          res = query {
-            graph = g;
-            from = "a";
-            follow = r.parse "e e";
-            mode = "paths";
-          };
+              [
+                "a"
+                "b"
+                "c"
+                "d"
+              ];
+          res =
+            query
+              {
+                mode = "paths";
+              }
+              {
+                graph = g;
+                from = "a";
+                follow = r.parse "e e";
+              };
         in
         builtins.length (builtins.filter (ans: ans.node == "d") res);
       expected = 2;
     };
     test-paths-cycle-terminates = {
-      expr = builtins.length (query {
-        graph = labeledFixtures.cyclic;
-        from = "a";
-        follow = r.parse "contains* member";
-        mode = "paths";
-      });
+      expr = builtins.length (
+        query
+          {
+            mode = "paths";
+          }
+          {
+            graph = labeledFixtures.cyclic;
+            from = "a";
+            follow = r.parse "contains* member";
+          }
+      );
       expected = 1;
     };
     test-paths-nullable-start = {
-      expr = builtins.head (query {
-        graph = labeledFixtures.world;
-        from = "root";
-        follow = r.parse "contains*";
-        mode = "paths";
-        where = id: id == "root";
-      });
+      expr = builtins.head (
+        query
+          {
+            mode = "paths";
+            where = id: id == "root";
+          }
+          {
+            graph = labeledFixtures.world;
+            from = "root";
+            follow = r.parse "contains*";
+          }
+      );
       expected = {
         node = "root";
         path = [ ];
@@ -277,9 +347,8 @@ in
       expr =
         let
           g = labeledFrom {
-            nodes = [ "s" ];
-            perLabel.hop = id: { s = [ "s" ]; }.${id} or [ ];
-          };
+            hop = id: { s = [ "s" ]; }.${id} or [ ];
+          } [ "s" ];
           common = {
             graph = g;
             from = "s";
@@ -287,8 +356,8 @@ in
           };
         in
         {
-          all = query (common // { mode = "all"; });
-          paths = query (common // { mode = "paths"; });
+          all = query { mode = "all"; } common;
+          paths = query { mode = "paths"; } common;
         };
       expected = {
         all = [ "s" ];
@@ -299,32 +368,36 @@ in
       # x declared at own scope AND reachable via include: own wins, include shadowed
       expr =
         let
-          g = labeledFrom {
-            nodes = [
-              "s"
-              "t"
-              "x@s"
-              "x@t"
-            ];
-            perLabel = {
-              own = id: { s = [ "x@s" ]; }.${id} or [ ];
-              include = id: { s = [ "t" ]; }.${id} or [ ];
-              owni = id: { t = [ "x@t" ]; }.${id} or [ ];
-            };
-          };
+          g =
+            labeledFrom
+              {
+                own = id: { s = [ "x@s" ]; }.${id} or [ ];
+                include = id: { s = [ "t" ]; }.${id} or [ ];
+                owni = id: { t = [ "x@t" ]; }.${id} or [ ];
+              }
+              [
+                "s"
+                "t"
+                "x@s"
+                "x@t"
+              ];
           # follow: own | include owni  (a declaration here, or one hop through an include)
-          res = query {
-            graph = g;
-            from = "s";
-            follow = r.parse "own | include owni";
-            mode = "visible";
-            order.labels = [
-              "own"
-              "include"
-              "owni"
-            ];
-            groupBy = _: "decl"; # both answers compete for one name
-          };
+          res =
+            query
+              {
+                mode = "visible";
+                order.labels = [
+                  "own"
+                  "include"
+                  "owni"
+                ];
+                groupBy = _: "decl";
+              }
+              {
+                graph = g;
+                from = "s";
+                follow = r.parse "own | include owni";
+              };
         in
         {
           visible = map (a: a.node) res.visible;
@@ -340,28 +413,32 @@ in
       # distinct nodes both visible
       expr =
         let
-          g = labeledFrom {
-            nodes = [
-              "a"
-              "b"
-              "s"
-            ];
-            perLabel = {
-              own = id: { s = [ "a" ]; }.${id} or [ ];
-              include = id: { s = [ "b" ]; }.${id} or [ ];
-            };
-          };
-          res = query {
-            graph = g;
-            from = "s";
-            follow = r.parse "own | include";
-            mode = "visible";
-            order.labels = [
-              "own"
-              "include"
-            ];
-            groupBy = ans: ans.node;
-          };
+          g =
+            labeledFrom
+              {
+                own = id: { s = [ "a" ]; }.${id} or [ ];
+                include = id: { s = [ "b" ]; }.${id} or [ ];
+              }
+              [
+                "a"
+                "b"
+                "s"
+              ];
+          res =
+            query
+              {
+                mode = "visible";
+                order.labels = [
+                  "own"
+                  "include"
+                ];
+                groupBy = ans: ans.node;
+              }
+              {
+                graph = g;
+                from = "s";
+                follow = r.parse "own | include";
+              };
         in
         builtins.sort builtins.lessThan (map (a: a.node) res.visible);
       expected = [
@@ -374,52 +451,66 @@ in
     # under a mode named for the shadowing split. It must now refuse, naming the missing
     # argument, rather than answer a competition question the caller never asked.
     test-visible-refuses-missing-groupby = {
-      expr = didThrow (query {
-        graph = labeledFrom {
-          nodes = [
-            "s"
-            "mid"
-            "root"
-          ];
-          perLabel.parent =
-            id:
-            {
-              s = [ "mid" ];
-              mid = [ "root" ];
-            }
-            .${id} or [ ];
-        };
-        from = "s";
-        follow = r.star (r.lit "parent");
-        mode = "visible";
-        order.labels = [ "parent" ];
-      });
+      expr = didThrow (
+        query
+          {
+            mode = "visible";
+            order.labels = [ "parent" ];
+          }
+          {
+            graph =
+              labeledFrom
+                {
+                  parent =
+                    id:
+                    {
+                      s = [ "mid" ];
+                      mid = [ "root" ];
+                    }
+                    .${id} or [ ];
+                }
+                [
+                  "s"
+                  "mid"
+                  "root"
+                ];
+            from = "s";
+            follow = r.star (r.lit "parent");
+          }
+      );
       expected = true;
     };
     # LIVE CONTROL: the same query WITH `groupBy` supplied is not caught, so the refusal
     # above discriminates rather than always firing.
     test-visible-groupby-supplied-control = {
-      expr = didThrow (query {
-        graph = labeledFrom {
-          nodes = [
-            "s"
-            "mid"
-            "root"
-          ];
-          perLabel.parent =
-            id:
-            {
-              s = [ "mid" ];
-              mid = [ "root" ];
-            }
-            .${id} or [ ];
-        };
-        from = "s";
-        follow = r.star (r.lit "parent");
-        mode = "visible";
-        order.labels = [ "parent" ];
-        groupBy = ans: ans.node;
-      });
+      expr = didThrow (
+        query
+          {
+            mode = "visible";
+            order.labels = [ "parent" ];
+            groupBy = ans: ans.node;
+          }
+          {
+            graph =
+              labeledFrom
+                {
+                  parent =
+                    id:
+                    {
+                      s = [ "mid" ];
+                      mid = [ "root" ];
+                    }
+                    .${id} or [ ];
+                }
+                [
+                  "s"
+                  "mid"
+                  "root"
+                ];
+            from = "s";
+            follow = r.star (r.lit "parent");
+          }
+      );
       expected = false;
     };
     test-visible-prefix-beats-extension = {
@@ -427,28 +518,34 @@ in
       # the shorter (more direct) wins
       expr =
         let
-          g = labeledFrom {
-            nodes = [
-              "n1"
-              "n2"
-              "s"
-            ];
-            perLabel.hop =
-              id:
+          g =
+            labeledFrom
               {
-                s = [ "n1" ];
-                n1 = [ "n2" ];
+                hop =
+                  id:
+                  {
+                    s = [ "n1" ];
+                    n1 = [ "n2" ];
+                  }
+                  .${id} or [ ];
               }
-              .${id} or [ ];
-          };
-          res = query {
-            graph = g;
-            from = "s";
-            follow = r.parse "hop hop?";
-            mode = "visible";
-            order.labels = [ "hop" ];
-            groupBy = _: "g";
-          };
+              [
+                "n1"
+                "n2"
+                "s"
+              ];
+          res =
+            query
+              {
+                mode = "visible";
+                order.labels = [ "hop" ];
+                groupBy = _: "g";
+              }
+              {
+                graph = g;
+                from = "s";
+                follow = r.parse "hop hop?";
+              };
         in
         map (a: a.node) res.visible;
       expected = [ "n1" ];
@@ -457,30 +554,34 @@ in
       # layers: own layer before include layer before parent layer
       expr =
         let
-          g = labeledFrom {
-            nodes = [
-              "l-inc"
-              "l-own"
-              "l-par"
-              "s"
-            ];
-            perLabel = {
-              own = id: { s = [ "l-own" ]; }.${id} or [ ];
-              include = id: { s = [ "l-inc" ]; }.${id} or [ ];
-              parent = id: { s = [ "l-par" ]; }.${id} or [ ];
-            };
-          };
-          res = query {
-            graph = g;
-            from = "s";
-            follow = r.parse "own | include | parent";
-            mode = "layers";
-            order.labels = [
-              "own"
-              "include"
-              "parent"
-            ];
-          };
+          g =
+            labeledFrom
+              {
+                own = id: { s = [ "l-own" ]; }.${id} or [ ];
+                include = id: { s = [ "l-inc" ]; }.${id} or [ ];
+                parent = id: { s = [ "l-par" ]; }.${id} or [ ];
+              }
+              [
+                "l-inc"
+                "l-own"
+                "l-par"
+                "s"
+              ];
+          res =
+            query
+              {
+                mode = "layers";
+                order.labels = [
+                  "own"
+                  "include"
+                  "parent"
+                ];
+              }
+              {
+                graph = g;
+                from = "s";
+                follow = r.parse "own | include | parent";
+              };
         in
         map (layer: map (a: a.node) layer) res;
       expected = [
@@ -493,31 +594,37 @@ in
       # endOfPath ranked WORSE than the label: continuing beats stopping — n2 wins over n1
       expr =
         let
-          g = labeledFrom {
-            nodes = [
-              "n1"
-              "n2"
-              "s"
-            ];
-            perLabel.hop =
-              id:
+          g =
+            labeledFrom
               {
-                s = [ "n1" ];
-                n1 = [ "n2" ];
+                hop =
+                  id:
+                  {
+                    s = [ "n1" ];
+                    n1 = [ "n2" ];
+                  }
+                  .${id} or [ ];
               }
-              .${id} or [ ];
-          };
-          res = query {
-            graph = g;
-            from = "s";
-            follow = r.parse "hop hop?";
-            mode = "visible";
-            order = {
-              labels = [ "hop" ];
-              endOfPath = 5;
-            };
-            groupBy = _: "g";
-          };
+              [
+                "n1"
+                "n2"
+                "s"
+              ];
+          res =
+            query
+              {
+                mode = "visible";
+                order = {
+                  labels = [ "hop" ];
+                  endOfPath = 5;
+                };
+                groupBy = _: "g";
+              }
+              {
+                graph = g;
+                from = "s";
+                follow = r.parse "hop hop?";
+              };
         in
         map (a: a.node) res.visible;
       expected = [ "n2" ];
@@ -525,25 +632,29 @@ in
     test-visible-unlisted-label-ranks-last = {
       expr =
         let
-          g = labeledFrom {
-            nodes = [
-              "far"
-              "near"
-              "s"
-            ];
-            perLabel = {
-              own = id: { s = [ "near" ]; }.${id} or [ ];
-              exotic = id: { s = [ "far" ]; }.${id} or [ ];
-            };
-          };
-          res = query {
-            graph = g;
-            from = "s";
-            follow = r.parse "own | exotic";
-            mode = "visible";
-            order.labels = [ "own" ];
-            groupBy = _: "g";
-          };
+          g =
+            labeledFrom
+              {
+                own = id: { s = [ "near" ]; }.${id} or [ ];
+                exotic = id: { s = [ "far" ]; }.${id} or [ ];
+              }
+              [
+                "far"
+                "near"
+                "s"
+              ];
+          res =
+            query
+              {
+                mode = "visible";
+                order.labels = [ "own" ];
+                groupBy = _: "g";
+              }
+              {
+                graph = g;
+                from = "s";
+                follow = r.parse "own | exotic";
+              };
         in
         map (a: a.node) res.visible;
       expected = [ "near" ];
@@ -551,14 +662,18 @@ in
     test-visible-empty-answers = {
       # degenerate: no reachable answers — {[];[]} without a head-of-empty throw
       # (the guard is groupBy dropping empty groups; pin the invariant)
-      expr = query {
-        graph = labeledFixtures.world;
-        from = "root";
-        follow = r.parse "contains";
-        mode = "visible";
-        where = _: false;
-        groupBy = ans: ans.node;
-      };
+      expr =
+        query
+          {
+            mode = "visible";
+            where = _: false;
+            groupBy = ans: ans.node;
+          }
+          {
+            graph = labeledFixtures.world;
+            from = "root";
+            follow = r.parse "contains";
+          };
       expected = {
         visible = [ ];
         shadowed = [ ];
@@ -568,31 +683,37 @@ in
       # endOfPath rank EQUAL to a label rank: incomparable-as-equal — both answers visible
       expr =
         let
-          g = labeledFrom {
-            nodes = [
-              "n1"
-              "n2"
-              "s"
-            ];
-            perLabel.hop =
-              id:
+          g =
+            labeledFrom
               {
-                s = [ "n1" ];
-                n1 = [ "n2" ];
+                hop =
+                  id:
+                  {
+                    s = [ "n1" ];
+                    n1 = [ "n2" ];
+                  }
+                  .${id} or [ ];
               }
-              .${id} or [ ];
-          };
-          res = query {
-            graph = g;
-            from = "s";
-            follow = r.parse "hop hop?";
-            mode = "visible";
-            order = {
-              labels = [ "hop" ];
-              endOfPath = 0;
-            };
-            groupBy = _: "g";
-          };
+              [
+                "n1"
+                "n2"
+                "s"
+              ];
+          res =
+            query
+              {
+                mode = "visible";
+                order = {
+                  labels = [ "hop" ];
+                  endOfPath = 0;
+                };
+                groupBy = _: "g";
+              }
+              {
+                graph = g;
+                from = "s";
+                follow = r.parse "hop hop?";
+              };
         in
         map (a: a.node) res.visible;
       expected = [
@@ -606,31 +727,29 @@ in
       # sorted-node fold order (a change to that order would flip this list).
       expr =
         let
-          g = labeledFrom {
-            nodes = [
-              "admins"
-              "root-u"
-              "sini"
-              "wheel"
-            ];
-            perLabel = {
-              includes = id: { admins = [ "wheel" ]; }.${id} or [ ];
-              member =
-                id:
-                {
-                  admins = [ "sini" ];
-                  wheel = [ "root-u" ];
-                }
-                .${id} or [ ];
-            };
-          };
+          g =
+            labeledFrom
+              {
+                includes = id: { admins = [ "wheel" ]; }.${id} or [ ];
+                member =
+                  id:
+                  {
+                    admins = [ "sini" ];
+                    wheel = [ "root-u" ];
+                  }
+                  .${id} or [ ];
+              }
+              [
+                "admins"
+                "root-u"
+                "sini"
+                "wheel"
+              ];
         in
-        genGraph.queryFold {
+        genGraph.queryFold { } (acc: u: acc ++ [ u ]) [ ] {
           graph = g;
           from = "admins";
           follow = r.parse "includes* member";
-          empty = [ ];
-          combine = acc: u: acc ++ [ u ];
         };
       expected = [
         "root-u"
@@ -642,43 +761,44 @@ in
       # deliberately omits them) — where filters the folded set, valueOf maps it
       expr =
         let
-          g = labeledFrom {
-            nodes = [
-              "admins"
-              "root-u"
-              "sini"
-              "wheel"
-            ];
-            perLabel = {
-              includes = id: { admins = [ "wheel" ]; }.${id} or [ ];
-              member =
-                id:
-                {
-                  admins = [ "sini" ];
-                  wheel = [ "root-u" ];
-                }
-                .${id} or [ ];
-            };
-          };
+          g =
+            labeledFrom
+              {
+                includes = id: { admins = [ "wheel" ]; }.${id} or [ ];
+                member =
+                  id:
+                  {
+                    admins = [ "sini" ];
+                    wheel = [ "root-u" ];
+                  }
+                  .${id} or [ ];
+              }
+              [
+                "admins"
+                "root-u"
+                "sini"
+                "wheel"
+              ];
         in
-        genGraph.queryFold {
-          graph = g;
-          from = "admins";
-          follow = r.parse "includes* member";
-          where = id: id != "sini";
-          empty = 0;
-          combine = a: n: a + n;
-          valueOf = builtins.stringLength;
-        };
+        genGraph.queryFold
+          {
+            where = id: id != "sini";
+            valueOf = builtins.stringLength;
+          }
+          (a: n: a + n)
+          0
+          {
+            graph = g;
+            from = "admins";
+            follow = r.parse "includes* member";
+          };
       expected = 6; # "root-u" only
     };
     test-fold-empty-answers = {
-      expr = genGraph.queryFold {
+      expr = genGraph.queryFold { } (a: _: a + 1) 0 {
         graph = labeledFixtures.world;
         from = "u2";
         follow = r.parse "member";
-        empty = 0;
-        combine = a: _: a + 1;
       };
       expected = 0;
     };
@@ -690,11 +810,14 @@ in
             graph = labeledFixtures.world;
             from = "g1";
             follow = r.parse "member";
-            empty = 0;
-            combine = a: _: a + 1;
           };
+          empty = 0;
+          combine = a: _: a + 1;
         in
-        query (common // { mode = "fixpoint"; }) == genGraph.queryFold common;
+        query {
+          mode = "fixpoint";
+          inherit empty combine;
+        } common == genGraph.queryFold { } combine empty common;
       expected = true;
     };
   };

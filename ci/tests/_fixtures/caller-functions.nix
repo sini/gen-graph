@@ -35,7 +35,7 @@ let
     reachableWhere = f: G.reachableWhere g "a" f;
     selectEdges = f: G.selectEdges f E;
     dependentsFrontier = f: G.dependentsFrontier g "c" f;
-    ancestorsOf = f: G.ancestorsOf (g // { parent = f; }) "c";
+    ancestorsOf = f: G.ancestorsOf { } (g // { parent = f; }) "c";
     materializeParents = f: G.materializeParents (g // { parent = f; });
     reachableVia = f: G.reachableVia f "a";
     selfReachableVia = f: G.selfReachableVia f "a";
@@ -52,7 +52,7 @@ let
       };
     foldPreorder-key =
       f:
-      G.foldPreorder {
+      G.foldPreorder { } {
         roots = [ "a" ];
         key = f;
         expand = okExpand;
@@ -60,7 +60,7 @@ let
       };
     foldPreorder-expand =
       f:
-      G.foldPreorder {
+      G.foldPreorder { } {
         roots = [ "a" ];
         key = x: x;
         expand = f;
@@ -68,7 +68,7 @@ let
       };
     expandPreorder-key =
       f:
-      G.expandPreorder {
+      G.expandPreorder { } {
         roots = [ "a" ];
         key = f;
         inherit (g) edges;
@@ -76,31 +76,24 @@ let
     foldReach-target = f: reach { target = f; };
     foldReach-project = f: reach { project = f; };
     foldReach-itemKey = f: reach { itemKey = f; };
-    fixpoint-step =
-      f:
-      G.fixpoint {
-        seed = E;
-        step = f;
-      };
+    fixpoint-step = f: G.fixpoint { } f E;
     fixpoint-refusal =
       f:
       G.fixpoint {
-        seed = E;
-        step = x: x;
         maxIter = 0;
         refusal = f;
-      };
+      } (x: x) E;
     seededFixpoint =
       f:
-      G.seededFixpoint {
+      G.seededFixpoint { } {
         seed = E;
         frontier = E;
         step = f;
       };
     fromScan-scan = f: scanned { scan = f; };
     fromScan-project = f: scanned { project = f; };
-    mkNodeRef = f: G.mkNodeRef { isRegistered = f; } "a";
-    nodeRefFindings = f: G.nodeRefFindings { isRegistered = f; } "a";
+    mkNodeRef = f: G.mkNodeRef f "a";
+    nodeRefFindings = f: G.nodeRefFindings f "a";
     mkEndpointProjection-childBearing = f: projection G.mkEndpointProjection { childBearing = f; } okSa;
     mkEndpointProjection-isNode = f: projection G.mkEndpointProjection { isNode = f; } okSa;
     mkEndpointProjection-structuralAttributesOf = f: projection G.mkEndpointProjection { } f;
@@ -110,18 +103,20 @@ let
     labeledFrom = f: labeled { x = f; };
     fromRegistry-parent =
       f:
-      G.ancestorsOf (G.fromRegistry {
-        registry = {
+      G.ancestorsOf { } (G.fromRegistry
+        {
+          parent = f;
+        }
+        (G.field "deps")
+        {
           a = { };
           b.up = "a";
-        };
-        edges = G.field "deps";
-        parent = f;
-      }) "b";
+        }
+      ) "b";
   };
   reach =
     over:
-    G.foldReach (
+    G.foldReach { } (
       {
         roots = [ { to = "a"; } ];
         edges = id: map (t: { to = t; }) (g.edges id);
@@ -134,7 +129,7 @@ let
   scanned =
     over:
     let
-      r = G.fromScan (
+      r = G.fromScan { } (
         {
           items = [
             {
@@ -151,25 +146,24 @@ let
     {
       inherit (r) nodes derivedEdges;
     };
+  # `childBearing isNode` are positional (P2); `over` replaces either.
   projection =
     mk: over: sa:
-    mk (
-      {
+    let
+      fs = {
         childBearing = _: false;
         isNode = _: true;
       }
-      // over
-    ) sa "a";
+      // over;
+    in
+    mk fs.childBearing fs.isNode sa "a";
   labeled =
     perLabel:
     (G.forgetLabels (
-      G.labeledFrom {
-        nodes = [
-          "a"
-          "b"
-        ];
-        inherit perLabel;
-      }
+      G.labeledFrom perLabel [
+        "a"
+        "b"
+      ]
     )).edges
       "a";
 
@@ -253,16 +247,13 @@ let
     fixpoint-step-entry = surfaces.fixpoint-step (_: {
       a = 1;
     });
-    fixpoint-step-empty-seed = G.fixpoint {
-      seed = { };
-      step = _: 1;
-    };
+    fixpoint-step-empty-seed = G.fixpoint { } (_: 1) { };
     seededFixpoint-entry = surfaces.seededFixpoint (_: _: { a = 1; });
     # a site applied twice is reached at its second application too: a first result that is lawful
     reachableVia-operator = surfaces.reachableVia (id: if id == "a" then [ { key = "b"; } ] else 1);
     dependentsFrontier-operator = surfaces.dependentsFrontier (id: if id == "c" then true else 1);
     # an empty frontier converges at once, so the only application is the support check's
-    seededFixpoint-support = G.seededFixpoint {
+    seededFixpoint-support = G.seededFixpoint { } {
       seed = E;
       frontier = { };
       step = _: _: 1;
@@ -290,7 +281,7 @@ let
     topoOrder-lessThan = surfaces.topoOrder-lessThan (_: true);
     topoOrderKahn-lessThan = surfaces.topoOrderKahn-lessThan (_: true);
     seededFixpoint = surfaces.seededFixpoint (_: { });
-    seededFixpoint-support = G.seededFixpoint {
+    seededFixpoint-support = G.seededFixpoint { } {
       seed = E;
       frontier = { };
       step = _: { };
@@ -299,11 +290,8 @@ let
       acc = 0;
     });
     fromRegistry-parent = surfaces.fromRegistry-parent (_: null);
-    fromRegistry-edges = G.reachableFrom (G.fromRegistry {
-      registry = {
-        a = { };
-      };
-      edges = _: [ ];
+    fromRegistry-edges = G.reachableFrom (G.fromRegistry { } (_: [ ]) {
+      a = { };
     }) "a";
     expandPreorder-emit = passThrough.expandPreorder-emit (_: 0);
     queryFold-combine = passThrough.queryFold-combine (_: 0);
@@ -325,44 +313,41 @@ let
     queryFold-combine = n: v: n + builtins.stringLength v;
     queryFold-valueOf = x: x;
   };
+  # `over` is an option of `expandPreorder` (`resolve`, `emit`), so it is the options step (P2).
   expanded =
     over:
-    G.expandPreorder (
-      {
-        roots = [ "a" ];
-        key = x: x;
-        inherit (g) edges;
-      }
-      // over
-    );
+    G.expandPreorder over {
+      roots = [ "a" ];
+      key = x: x;
+      inherit (g) edges;
+    };
+  # `over` replaces the monoid (`combine`) or an option (`valueOf`), each at its own position (P2).
   folded =
     over:
-    G.queryFold (
-      {
-        graph = {
-          nodes = [
-            "a"
-            "b"
-          ];
-          labeledEdges =
-            id:
-            if id == "a" then
-              [
-                {
-                  label = "x";
-                  target = "b";
-                }
-              ]
-            else
-              [ ];
-        };
-        from = "a";
-        follow = G.regex.star (G.regex.lit "x");
-        empty = 0;
-        combine = n: v: n + builtins.stringLength v;
-      }
-      // over
-    );
+    let
+      combine = over.combine or (n: v: n + builtins.stringLength v);
+    in
+    G.queryFold (builtins.removeAttrs over [ "combine" ]) combine 0 ({
+      graph = {
+        nodes = [
+          "a"
+          "b"
+        ];
+        labeledEdges =
+          id:
+          if id == "a" then
+            [
+              {
+                label = "x";
+                target = "b";
+              }
+            ]
+          else
+            [ ];
+      };
+      from = "a";
+      follow = G.regex.star (G.regex.lit "x");
+    });
 in
 {
   inherit

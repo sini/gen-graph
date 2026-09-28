@@ -45,8 +45,7 @@ let
     "sibling"
   ];
   isRegistered = id: builtins.elem id registered;
-  authority = { inherit isRegistered; };
-  ref = mkNodeRef authority;
+  ref = mkNodeRef isRegistered;
 
   # ── THE FIXTURES ──
   listForm = [
@@ -222,13 +221,13 @@ in
 
     # ── ROUTE 1 · AUTHOR-WRITTEN, VALIDATED AGAINST THE REGISTRATION SET ──
     test-an-unregistered-id-is-refused-by-name-at-construction = {
-      expr = nodeRefFindings authority "ghost";
+      expr = nodeRefFindings isRegistered "ghost";
       expected = [
         "gen-graph.mkNodeRef: 'ghost' is not a node of the registration set; an author-written reference names a declared node"
       ];
     };
     test-control-a-registered-id-has-no-findings = {
-      expr = nodeRefFindings authority "parent";
+      expr = nodeRefFindings isRegistered "parent";
       expected = [ ];
     };
     # The refusal is a throw at the constructor, not only a finding at the validator.
@@ -239,7 +238,7 @@ in
     # SHAPE BEFORE MEMBERSHIP, and the message names the TYPE and never the value: interpolating a
     # non-string is a coercion abort, and a cell written to detect that mode could never fire.
     test-a-non-string-identifier-is-refused-without-being-interpolated = {
-      expr = nodeRefFindings authority 42;
+      expr = nodeRefFindings isRegistered 42;
       expected = [
         "gen-graph.mkNodeRef: got int, expected a node identifier (a string)"
       ];

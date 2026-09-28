@@ -26,8 +26,20 @@
 # never enumerate `nodes`) and the amortization is a decision the CALLER makes by binding
 # `hoistEdges` once and spending the result.
 #
-# Pure builtins only — no dependencies, so this is a bare value (not a function).
+# The traversals are `builtins` alone; gen-prelude is taken for `door` only (den-hoag-7gp66 P2):
+# each published door is `door` over the unchecked core its sibling doors call.
+{ prelude }:
 let
+  inherit (prelude) door;
+  # An accessor record is R5's data record: open, its missing fields refused by name at the door's
+  # application (P2 rule 3).
+  accessorDoor =
+    name: required:
+    door {
+      name = "gen-graph.${name}";
+      inherit required;
+      open = true;
+    };
   inherit (import ./key.nix)
     attrKey
     badResult
@@ -92,10 +104,10 @@ let
       in
       builtins.filter (id: id != startId) (map (r: r.key) result)
     );
-  reachableFrom = reachableFromAs "reachableFrom";
+  reachableFrom = accessorDoor "reachableFrom" [ "edges" ] (reachableFromAs "reachableFrom");
 
   # Follow edges transitively, filter results by predicate on id.
-  reachableWhere =
+  reachableWhere = accessorDoor "reachableWhere" [ "edges" ] (
     { edges, ... }:
     startId: pred:
     builtins.seq (identifier "reachableWhere" startId) (
@@ -109,7 +121,8 @@ let
         in
         if builtins.isBool b then b else badResult "reachableWhere" "pred" (renderId id) "a bool" b
       ) (reachableFromAs (within "reachableWhere" "reachableFrom") { inherit edges; } startId)
-    );
+    )
+  );
 
   # Point query: can fromId reach toId? The operator STOPS EXPANDING AT THE TARGET, so the
   # walk is Θ( Σ_{u ∈ visited} (1 + outdeg u) ) over a visited set that is `reach fromId`
@@ -171,11 +184,11 @@ let
         )
       )
     );
-  canReach = canReachAs "canReach";
+  canReach = accessorDoor "canReach" [ "edges" ] (canReachAs "canReach");
 
   # Is a node reachable from itself? (cycle detection for one node)
   # genericClosure naturally includes the start if it's in a cycle.
-  selfReachable =
+  selfReachable = accessorDoor "selfReachable" [ "edges" ] (
     { edges, ... }:
     id:
     builtins.seq (identifier "selfReachable" id) (
@@ -201,7 +214,8 @@ let
             );
         }
       )
-    );
+    )
+  );
 
   # Walk parent chain upward (with cycle protection).
   # Silently terminates on cyclic parent chains.
@@ -214,34 +228,47 @@ let
   # evaluator ceiling: there is no recursion, so the old depth cap and its refusal are retired
   # and `maxDepth` is refused by name (`preorder.nix`'s header, and its recorded price: an
   # infinite demand-generated parent chain of distinct ids diverges).
+  #
+  # `ancestorsOf { maxDepth ? null; } { parent; } startId` (P2, R7): the options first, closed, then
+  # the accessor record, open. `maxDepth` stays an accepted option only so that it is refused as
+  # retired, by name, when `ancestorsOf opts` is formed; given on the record instead it is refused as
+  # misplaced (`optionsStep`), never silently admitted.
   ancestorsOf =
-    {
-      parent,
-      maxDepth ? null,
-      ...
-    }:
-    if maxDepth != null then
-      throw (retiredMaxDepth "ancestorsOf")
-    else
-      startId:
-      let
-        pa = callableAt "ancestorsOf" "parent" "a node id (a string) or null" parent;
-        chain = builtins.genericClosure {
-          startSet = [ { key = startId; } ];
-          operator =
-            x:
-            let
-              p = pa x.key;
-            in
-            if p == null then
-              [ ]
-            else if !builtins.isString p then
-              badResult "ancestorsOf" "parent" (renderId x.key) "a node id (a string) or null" p
-            else
-              [ { key = p; } ];
-        };
-      in
-      builtins.seq (identifier "ancestorsOf" startId) (map (x: x.key) (builtins.tail chain));
+    door
+      {
+        name = "gen-graph.ancestorsOf";
+        optional = [ "maxDepth" ];
+      }
+      (
+        o: if (o.maxDepth or null) != null then throw (retiredMaxDepth "ancestorsOf") else ancestorsRecord
+      );
+  ancestorsRecord = door {
+    name = "gen-graph.ancestorsOf";
+    required = [ "parent" ];
+    open = true;
+    optionsStep = ancestorsOf;
+  } ancestorsCore;
+  ancestorsCore =
+    { parent, ... }:
+    startId:
+    let
+      pa = callableAt "ancestorsOf" "parent" "a node id (a string) or null" parent;
+      chain = builtins.genericClosure {
+        startSet = [ { key = startId; } ];
+        operator =
+          x:
+          let
+            p = pa x.key;
+          in
+          if p == null then
+            [ ]
+          else if !builtins.isString p then
+            badResult "ancestorsOf" "parent" (renderId x.key) "a node id (a string) or null" p
+          else
+            [ { key = p; } ];
+      };
+    in
+    builtins.seq (identifier "ancestorsOf" startId) (map (x: x.key) (builtins.tail chain));
 
   # All acyclic paths between two nodes (DFS with visited set).
   #
@@ -262,19 +289,27 @@ let
   # provenance and structural stacks, so their real ceiling is strictly lower than any bare
   # figure and they lower `maxDepth` rather than reading 2,000 as a promise.
   #
-  # The cap rides on the caller's own accessor record, which is the shape `fixpoint.closureOf`
-  # already uses for `maxIter` (ADR-0009's fourth amendment: refuse BY NAME at the ceiling;
-  # ADR-0032: owed where a real ceiling exists, and only there). `preorder.nix`'s walks and
-  # `ancestorsOf` once carried the same cap; they are `genericClosure` loops now, with no
-  # ceiling, so this is the one self-recursive core left in the class.
+  # The cap is an OPTION (ADR-0009's fourth amendment: refuse BY NAME at the ceiling; ADR-0032:
+  # owed where a real ceiling exists, and only there): `pathsBetween { maxDepth ? 2000; } { edges; }
+  # startId endId` (P2, R7). It once rode on the caller's accessor record; given there now it is
+  # refused as misplaced (`optionsStep`), never silently dropped back to the default.
+  # `preorder.nix`'s walks and `ancestorsOf` once carried the same cap; they are `genericClosure`
+  # loops now, with no ceiling, so this is the one self-recursive core left in the class.
   pathsMaxDepth = 2000;
 
-  pathsBetween =
-    {
-      edges,
-      maxDepth ? pathsMaxDepth,
-      ...
-    }:
+  pathsBetween = door {
+    name = "gen-graph.pathsBetween";
+    optional = [ "maxDepth" ];
+  } (o: pathsRecord (pathsCore (o.maxDepth or pathsMaxDepth)));
+  pathsRecord = door {
+    name = "gen-graph.pathsBetween";
+    required = [ "edges" ];
+    open = true;
+    optionsStep = pathsBetween;
+  };
+  pathsCore =
+    maxDepth:
+    { edges, ... }:
     startId: endId:
     let
       e = edgesAccessor "pathsBetween" edges;
@@ -288,7 +323,7 @@ let
         # After both terminating checks: neither descends, so neither can reach the evaluator's ceiling, and refusing on one would change the
         # answer for graphs that never approach the cap.
         else if depth > maxDepth then
-          throw "gen-graph.pathsBetween: path depth exceeded the stated cap of ${toString maxDepth}. This DFS is self-recursive, so the evaluator's call depth is the length of the path being extended; past the evaluator's own max-call-depth the failure is an uncatchable abort, and this cap sits below it so the refusal arrives first and `builtins.tryEval` can observe it. Set `maxDepth` on the accessor to match the stack the caller is itself nested in."
+          throw "gen-graph.pathsBetween: path depth exceeded the stated cap of ${toString maxDepth}. This DFS is self-recursive, so the evaluator's call depth is the length of the path being extended; past the evaluator's own max-call-depth the failure is an uncatchable abort, and this cap sits below it so the refusal arrives first and `builtins.tryEval` can observe it. Set the `maxDepth` option to match the stack the caller is itself nested in."
         else
           let
             newVisited = visited // {
@@ -341,7 +376,11 @@ let
   # 3n + 1 on `chain`/`fleet`, 3n on `cycle` and 2n + 2 on `complete`, where nothing is unreached
   # at all. So such a caller binds the operators above
   # instead: `dependentsOf` (`lib/global.nix`) is that caller and says so at its own definition.
-  hoistEdges =
+  hoistEdges = accessorDoor "hoistEdges" [
+    "edges"
+    "nodes"
+  ] hoistEdgesCore;
+  hoistEdgesCore =
     { edges, nodes, ... }:
     let
       e = edgesAccessor "hoistEdges" edges;
@@ -454,5 +493,10 @@ in
   threaded = {
     reachableFrom = reachableFromAs;
     canReach = canReachAs;
+  };
+  # The unchecked cores, for another file's internal callers (P2 §p2.3.2: an internal caller of a
+  # door calls its core, and a check never sits inside a per-node closure). Not published either.
+  cores = {
+    hoistEdges = hoistEdgesCore;
   };
 }

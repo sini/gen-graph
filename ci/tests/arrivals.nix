@@ -20,142 +20,154 @@ let
   minOf = builtins.foldl' (a: b: if b < a then b else a) 999;
 
   # two DISTINCT labels reaching one node — the dual-inclusion pair
-  dual = labeledFrom {
-    nodes = [
-      "s"
-      "x"
-    ];
-    perLabel = {
-      a = id: if id == "s" then [ "x" ] else [ ];
-      b = id: if id == "s" then [ "x" ] else [ ];
-    };
-  };
+  dual =
+    labeledFrom
+      {
+        a = id: if id == "s" then [ "x" ] else [ ];
+        b = id: if id == "s" then [ "x" ] else [ ];
+      }
+      [
+        "s"
+        "x"
+      ];
   altAB = r.alt [
     (r.lit "a")
     (r.lit "b")
   ];
 
-  diamond = labeledFrom {
-    nodes = [
-      "l"
-      "r"
-      "s"
-      "t"
-    ];
-    perLabel.e =
-      id:
+  diamond =
+    labeledFrom
       {
-        s = [
-          "l"
-          "r"
-        ];
-        l = [ "t" ];
-        r = [ "t" ];
+        e =
+          id:
+          {
+            s = [
+              "l"
+              "r"
+            ];
+            l = [ "t" ];
+            r = [ "t" ];
+          }
+          .${id} or [ ];
       }
-      .${id} or [ ];
-  };
-  fan = labeledFrom {
-    nodes = [
-      "a"
-      "s"
-      "z"
-    ];
-    perLabel.e =
-      id:
-      if id == "s" then
-        [
-          "z"
-          "a"
-        ]
-      else
-        [ ];
-  };
-  chain = labeledFrom {
-    nodes = [
-      "m"
-      "s"
-      "t"
-    ];
-    perLabel.p =
-      id:
+      [
+        "l"
+        "r"
+        "s"
+        "t"
+      ];
+  fan =
+    labeledFrom
       {
-        s = [ "m" ];
-        m = [ "t" ];
+        e =
+          id:
+          if id == "s" then
+            [
+              "z"
+              "a"
+            ]
+          else
+            [ ];
       }
-      .${id} or [ ];
-  };
+      [
+        "a"
+        "s"
+        "z"
+      ];
+  chain =
+    labeledFrom
+      {
+        p =
+          id:
+          {
+            s = [ "m" ];
+            m = [ "t" ];
+          }
+          .${id} or [ ];
+      }
+      [
+        "m"
+        "s"
+        "t"
+      ];
 
   # ADR-0016's reification: a content-bearing relation is a NODE with labelled
   # incidence, so one relation is spelled as two edges through the binding node.
   # `s` reaches `u` directly and `t` through the binding `b:1`.
   isBinding = id: builtins.substring 0 2 id == "b:";
   bindingRule = s: if isBinding s.from then s.distance else s.distance + 1;
-  reified = labeledFrom {
-    nodes = [
-      "b:1"
-      "s"
-      "t"
-      "u"
-    ];
-    perLabel.rel =
-      id:
+  reified =
+    labeledFrom
       {
-        s = [
-          "b:1"
-          "u"
-        ];
-        "b:1" = [ "t" ];
+        rel =
+          id:
+          {
+            s = [
+              "b:1"
+              "u"
+            ];
+            "b:1" = [ "t" ];
+          }
+          .${id} or [ ];
       }
-      .${id} or [ ];
-  };
+      [
+        "b:1"
+        "s"
+        "t"
+        "u"
+      ];
   reifiedWalk =
     advance:
     map
       (x: {
         inherit (x) node distance;
       })
-      (queryArrivals {
-        graph = reified;
-        from = "s";
-        follow = r.plus (r.lit "rel");
-        inherit advance;
-      });
+      (
+        queryArrivals { } {
+          graph = reified;
+          from = "s";
+          follow = r.plus (r.lit "rel");
+          inherit advance;
+        }
+      );
 
   # Two routes to `b:3`, which is `v`'s only way in:
   #   A — three direct relations,  three hops, distance 3
   #   B — two reified relations,   four hops,  distance 2
   # They enter `b:3` by DIFFERENT edges, so both survive the edge key; they leave it
   # by the SAME edge, so only the first arrival at `v` survives.
-  zeroTrap = labeledFrom {
-    nodes = [
-      "b:1"
-      "b:2"
-      "b:3"
-      "m"
-      "n1"
-      "n2"
-      "s"
-      "v"
-    ];
-    perLabel.rel =
-      id:
+  zeroTrap =
+    labeledFrom
       {
-        s = [
-          "n1"
-          "b:1"
-        ];
-        n1 = [ "n2" ];
-        n2 = [ "b:3" ];
-        "b:1" = [ "m" ];
-        m = [ "b:2" ];
-        "b:2" = [ "b:3" ];
-        "b:3" = [ "v" ];
+        rel =
+          id:
+          {
+            s = [
+              "n1"
+              "b:1"
+            ];
+            n1 = [ "n2" ];
+            n2 = [ "b:3" ];
+            "b:1" = [ "m" ];
+            m = [ "b:2" ];
+            "b:2" = [ "b:3" ];
+            "b:3" = [ "v" ];
+          }
+          .${id} or [ ];
       }
-      .${id} or [ ];
-  };
+      [
+        "b:1"
+        "b:2"
+        "b:3"
+        "m"
+        "n1"
+        "n2"
+        "s"
+        "v"
+      ];
   zeroTrapWalk =
     advance:
-    queryArrivals {
+    queryArrivals { } {
       graph = zeroTrap;
       from = "s";
       follow = r.plus (r.lit "rel");
@@ -168,7 +180,7 @@ in
     test-arrivals-keep-both-arms-of-a-dual-inclusion-pair = {
       expr =
         let
-          res = queryArrivals {
+          res = queryArrivals { } {
             graph = dual;
             from = "s";
             follow = altAB;
@@ -193,23 +205,29 @@ in
     test-arrivals-CONTROL-all-collapses-the-pair-to-one-answer = {
       # the shipped ⟨node, state⟩ key derivates `a` and `b` to the same state, so the
       # second edge vanishes with nothing in the answer to say it existed
-      expr = query {
-        graph = dual;
-        from = "s";
-        follow = altAB;
-        mode = "all";
-      };
+      expr =
+        query
+          {
+            mode = "all";
+          }
+          {
+            graph = dual;
+            from = "s";
+            follow = altAB;
+          };
       expected = [ "x" ];
     };
     test-arrivals-keep-reconvergent-multiplicity = {
       expr =
         let
-          res = builtins.filter (x: x.node == "t") (queryArrivals {
-            graph = diamond;
-            from = "s";
-            follow = r.star (r.lit "e");
-            advance = hop;
-          });
+          res = builtins.filter (x: x.node == "t") (
+            queryArrivals { } {
+              graph = diamond;
+              from = "s";
+              follow = r.star (r.lit "e");
+              advance = hop;
+            }
+          );
         in
         map (x: x.via.from) res;
       expected = [
@@ -218,12 +236,16 @@ in
       ];
     };
     test-arrivals-CONTROL-all-collapses-the-diamond = {
-      expr = query {
-        graph = diamond;
-        from = "s";
-        follow = r.star (r.lit "e");
-        mode = "all";
-      };
+      expr =
+        query
+          {
+            mode = "all";
+          }
+          {
+            graph = diamond;
+            from = "s";
+            follow = r.star (r.lit "e");
+          };
       expected = [
         "l"
         "r"
@@ -235,17 +257,17 @@ in
       # `n` reached by `x` (residual ε) and by `y` (residual z?), both nullable
       expr =
         let
-          g = labeledFrom {
-            nodes = [
-              "n"
-              "s"
-            ];
-            perLabel = {
-              x = id: { s = [ "n" ]; }.${id} or [ ];
-              y = id: { s = [ "n" ]; }.${id} or [ ];
-            };
-          };
-          res = queryArrivals {
+          g =
+            labeledFrom
+              {
+                x = id: { s = [ "n" ]; }.${id} or [ ];
+                y = id: { s = [ "n" ]; }.${id} or [ ];
+              }
+              [
+                "n"
+                "s"
+              ];
+          res = queryArrivals { } {
             graph = g;
             from = "s";
             follow = r.parse "x | y z?";
@@ -267,12 +289,14 @@ in
 
     # ── ORDER (no post-walk sort) ──
     test-arrivals-return-traversal-order = {
-      expr = nodesOf (queryArrivals {
-        graph = fan;
-        from = "s";
-        follow = r.star (r.lit "e");
-        advance = hop;
-      });
+      expr = nodesOf (
+        queryArrivals { } {
+          graph = fan;
+          from = "s";
+          follow = r.star (r.lit "e");
+          advance = hop;
+        }
+      );
       expected = [
         "s"
         "z"
@@ -281,12 +305,16 @@ in
     };
     test-arrivals-CONTROL-all-returns-sorted-order = {
       # same graph, same run: `all` answers `a` first because `attrNames` sorted it
-      expr = query {
-        graph = fan;
-        from = "s";
-        follow = r.star (r.lit "e");
-        mode = "all";
-      };
+      expr =
+        query
+          {
+            mode = "all";
+          }
+          {
+            graph = fan;
+            from = "s";
+            follow = r.star (r.lit "e");
+          };
       expected = [
         "a"
         "s"
@@ -296,12 +324,14 @@ in
 
     # ── THE ARRIVAL RECORD ──
     test-arrivals-root-arrived-by-no-edge = {
-      expr = builtins.head (queryArrivals {
-        graph = chain;
-        from = "s";
-        follow = r.star (r.lit "p");
-        advance = hop;
-      });
+      expr = builtins.head (
+        queryArrivals { } {
+          graph = chain;
+          from = "s";
+          follow = r.star (r.lit "p");
+          advance = hop;
+        }
+      );
       expected = {
         node = "s";
         distance = 0;
@@ -310,12 +340,14 @@ in
       };
     };
     test-arrivals-carry-the-delivering-edge = {
-      expr = map (x: x.via) (queryArrivals {
-        graph = chain;
-        from = "s";
-        follow = r.plus (r.lit "p");
-        advance = hop;
-      });
+      expr = map (x: x.via) (
+        queryArrivals { } {
+          graph = chain;
+          from = "s";
+          follow = r.plus (r.lit "p");
+          advance = hop;
+        }
+      );
       expected = [
         {
           from = "s";
@@ -335,12 +367,14 @@ in
           (x: {
             inherit (x) node distance;
           })
-          (queryArrivals {
-            graph = chain;
-            from = "s";
-            follow = r.plus (r.lit "p");
-            advance = hop;
-          });
+          (
+            queryArrivals { } {
+              graph = chain;
+              from = "s";
+              follow = r.plus (r.lit "p");
+              advance = hop;
+            }
+          );
       expected = [
         {
           node = "m";
@@ -435,43 +469,53 @@ in
 
     # ── TERMINATION AND LAZINESS ──
     test-arrivals-cycle-terminates = {
-      expr = nodesOf (queryArrivals {
-        graph = labeledFixtures.cyclic;
-        from = "a";
-        follow = r.parse "contains* member";
-        advance = hop;
-      });
+      expr = nodesOf (
+        queryArrivals { } {
+          graph = labeledFixtures.cyclic;
+          from = "a";
+          follow = r.parse "contains* member";
+          advance = hop;
+        }
+      );
       expected = [ "m" ];
     };
     test-arrivals-self-loop-terminates = {
-      expr = map (x: x.distance) (queryArrivals {
-        graph = labeledFrom {
-          nodes = [ "s" ];
-          perLabel.hop = id: { s = [ "s" ]; }.${id} or [ ];
-        };
-        from = "s";
-        follow = r.plus (r.lit "hop");
-        advance = hop;
-      });
+      expr = map (x: x.distance) (
+        queryArrivals { } {
+          graph = labeledFrom {
+            hop = id: { s = [ "s" ]; }.${id} or [ ];
+          } [ "s" ];
+          from = "s";
+          follow = r.plus (r.lit "hop");
+          advance = hop;
+        }
+      );
       expected = [ 1 ];
     };
     test-arrivals-laziness-poison-unreached = {
-      expr = nodesOf (queryArrivals {
-        graph = labeledFixtures.poisoned;
-        from = "a";
-        follow = r.parse "safe";
-        advance = hop;
-      });
+      expr = nodesOf (
+        queryArrivals { } {
+          graph = labeledFixtures.poisoned;
+          from = "a";
+          follow = r.parse "safe";
+          advance = hop;
+        }
+      );
       expected = [ "b" ];
     };
     test-arrivals-where-filters-answers-not-the-walk = {
-      expr = nodesOf (queryArrivals {
-        graph = labeledFixtures.world;
-        from = "root";
-        follow = r.parse "contains*";
-        advance = hop;
-        where = id: id == "u2";
-      });
+      expr = nodesOf (
+        queryArrivals
+          {
+            where = id: id == "u2";
+          }
+          {
+            graph = labeledFixtures.world;
+            from = "root";
+            follow = r.parse "contains*";
+            advance = hop;
+          }
+      );
       expected = [ "u2" ];
     };
   };

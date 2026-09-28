@@ -229,13 +229,14 @@ in
   # RECORD door (den-hoag-7gp66 P1, R5): every field required and none closed — a missing one is
   # refused by name, catchably, and an extra one is admitted. The check is seq'd onto the result, so
   # it fires when the record is applied.
+  # `mkNodeRef isRegistered id` (P2, R7): the one operand of the former record is positional, so
+  # its arity is structural and P1's record check retires.
   mkNodeRef =
-    args:
+    isRegistered:
     let
-      checked = prelude.checkRequired "gen-graph.mkNodeRef" [ "isRegistered" ] args;
-      ir = callableAt "mkNodeRef" "isRegistered" "a bool" checked.isRegistered;
+      ir = callableAt "mkNodeRef" "isRegistered" "a bool" isRegistered;
     in
-    builtins.seq checked (
+    (
       id:
       let
         findings = _nodeRefFindings ir id;
@@ -255,12 +256,11 @@ in
   # refused by name, catchably, and an extra one is admitted. The check is seq'd onto the result, so
   # it fires when the record is applied.
   nodeRefFindings =
-    args:
+    isRegistered:
     let
-      checked = prelude.checkRequired "gen-graph.nodeRefFindings" [ "isRegistered" ] args;
-      ir = callableAt "nodeRefFindings" "isRegistered" "a bool" checked.isRegistered;
+      ir = callableAt "nodeRefFindings" "isRegistered" "a bool" isRegistered;
     in
-    builtins.seq checked (id: _nodeRefFindings ir id);
+    id: _nodeRefFindings ir id;
 
   # mkSpawnedNodeRef : id -> <nodeRef>   (ROUTE 2, substrate-minted at spawn time)
   #

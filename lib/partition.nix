@@ -59,9 +59,25 @@ let
     say
     within
     ;
-  traverse = import ./traverse.nix;
+  traverse = import ./traverse.nix { inherit prelude; };
+  inherit (prelude) door;
+  # An accessor record is R5's data record: open, its missing fields refused by name at the door's
+  # application (P2 rule 3). Every arm's accessor is closed over `nodes` too, which the finisher
+  # checks once, by name.
+  accessorDoor =
+    name:
+    door {
+      name = "gen-graph.${name}";
+      required = [
+        "edges"
+        "nodes"
+      ];
+      open = true;
+    };
   global = import ./global.nix { inherit prelude; };
   order = import ./order.nix { inherit prelude; };
+  # An internal caller of a door calls its core (P2 §p2.3.2); this one runs once per component.
+  reachableFrom = traverse.threaded.reachableFrom "reachableFrom";
 
   # THE PERSISTENT MAP the iterated DFSs below carry: a B-ary trie of ints over ORDINALS 0..n-1,
   # every cell 0 until set. `get` folds over the digits and `set` path-copies the spine, so each
@@ -166,7 +182,7 @@ let
   # indexes `tagOf` by a target. The check is seq'd onto the record, so reading ANY field — `sccOf`
   # included — refuses by name under the arm's own name rather than answering for one arm and
   # aborting on another. Same refusal the ordering family gives a dangling target (`topoOrderCore`).
-  condensationOf = finish "condensationOf";
+  condensationOf = accessorDoor "condensationOf" (finish "condensationOf");
   finish =
     who:
     { edges, nodes, ... }:
@@ -235,7 +251,7 @@ let
       # its emitted order IS a reverse-topological order: a class that points at another has
       # a strictly greater rank, so it sorts strictly later. The quotient is acyclic, so the
       # cyclic-cone refusal below it is unreachable from here.
-      ranked = order.coneRank { edges = r: condEdges.${toKey r} or [ ]; } tags;
+      ranked = order.cores.coneRank { edges = r: condEdges.${toKey r} or [ ]; } tags;
     in
     builtins.seq closed {
       reps = ranked.order;
@@ -278,9 +294,9 @@ let
   nodeTags =
     accessor@{ edges, nodes, ... }:
     let
-      rev = global.transpose accessor;
-      succFwd = traverse.hoistEdges accessor;
-      succBwd = traverse.hoistEdges rev;
+      rev = global.cores.transposeCore accessor;
+      succFwd = traverse.cores.hoistEdges accessor;
+      succBwd = traverse.cores.hoistEdges rev;
       toKey = attrKey "fbNode";
       forward = keyedAttrs "fbNode" nodes (v: traverse.reachableVia succFwd v);
       backward = keyedAttrs "fbNode" nodes (
@@ -349,7 +365,7 @@ let
   workTags =
     accessor@{ edges, nodes, ... }:
     let
-      rev = global.transpose accessor;
+      rev = global.cores.transposeCore accessor;
       e = edgesAccessor "fbWork" edges;
       toKey = attrKey "fbWork";
       keyedAttrs' = keyedAttrs "fbWork";
@@ -360,7 +376,7 @@ let
         else
           let
             live = id: !(acc.tags ? ${toKey id});
-            forward = keyedAttrs' (traverse.reachableFrom {
+            forward = keyedAttrs' (reachableFrom {
               edges =
                 id:
                 builtins.filter live (
@@ -374,7 +390,7 @@ let
               v
             ]
             ++ builtins.filter (u: forward ? ${toKey u}) (
-              traverse.reachableFrom { edges = id: builtins.filter live (rev.edges id); } v
+              reachableFrom { edges = id: builtins.filter live (rev.edges id); } v
             );
             tag = tagOfMembers component;
           in
@@ -582,11 +598,11 @@ let
   # `fbWork`'s tag is its component's smallest member as the BACKWARD pass returns it, and that
   # pass reads `transpose`, whose sources are text: so a representative (and `sccOf`) carrying
   # string context can come back as its text, depending on node order. `fbNode` keeps it.
-  fbNode = accessor: finish "fbNode" accessor (nodeTags accessor);
-  fbWork = accessor: finish "fbWork" accessor (workTags accessor);
+  fbNode = accessorDoor "fbNode" (accessor: finish "fbNode" accessor (nodeTags accessor));
+  fbWork = accessorDoor "fbWork" (accessor: finish "fbWork" accessor (workTags accessor));
   # The arm reached through another door (R6): `who` is `within <door> "lowlink"`.
   lowlinkAs = who: accessor: finish who accessor (lowlinkTags who accessor);
-  lowlink = lowlinkAs "lowlink";
+  lowlink = accessorDoor "lowlink" (lowlinkAs "lowlink");
 
   # ── THE PARTITION'S CONSUMERS: WHICH NODES LIE ON A CYCLE, AND ONE WALK PER CYCLIC COMPONENT ──
   # A node lies on a cycle iff its strongly connected component has two or more members, or it
@@ -613,7 +629,8 @@ let
       inherit sccOf;
       cyclic = builtins.sort builtins.lessThan (builtins.filter onCycle nodes);
     };
-  cycles = accessor: (cyclicOf "cycles" accessor).cyclic;
+  cyclesCore = accessor: (cyclicOf "cycles" accessor).cyclic;
+  cycles = accessorDoor "cycles" cyclesCore;
 
   # One representative simple cycle per cyclic component, as an ORDERED node list rotated to
   # begin at the component's smallest key; every consecutive pair is an edge, closing back on the
@@ -635,7 +652,7 @@ let
   # ITERATED, as `lowlink` is: the search's stack is a cons list of frames and its visited set a
   # persistent trie over the component's ordinals, stepped by one `genericClosure` loop whose every
   # record is built by a strict constructor (ADR-0022). Θ((|C| + m_C) · log₈ |C|) per component.
-  cyclePaths =
+  cyclePaths = accessorDoor "cyclePaths" (
     accessor@{ edges, nodes, ... }:
     let
       c = cyclicOf "cyclePaths" accessor;
@@ -708,7 +725,8 @@ let
     in
     map witness (
       prelude.mapAttrsToList (_: g: g) (builtins.groupBy (k: toKey c.sccOf.${toKey k}) c.cyclic)
-    );
+    )
+  );
 
   # ── THE FRONT DOOR ──
   # The default is the `lowlink` arm, reached through `lowlinkAs (within "condensation"
@@ -725,7 +743,7 @@ let
   # of one large component (README, *When each arm wins*). The door refuses an open accessor
   # under ITS OWN name (R6): `gen-graph.condensation: … (in lowlink)`, which says both which arm
   # it is bound to and that the caller reached it through `condensation`.
-  condensation = lowlinkAs (within "condensation" "lowlink");
+  condensation = accessorDoor "condensation" (lowlinkAs (within "condensation" "lowlink"));
 in
 {
   inherit
@@ -742,5 +760,9 @@ in
   threaded = {
     lowlink = lowlinkAs;
     condensationOf = finish;
+  };
+  # The unchecked cores, for another file's internal callers (P2 §p2.3.2). Not published.
+  cores = {
+    cycles = cyclesCore;
   };
 }

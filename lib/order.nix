@@ -91,10 +91,21 @@ let
   global = import ./global.nix { inherit prelude; };
   partition = import ./partition.nix { inherit prelude; };
 
-  entryBetween = before: after: { inherit before after; };
-  entryAnywhere = entryBetween [ ] [ ];
-  entryAfter = after: entryBetween [ ] after;
-  entryBefore = before: entryBetween before [ ];
+  inherit (prelude) door;
+  # An entry's two name lists are of one sort, so `entryBetween` takes them as ONE record whose
+  # field names say which is which (P2, R7 (b)): `entryBetween { before; after; }`.
+  mkEntry = before: after: { inherit before after; };
+  entryBetween = door {
+    name = "gen-graph.entryBetween";
+    required = [
+      "before"
+      "after"
+    ];
+    open = true;
+  } (r: mkEntry r.before r.after);
+  entryAnywhere = mkEntry [ ] [ ];
+  entryAfter = after: mkEntry [ ] after;
+  entryBefore = before: mkEntry before [ ];
 
   # topoOrder { keyOf ? id; lessThan ? builtins.lessThan } { nodes; edges; ... }
   #   => { ok = true; order = [ node ]; } | { ok = false; cycles = [ [ node ] ]; }
@@ -118,16 +129,16 @@ let
   # arm's own, stated at `step` and pinned by the cells that bind the arm by name.
   #
   # OPTIONS FIRST, THEN THE GRAPH (den-hoag-4308w; the options-first order and the open data
-  # record are owner-ruled on den-hoag-7gp66 and den-hoag-nvrl1). The graph record is OPEN: an
-  # accessor record carrying more than `nodes` and `edges` — a gen-product pgraph's `parent`,
-  # `nodeData`, `product` — is ordered as it stands, and that width is lawful (ADR-0012 as
-  # amended). The options set is still NATIVELY closed: a misspelt option aborts uncatchably, as
-  # it did when it sat on the record. That is the interim; the shared options check that refuses
-  # it by name is held (den-hoag-7gp66 OQ1) and converts this set with the same accepted fields.
+  # record are owner-ruled on den-hoag-7gp66 and den-hoag-nvrl1). Both steps are doors (P2,
+  # `prelude.door`). The options set is CLOSED: an unknown option is refused by name, catchably,
+  # when `topoOrder opts` is formed. The graph record is OPEN: an accessor record carrying more
+  # than `nodes` and `edges` — a gen-product pgraph's `parent`, `nodeData`, `product` — is ordered
+  # as it stands, and that width is lawful (ADR-0012 as amended); a record that is not an attrset,
+  # or that lacks `nodes` or `edges`, is refused by name at its own application.
   # ★ AN OPTION WRITTEN ON THE GRAPH RECORD IS IGNORED, not refused — the price of an open record
-  # (den-hoag-nvrl1, arm B). A graph argument that is not an attrset refuses by name, catchably;
-  # a record missing `nodes` or `edges` still aborts on the formals — the required-field check is
-  # derived from ADR-0025 item 1, not ruled, and lands with the shared check.
+  # (den-hoag-nvrl1, arm B). The misplaced-option guard (`optionsStep`) is wired where P2 moved an
+  # option OFF a record, so a caller's unmigrated call cannot drop it silently; these options were
+  # never on the graph record (den-hoag-4308w put them first), so no such call exists here.
   #
   # NON-THROWING on a cycle: the consumers that drove this shape build their own diagnostic
   # from the cycle set (gen-pipe named the channels and the operators; gen-edge named the
@@ -182,26 +193,27 @@ let
   # already forced and nothing is computed twice. With `gated = false` the conjunction in
   # `routed` short-circuits before `degRaw`, so the ARM does not evaluate one binding of the
   # certificate — it is not merely unused there, it is unreached.
-  # `door` is the published name the caller invoked, and every refusal below names it.
-  # OPTIONS door (den-hoag-7gp66 P1, §v1.2): closed — an unknown option is refused by name,
-  # catchably, when the options are applied, before the graph is.
-  topoOrderCore =
-    door: gated: opts:
+  # `who` is the published name the caller invoked, and every refusal below names it.
+  topoOrderDoor =
+    who: gated:
     let
-      checked = prelude.checkOptions "gen-graph.${door}" [
-        "keyOf"
-        "lessThan"
-      ] opts;
-      keyOf = checked.keyOf or (node: node);
-      lessThan = checked.lessThan or builtins.lessThan;
+      options = door {
+        name = "gen-graph.${who}";
+        optional = [
+          "keyOf"
+          "lessThan"
+        ];
+      } (o: graph (topoOrderBody who gated (o.keyOf or (node: node)) (o.lessThan or builtins.lessThan)));
+      graph = door {
+        name = "gen-graph.${who}";
+        required = [
+          "nodes"
+          "edges"
+        ];
+        open = true;
+      };
     in
-    builtins.seq checked (
-      data:
-      if builtins.isAttrs data then
-        topoOrderBody door gated keyOf lessThan data
-      else
-        throw "gen-graph.${door}: the graph is a ${builtins.typeOf data}, not an attribute set carrying nodes and edges"
-    );
+    options;
 
   topoOrderBody =
     door: gated: keyOf: lessThan:
@@ -647,8 +659,8 @@ let
         nodes = keys;
         edges = k: depsOf.${toKey k} or [ ];
       };
-      cyclicKeys = partition.cycles keyAccessor;
-      sccOf = (partition.lowlink keyAccessor).sccOf;
+      cyclicKeys = partition.cores.cycles keyAccessor;
+      sccOf = (partition.threaded.lowlink "lowlink" keyAccessor).sccOf;
       cycles = prelude.mapAttrsToList (_: g: map (k: nodeOf.${toKey k}) g) (
         builtins.groupBy (k: toKey sccOf.${toKey k}) cyclicKeys
       );
@@ -676,14 +688,14 @@ let
   # this name because correctness depends on WHICH algorithm answers gets indegrees, a ready
   # set and the residual cycle check — the contract stated at the arm's own header, unchanged
   # by the door gaining a second arm.
-  topoOrderKahn = topoOrderCore "topoOrderKahn" false;
+  topoOrderKahn = topoOrderDoor "topoOrderKahn" false;
 
   # The FRONT DOOR, and it is no longer an identity. It selects: the certificate answers where
   # it can PROVE the answer is the arm's own, and the arm answers everywhere else. That is the
   # split this file already described before there was a second arm — "a default lives there,
   # and a selection between arms would be expressed there" — and it is expressed here rather
   # than inside the arm, so that binding the arm by name still means what it has always meant.
-  topoOrder = topoOrderCore "topoOrder" true;
+  topoOrder = topoOrderDoor "topoOrder" true;
 
   # Cone-local producers-first rank: depth id = 1 + max(depth of in-cone producers).
   # O(|cone| + edges_in_cone) via prelude.fix memoization; NOT whole-graph condensation.
@@ -748,7 +760,13 @@ let
   # to in-cone targets: under any total membership test a non-string is out-of-cone, so it
   # is DROPPED before the driver could report it, and this is the only place the class is
   # visible at all.
-  coneRank =
+  # The accessor record is R5's data record (P2 rule 3): a door, open, `edges` required.
+  coneRank = door {
+    name = "gen-graph.coneRank";
+    required = [ "edges" ];
+    open = true;
+  } coneRankCore;
+  coneRankCore =
     accessor: cone:
     let
       toKey = attrKey "coneRank";
@@ -798,7 +816,8 @@ let
       # redundant work rather than a cost class. The ceiling this arm was removing was a depth
       # problem in either case. Reading the keys off the membership set is the same answer for
       # the cost of the `attrNames` list.
-      driver = topoOrderKahn { } {
+      # The arm's core, with the options' defaults (P2 §p2.3.2: an internal caller calls the core).
+      driver = topoOrderBody "topoOrderKahn" false (node: node) builtins.lessThan {
         nodes = builtins.attrNames coneSet;
         edges = inConeProducers;
       };
@@ -883,7 +902,7 @@ let
         }) (entries.${n}.before or [ ])
       ) names;
       grouped = builtins.groupBy (x: toKey x.from) arcs;
-      result = topoOrder { } {
+      result = topoOrderBody "topoOrder" true (node: node) builtins.lessThan {
         nodes = names;
         edges = id: map (x: x.to) (grouped.${id} or [ ]);
       };
@@ -897,6 +916,10 @@ let
       throw "gen-graph.phaseOrder: cyclic ordering constraints: ${builtins.toJSON result.cycles}";
 in
 {
+  # The unchecked cores, for another file's internal callers (P2 §p2.3.2). Not published.
+  cores = {
+    coneRank = coneRankCore;
+  };
   inherit
     entryAnywhere
     entryAfter

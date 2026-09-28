@@ -184,12 +184,9 @@ let
   labOf =
     nodes: t: perLabelIncludeB:
     labeledFrom {
-      perLabel = {
-        parent = at [ (kv "a" [ t ]) ] [ ];
-        include = at ([ (kv "x" [ "b" ]) ] ++ perLabelIncludeB) [ ];
-      };
-      inherit nodes;
-    };
+      parent = at [ (kv "a" [ t ]) ] [ ];
+      include = at ([ (kv "x" [ "b" ]) ] ++ perLabelIncludeB) [ ];
+    } nodes;
   lab = labOf [ "a" x "b" ] x [ ];
   labPlainNodes = labOf [ "a" "x" "b" ] x [ ];
   labCyc = labOf [ "a" x "b" ] x [ (kv "b" [ x ]) ];
@@ -205,7 +202,9 @@ in
   flake.tests.context-node-names = {
     # T1
     test-ancestors-through-a-context-carrying-parent = {
-      expr = ancestorsOf { parent = at [ (kv "a" x) (kv "x" "b") ] null; } "a";
+      expr = ancestorsOf { } {
+        parent = at [ (kv "a" x) (kv "x" "b") ] null;
+      } "a";
       expected = [
         "x"
         "b"
@@ -213,12 +212,14 @@ in
     };
     # T1
     test-ancestors-from-a-context-carrying-start = {
-      expr = ancestorsOf { parent = at [ (kv "x" "b") ] null; } x;
+      expr = ancestorsOf { } {
+        parent = at [ (kv "x" "b") ] null;
+      } x;
       expected = [ "b" ];
     };
     # T2
     test-paths-between-through-a-context-carrying-node = {
-      expr = pathsBetween gDag "a" "b";
+      expr = pathsBetween { } gDag "a" "b";
       expected = [
         [
           "a"
@@ -278,12 +279,12 @@ in
     };
     # G2
     test-closure-dependents-of-a-context-carrying-target = {
-      expr = dependents gDag x;
+      expr = dependents { } gDag x;
       expected = [ "a" ];
     };
     # G3
     test-condensation-closure-with-a-context-carrying-node = {
-      expr = (condensationClosure gCyc).sccs;
+      expr = (condensationClosure { } gCyc).sccs;
       expected = [
         [
           "b"
@@ -353,25 +354,37 @@ in
     # M3
     test-difference-edges-at-a-context-carrying-target = {
       expr = differenceEdges {
-        a = [
-          x
-          "b"
-        ];
-      } { a = [ x ]; };
+        minuend = {
+          a = [
+            x
+            "b"
+          ];
+        };
+        subtrahend = {
+          a = [ x ];
+        };
+      };
       expected = {
         a = [ "b" ];
       };
     };
     # F1
     test-compose-through-a-context-carrying-midpoint = {
-      expr = compose { a = [ x ]; } { x = [ "b" ]; };
+      expr = compose {
+        first = {
+          a = [ x ];
+        };
+        second = {
+          x = [ "b" ];
+        };
+      };
       expected = {
         a = [ "b" ];
       };
     };
     # F2
     test-transitive-closure-through-a-context-carrying-node = {
-      expr = transitiveClosure gDag;
+      expr = transitiveClosure { } gDag;
       expected = {
         a = [
           "x"
@@ -382,7 +395,7 @@ in
     };
     # F2
     test-transitive-reduction-through-a-context-carrying-node = {
-      expr = transitiveReduction gDag;
+      expr = transitiveReduction { } gDag;
       expected = {
         a = [ "x" ];
         x = [ "b" ];
@@ -391,13 +404,10 @@ in
     # R1
     test-registry-looked-up-by-a-context-carrying-id = {
       expr =
-        (fromRegistry {
-          registry = {
-            x = {
-              deps = [ "b" ];
-            };
+        (fromRegistry { } (field "deps") {
+          x = {
+            deps = [ "b" ];
           };
-          edges = field "deps";
         }).edges
           x;
       expected = [ "b" ];
@@ -464,7 +474,7 @@ in
     # R2
     test-scan-over-a-context-carrying-reference = {
       expr =
-        (fromScan {
+        (fromScan { } {
           items = [
             {
               id = "a";
@@ -626,7 +636,7 @@ in
     };
     # Q2
     test-bounded-over-a-context-carrying-node-set = {
-      expr = (boundedBy lab (_: [ ])).labeledEdges "a";
+      expr = (boundedBy (_: [ ]) lab).labeledEdges "a";
       expected = [
         {
           label = "parent";
@@ -636,7 +646,7 @@ in
     };
     # Q2
     test-bounded-looked-up-by-a-context-carrying-id = {
-      expr = (boundedBy labPlainNodes (_: [ ])).labeledEdges x;
+      expr = (boundedBy (_: [ ]) labPlainNodes).labeledEdges x;
       expected = [
         {
           label = "include";
@@ -646,7 +656,7 @@ in
     };
     # Q3
     test-cyclic-edges-where-through-a-context-carrying-node = {
-      expr = cyclicEdgesWhere labCyc (_: true);
+      expr = cyclicEdgesWhere (_: true) labCyc;
       expected = [
         {
           from = "b";
@@ -662,12 +672,16 @@ in
     };
     # Q4
     test-query-all-reaches-a-context-carrying-node = {
-      expr = query {
-        graph = lab;
-        from = "a";
-        inherit follow;
-        mode = "all";
-      };
+      expr =
+        query
+          {
+            mode = "all";
+          }
+          {
+            graph = lab;
+            from = "a";
+            inherit follow;
+          };
       expected = [
         "a"
         "b"
@@ -676,12 +690,17 @@ in
     };
     # Q5
     test-query-paths-through-a-context-carrying-node = {
-      expr = map (a: a.node) (query {
-        graph = lab;
-        from = "a";
-        inherit follow;
-        mode = "paths";
-      });
+      expr = map (a: a.node) (
+        query
+          {
+            mode = "paths";
+          }
+          {
+            graph = lab;
+            from = "a";
+            inherit follow;
+          }
+      );
       expected = [
         "a"
         "x"
@@ -690,12 +709,17 @@ in
     };
     # Q5
     test-query-paths-from-a-context-carrying-node = {
-      expr = map (a: a.node) (query {
-        graph = labPlainNodes;
-        from = x;
-        inherit follow;
-        mode = "paths";
-      });
+      expr = map (a: a.node) (
+        query
+          {
+            mode = "paths";
+          }
+          {
+            graph = labPlainNodes;
+            from = x;
+            inherit follow;
+          }
+      );
       expected = [
         "x"
         "b"
@@ -705,13 +729,17 @@ in
     test-query-visible-grouped-by-a-context-carrying-node = {
       expr =
         map (a: a.node)
-          (query {
-            graph = lab;
-            from = "a";
-            inherit follow;
-            mode = "visible";
-            groupBy = ans: ans.node;
-          }).visible;
+          (query
+            {
+              mode = "visible";
+              groupBy = ans: ans.node;
+            }
+            {
+              graph = lab;
+              from = "a";
+              inherit follow;
+            }
+          ).visible;
       expected = [
         "a"
         "b"
@@ -757,7 +785,7 @@ in
     # Pr1
     test-fold-preorder-keyed-by-a-context-carrying-node = {
       expr =
-        (foldPreorder {
+        (foldPreorder { } {
           roots = [ "a" ];
           key = k: k;
           expand = acc: f: {
@@ -775,7 +803,7 @@ in
     # Pr2
     test-fold-reach-seen-by-a-context-carrying-item = {
       expr =
-        (foldReach {
+        (foldReach { } {
           roots = [ { t = "a"; } ];
           edges = id: map (t: { inherit t; }) (edgesDag id);
           target = e: e.t;
@@ -790,7 +818,7 @@ in
     };
     # T2
     test-paths-between-past-a-context-carrying-node = {
-      expr = pathsBetween {
+      expr = pathsBetween { } {
         edges =
           at
             [
@@ -811,7 +839,7 @@ in
     };
     # F2
     test-transitive-reduction-drops-an-edge-implied-through-a-context-carrying-node = {
-      expr = transitiveReduction {
+      expr = transitiveReduction { } {
         nodes = [
           "a"
           x
@@ -836,28 +864,27 @@ in
     # R1
     test-registry-parent-by-a-context-carrying-id = {
       expr =
-        (fromRegistry {
-          registry = {
+        (fromRegistry
+          {
+            parent = _: e: e.up or null;
+          }
+          (field "deps")
+          {
             x = {
               up = "a";
             };
-          };
-          edges = field "deps";
-          parent = _: e: e.up or null;
-        }).parent
+          }
+        ).parent
           x;
       expected = "a";
     };
     # R1
     test-registry-node-data-by-a-context-carrying-id = {
       expr =
-        (fromRegistry {
-          registry = {
-            x = {
-              t = 1;
-            };
+        (fromRegistry { } (field "deps") {
+          x = {
+            t = 1;
           };
-          edges = field "deps";
         }).nodeData
           x;
       expected = {
@@ -959,7 +986,7 @@ in
     };
     # F2
     test-transitive-reduction-through-a-midpoint-reaching-a-context-carrying-node = {
-      expr = transitiveReduction {
+      expr = transitiveReduction { } {
         nodes = [
           "a"
           "m"
@@ -1008,23 +1035,33 @@ in
     };
     # Q4 value
     test-an-answered-node-keeps-its-context = {
-      expr = builtins.any builtins.hasContext (query {
-        graph = lab;
-        from = "a";
-        inherit follow;
-        mode = "all";
-      });
+      expr = builtins.any builtins.hasContext (
+        query
+          {
+            mode = "all";
+          }
+          {
+            graph = lab;
+            from = "a";
+            inherit follow;
+          }
+      );
       expected = true;
     };
     # Q5 value
     test-a-walked-node-keeps-its-context = {
       expr = builtins.any builtins.hasContext (
-        map (a: a.node) (query {
-          graph = lab;
-          from = "a";
-          inherit follow;
-          mode = "paths";
-        })
+        map (a: a.node) (
+          query
+            {
+              mode = "paths";
+            }
+            {
+              graph = lab;
+              from = "a";
+              inherit follow;
+            }
+        )
       );
       expected = true;
     };
@@ -1122,7 +1159,7 @@ in
     test-dependents-of-keeps-context-where-dependents-returns-text = {
       expr = {
         dependentsOf = builtins.any builtins.hasContext (dependentsOf gDag "b");
-        dependents = builtins.any builtins.hasContext (dependents gDag "b");
+        dependents = builtins.any builtins.hasContext (dependents { } gDag "b");
       };
       expected = {
         dependentsOf = true;
@@ -1137,12 +1174,16 @@ in
     # control
     test-control-the-context-free-twin-answers-the-same = {
       expr = {
-        q = query {
-          graph = labTwin;
-          from = "a";
-          inherit follow;
-          mode = "all";
-        };
+        q =
+          query
+            {
+              mode = "all";
+            }
+            {
+              graph = labTwin;
+              from = "a";
+              inherit follow;
+            };
         t = topoOrder { } gTwin;
       };
       expected = {

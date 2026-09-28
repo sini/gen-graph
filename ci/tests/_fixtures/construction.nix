@@ -17,7 +17,16 @@ let
     scan = v: v;
     project = r: r;
   };
-  sc = a: G.fromScan (scan // a);
+  # An override is an option (`nodeData`, `parents`) or a record field; each goes to its own step (P2).
+  optionNames = {
+    nodeData = null;
+    parents = null;
+  };
+  sc =
+    a:
+    G.fromScan (builtins.intersectAttrs optionNames a) (
+      scan // builtins.removeAttrs a (builtins.attrNames optionNames)
+    );
   refusal = door: text: bad: good: {
     inherit
       door
@@ -162,37 +171,18 @@ in
     # read through `edges`, where the unguarded read answered `[ ]` (a misread)
     fromRegistry-registry-not-a-set =
       refusal "fromRegistry" "registry is a list, not an attrset from a node identifier to its entry"
+        ((G.fromRegistry { } (G.field "deps") [ ]).edges "a")
         (
-          (G.fromRegistry {
-            registry = [ ];
-            edges = G.field "deps";
-          }).edges
-            "a"
-        )
-        (
-          (G.fromRegistry {
-            registry.a.deps = [ "b" ];
-            edges = G.field "deps";
+          (G.fromRegistry { } (G.field "deps") {
+            a.deps = [ "b" ];
           }).edges
             "a"
         );
     labeledFrom-perLabel-not-a-set =
       refusal "labeledFrom"
         "perLabel is a list, not an attrset from a label to a function returning a list of node ids"
-        (
-          (G.labeledFrom {
-            perLabel = [ ];
-            nodes = [ ];
-          }).labeledEdges
-            "a"
-        )
-        (
-          (G.labeledFrom {
-            perLabel = { };
-            nodes = [ ];
-          }).labeledEdges
-            "a"
-        );
+        ((G.labeledFrom [ ] [ ]).labeledEdges "a")
+        ((G.labeledFrom { } [ ]).labeledEdges "a");
     field-name-not-a-string = refusal "field" "name is a int, not an attribute name (a string)" (G.field
       42
       "a"
@@ -226,7 +216,7 @@ in
       }).nodes;
     # a scan that never forces its argument never read `value`
     scan-ignores-a-missing-value =
-      (G.fromScan {
+      (G.fromScan { } {
         items = [ { id = "a"; } ];
         scan = _: [ "b" ];
         project = r: r;
@@ -251,9 +241,8 @@ in
           ];
         }).derivedEdges;
     fromRegistry-target-int =
-      (G.fromRegistry {
-        registry.a = { };
-        edges = _: _: [ 42 ];
+      (G.fromRegistry { } (_: _: [ 42 ]) {
+        a = { };
       }).edges
         "a";
   };

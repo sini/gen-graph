@@ -45,9 +45,8 @@ let
       "d"
     ];
 
-  authority = { inherit childBearing isNode; };
-  projection = mkEndpointProjection authority;
-  findings = mkProjectionFindings authority;
+  projection = mkEndpointProjection childBearing isNode;
+  findings = mkProjectionFindings childBearing isNode;
 
   # A structural record built from one node's attributes; every other id is a leaf. Written as a
   # function so a fixture is a record and a projection is that record read.
@@ -156,33 +155,23 @@ let
 
   # (5) The private copy of the two child-bearing names, held inside the projection instead of
   # taken from the substrate. Identical to the real one until the substrate grows a third name.
-  seedPrivateFamilyCopy = mkEndpointProjection {
-    childBearing = name: name == "children" || name == "derived-children";
-    inherit isNode;
-  };
+  seedPrivateFamilyCopy = mkEndpointProjection (
+    name: name == "children" || name == "derived-children"
+  ) isNode;
 
   # (6) The check gated on the LITERAL name `children` rather than on the injected predicate. It
   # governs `derived-children`, which is the non-obvious member of the family it must not govern.
-  seedLiteralNameGate = mkEndpointProjection {
-    childBearing = name: name == "children";
-    inherit isNode;
-  };
+  seedLiteralNameGate = mkEndpointProjection (name: name == "children") isNode;
 
   # (7) The ungated check — the contract mapped over EVERY structural name. Its answer is identical
   # to the real one on a clean graph, which is exactly why no value-comparing cell can catch it;
   # what catches it is the DOMAIN.
-  seedUngatedFindings = mkProjectionFindings {
-    childBearing = _: false;
-    inherit isNode;
-  };
+  seedUngatedFindings = mkProjectionFindings (_: false) isNode;
 
   # The substrate that grew a third child-bearing name, and the projection instantiated against it.
   # No line of the projection changes between this and `projection`.
   grownChildBearing = name: childBearing name || name == "extra-children";
-  grownProjection = mkEndpointProjection {
-    childBearing = grownChildBearing;
-    inherit isNode;
-  };
+  grownProjection = mkEndpointProjection grownChildBearing isNode;
   grownRecord = recordOf {
     children = {
       b = {
@@ -427,12 +416,7 @@ in
     # The seed: the registration set as the authority. It refuses the spawned node, and its refusal
     # is indistinguishable from a correct one unless the control above is present.
     test-o9-seed-registration-set-authority-refuses-the-spawned-node = {
-      expr = didThrow (
-        mkEndpointProjection {
-          inherit childBearing;
-          isNode = registeredOnly;
-        } (violating [ "a-spawned" ]) "a"
-      );
+      expr = didThrow (mkEndpointProjection childBearing registeredOnly (violating [ "a-spawned" ]) "a");
       expected = true;
     };
 
@@ -503,14 +487,8 @@ in
     # every name the check touches produces a finding that names it. What comes back is the domain.
     test-o12-the-checked-names-are-exactly-the-non-child-bearing-ones = {
       expr =
-        mkProjectionFindings {
-          inherit childBearing;
-          isNode = _: false;
-        } onlyChildBearing "a"
-        ++ mkProjectionFindings {
-          inherit childBearing;
-          isNode = _: false;
-        } (recordOf { edges-owns = [ "b" ]; }) "a";
+        mkProjectionFindings childBearing (_: false) onlyChildBearing "a"
+        ++ mkProjectionFindings childBearing (_: false) (recordOf { edges-owns = [ "b" ]; }) "a";
       expected = [
         "gen-graph.mkEndpointProjection: node 'a' structural attribute 'edges-owns': 'b' is not a node of the evaluated graph"
       ];

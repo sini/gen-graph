@@ -40,24 +40,24 @@ let
     reachableWhere = G.reachableWhere (acc e) "a" (_: true);
     canReach = G.canReach (acc e) "a" "c";
     selfReachable = G.selfReachable (acc e) "a";
-    pathsBetween = G.pathsBetween (acc e) "a" "c";
+    pathsBetween = G.pathsBetween { } (acc e) "a" "c";
     hoistEdges = G.hoistEdges (acc e) "b";
     reachableVia = G.reachableVia (G.hoistEdges (acc e)) "a";
     cycles = G.cycles (acc e);
     cyclePaths = G.cyclePaths (acc e);
-    dependents = G.dependents (acc e) "c";
+    dependents = G.dependents { } (acc e) "c";
     dependentsOf = G.dependentsOf (acc e) "c";
     impactOf = G.impactOf (acc e) "c";
     dependentsFrontier = G.dependentsFrontier (acc e) "c" (_: true);
     transpose = (G.transpose (acc e)).edges "a";
-    condensationClosure = G.condensationClosure (acc e);
+    condensationClosure = G.condensationClosure { } (acc e);
     coScc = G.coScc (acc e) "a" "c";
     directDependents = G.directDependents (acc e);
     directDependentsOf = G.directDependentsOf (acc e) "a";
     roots = G.roots (acc e);
     materialize = G.materialize (acc e);
-    transitiveClosure = G.transitiveClosure (acc e);
-    transitiveReduction = G.transitiveReduction (acc e);
+    transitiveClosure = G.transitiveClosure { } (acc e);
+    transitiveReduction = G.transitiveReduction { } (acc e);
     condensation = G.condensation (acc e);
     fbNode = G.fbNode (acc e);
     fbWork = G.fbWork (acc e);
@@ -70,12 +70,12 @@ let
     topoOrder = G.topoOrder { } (acc (acyclic e));
     topoOrderKahn = G.topoOrderKahn { } (acc (acyclic e));
     coneRank = G.coneRank (acc (acyclic e)) nodes;
-    expandPreorder = G.expandPreorder {
+    expandPreorder = G.expandPreorder { } {
       roots = [ "a" ];
       key = f: f;
       edges = e;
     };
-    foldReach = G.foldReach {
+    foldReach = G.foldReach { } {
       roots = [ { t = "a"; } ];
       edges =
         if builtins.isFunction e then
@@ -92,10 +92,9 @@ let
       project = x: [ x.t ];
       itemKey = x: x;
     };
-    fromRegistry = G.reachableFrom (G.fromRegistry {
-      inherit registry;
-      edges = if builtins.isFunction e then (id: _entry: e id) else e;
-    }) "a";
+    fromRegistry = G.reachableFrom (G.fromRegistry { } (
+      if builtins.isFunction e then (id: _entry: e id) else e
+    ) registry) "a";
   };
   admitted = v: (builtins.tryEval (builtins.deepSeq v true)).success;
   admittedOf = arms: builtins.filter (k: admitted arms.${k}) (builtins.attrNames arms);

@@ -117,29 +117,45 @@ let
   walk =
     mode: follow: graph:
     if mode == "arrivals" then
-      queryArrivals {
-        inherit graph follow;
+      queryArrivals { } {
+        inherit graph;
+        inherit follow;
         from = "a";
         advance = s: s.distance + 1;
       }
     else if mode == "visible" then
-      query {
-        inherit mode graph follow;
-        from = "a";
-        groupBy = a: a.node;
-      }
+      query
+        {
+          inherit mode;
+          groupBy = a: a.node;
+        }
+        {
+          inherit graph;
+          inherit follow;
+          from = "a";
+        }
     else if mode == "fixpoint" then
-      query {
-        inherit mode graph follow;
-        from = "a";
-        empty = [ ];
-        combine = a: b: a ++ [ b ];
-      }
+      query
+        {
+          inherit mode;
+          empty = [ ];
+          combine = a: b: a ++ [ b ];
+        }
+        {
+          inherit graph;
+          inherit follow;
+          from = "a";
+        }
     else
-      query {
-        inherit mode graph follow;
-        from = "a";
-      };
+      query
+        {
+          inherit mode;
+        }
+        {
+          inherit graph;
+          inherit follow;
+          from = "a";
+        };
   # each walk mode under `x*`, plus `all` under `any*` — `regex.deriv` on `any` never reads
   # its letter, so that column is what shows the walk forces the label itself
   modes = {
@@ -157,33 +173,33 @@ let
   surfaces = {
     bounded =
       g:
-      query {
-        graph = boundedBy g (_: [
+      query { } {
+        graph = boundedBy (_: [
           {
             name = "m";
             admits = _: true;
           }
-        ]);
+        ]) g;
         from = "a";
         follow = x;
       };
     composed =
       g:
-      query {
-        graph = boundedBy (labeledTranspose g) (_: [ ]);
+      query { } {
+        graph = boundedBy (_: [ ]) (labeledTranspose g);
         from = "b";
         follow = x;
       };
     composedAny =
       g:
-      query {
-        graph = boundedBy (labeledTranspose g) (_: [ ]);
+      query { } {
+        graph = boundedBy (_: [ ]) (labeledTranspose g);
         from = "b";
         follow = anyStar;
       };
     transpose = g: (labeledTranspose g).labeledEdges "b";
     forget = g: (forgetLabels g).edges "a";
-    cyclic = g: cyclicEdgesWhere g (_: true);
+    cyclic = g: cyclicEdgesWhere (_: true) g;
   };
 
   admitted = v: (builtins.tryEval (builtins.deepSeq v true)).success;

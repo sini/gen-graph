@@ -23,6 +23,10 @@ let
       in
       throw "gen-graph.${who}: step ${subject} returned an edge map whose entry ${builtins.toJSON k} is a ${builtins.typeOf m.${k}}, not a list of node ids";
   edgeMaps = import ./edge-maps.nix { inherit prelude; };
+  inherit (prelude) door;
+  # The loop's own set operations are internal callers of a door, so they call its core (P2
+  # §p2.3.2), under the door's own name so no message changes.
+  differenceEdges = edgeMaps.threaded.differenceEdges "differenceEdges";
 
   countEdges =
     m: builtins.foldl' (acc: from: acc + builtins.length (m.${from} or [ ])) 0 (builtins.attrNames m);
@@ -50,31 +54,22 @@ let
     maxIter:
     "gen-graph: fixpoint exceeded ${toString maxIter} iterations: the step neither converged nor shrank. `step` is the caller's, so this binding reports what it observed and names no cause.";
 
-  # MIXED door (den-hoag-7gp66 P1, §v1.2): `checkOptions` over `checkRequired`, closed over the whole
-  # set — a missing field or an unknown one is refused by name, catchably, when the record is applied.
-  fixpoint =
-    args:
+  # `fixpoint { maxIter ? 1000; refusal ? capReached; } step seed` (P2, R7): the options first, one
+  # closed set checked when `fixpoint opts` is formed (`prelude.door`); `step` is configuration and
+  # the seed is the subject iterated, so it comes last. The operands are positional, so their arity
+  # is structural and no record check remains.
+  fixpoint = door {
+    name = "gen-graph.fixpoint";
+    optional = [
+      "maxIter"
+      "refusal"
+    ];
+  } fixpointCore;
+  fixpointCore =
+    o: step: seed:
     let
-      checked =
-        prelude.checkOptions "gen-graph.fixpoint"
-          [
-            "seed"
-            "step"
-            "maxIter"
-            "refusal"
-          ]
-          (
-            prelude.checkRequired "gen-graph.fixpoint" [
-              "seed"
-              "step"
-            ] args
-          );
-      inherit (checked)
-        seed
-        step
-        ;
-      maxIter = checked.maxIter or 1000;
-      refusal = checked.refusal or capReached;
+      maxIter = o.maxIter or 1000;
+      refusal = o.refusal or capReached;
       st = callableAt "fixpoint" "step" "an edge map" step;
       rf = callableAt "fixpoint" "refusal" "a string" refusal;
       # ── THE TERMINATION GUARD TESTS THE SUBSET ORDER OVER EDGE CONTENT ──
@@ -126,7 +121,7 @@ let
         else
           let
             next = edgeMapOr "fixpoint" "at iteration ${toString iter}" (st current);
-            withdrawn = edgeMaps.differenceEdges current next;
+            withdrawn = differenceEdges current next;
             withdrawnPairs = builtins.concatMap (
               from: map (to: "${from} → ${to}") (builtins.sort builtins.lessThan withdrawn.${from})
             ) (builtins.attrNames withdrawn);
@@ -138,7 +133,7 @@ let
           else
             go (iter + 1) next;
     in
-    builtins.seq checked (go 0 seed);
+    go 0 seed;
 
   # Semi-naive delta-frontier fixpoint: `step dF acc` sees only the current frontier
   # `dF`, not the whole accumulator (the semi-naive saving over `fixpoint`, which
@@ -234,39 +229,42 @@ let
   # `difference`, `incremental` and `frontier` are each 0 (live controls in the same
   # run: `monotone` 48, `semilattice` 41). Semi-naive evaluation is folklore of the
   # Datalog literature, and the operator keeps the NAME on that basis and no other.
-  # MIXED door (den-hoag-7gp66 P1, §v1.2): `checkOptions` over `checkRequired`, closed over the whole
-  # set — a missing field or an unknown one is refused by name, catchably, when the record is applied.
-  seededFixpoint =
-    args:
+  # `seededFixpoint { maxIter ? 1000; } { seed; frontier; step; }` (P2, R7): the options first, then
+  # the three operands as ONE open record — rule 5's record, read at the unit: `seed` and `frontier`
+  # are two edge maps of one sort (their union is the base) and `step` reads both; no operand is the
+  # subject the others configure, so no positional order is natural. A `maxIter` given on the record
+  # is refused as misplaced (`optionsStep`), never silently dropped back to the default.
+  seededFixpoint = door {
+    name = "gen-graph.seededFixpoint";
+    optional = [ "maxIter" ];
+  } (o: seededRecord (seededCore o));
+  seededRecord = door {
+    name = "gen-graph.seededFixpoint";
+    required = [
+      "seed"
+      "frontier"
+      "step"
+    ];
+    open = true;
+    optionsStep = seededFixpoint;
+  };
+  seededCore =
+    o:
+    {
+      seed,
+      frontier,
+      step,
+      ...
+    }:
     let
-      checked =
-        prelude.checkOptions "gen-graph.seededFixpoint"
-          [
-            "seed"
-            "frontier"
-            "step"
-            "maxIter"
-          ]
-          (
-            prelude.checkRequired "gen-graph.seededFixpoint" [
-              "seed"
-              "frontier"
-              "step"
-            ] args
-          );
-      inherit (checked)
-        seed
-        frontier
-        step
-        ;
-      maxIter = checked.maxIter or 1000;
+      maxIter = o.maxIter or 1000;
       st = callableAt "seededFixpoint" "step" "an edge map" step;
       base = edgeMaps.unionEdges seed frontier;
 
       supported =
         acc:
         let
-          unsupported = edgeMaps.differenceEdges acc (
+          unsupported = differenceEdges acc (
             edgeMaps.unionEdges base (
               edgeMapOr "seededFixpoint" "on the converged accumulator" (
                 let
@@ -310,11 +308,11 @@ let
                   h
             );
             acc' = edgeMaps.unionEdges acc produced;
-            dF' = edgeMaps.differenceEdges produced acc;
+            dF' = differenceEdges produced acc;
           in
           go (iter + 1) acc' dF';
     in
-    builtins.seq checked (supported (go 0 base frontier));
+    supported (go 0 base frontier);
 
   # `who` is `within <door> "compose"` when another door reaches it (R6, `key.nix`).
   composeAs =
@@ -325,7 +323,17 @@ let
     prelude.mapAttrs (
       _from: targets: prelude.unique (prelude.concatMap (mid: e2.${toKey mid} or [ ]) targets)
     ) e1;
-  compose = composeAs "compose";
+  # Relational composition is not commutative, so its two operands are ONE record whose field names
+  # carry what the argument order did (P2, R7 (b)): `compose { first; second; }` follows `first`'s
+  # edges, then `second`'s.
+  compose = door {
+    name = "gen-graph.compose";
+    required = [
+      "first"
+      "second"
+    ];
+    open = true;
+  } (r: composeAs "compose" r.first r.second);
 
   # ── THE CLOSURE CLASS, ENUMERATED ──
   #
@@ -382,37 +390,66 @@ let
   # default cap of 1000 evaluating 2^999 would replace this refusal with an arithmetic error —
   # the one path where an error must survive to be read. Naming the exponent is exact at every
   # cap, and it keeps one message SHAPE, which is what a caller's anchored pattern can match.
-  closureOf =
-    surface:
-    assert builtins.elem surface closureClass;
-    args@{ edges, nodes, ... }:
+  #
+  # ★ THE CAP IS AN OPTION (P2, R7): every closure surface is `<surface> { maxIter ? 1000; } { edges;
+  # nodes; }`, and `closureOf surface` is that surface's door. The cap once rode on the caller's
+  # accessor record; given there now it is refused as misplaced (`optionsStep`), never silently
+  # dropped back to the default.
+  closureCore =
+    surface: o:
+    { edges, nodes, ... }:
     let
       mat = edgeMaps.threaded.materialize (within surface "materialize") { inherit edges nodes; };
       square = composeAs (within surface "compose");
     in
-    fixpoint (
-      # `maxIter` rides on the caller's own record when they set one; absent, `fixpoint`'s
-      # default applies. The cap is `fixpoint`'s and is deliberately not re-declared here —
-      # a closure surface holding its own copy of the constant is a copy to keep in step.
-      builtins.intersectAttrs { maxIter = null; } args
+    fixpointCore (
+      # `maxIter` is passed on only when the caller set one; absent, `fixpoint`'s default applies.
+      # The cap is `fixpoint`'s and is deliberately not re-declared here — a closure surface
+      # holding its own copy of the constant is a copy to keep in step.
+      builtins.intersectAttrs { maxIter = null; } o
       // {
-        seed = mat;
-        step = current: edgeMaps.unionEdges current (square current current);
         refusal =
           cap:
           "gen-graph: ${surface}: the graph's reachability diameter exceeds 2^${toString (cap - 1)}, the depth reached by the closure fixpoint's iteration cap of ${toString cap} under repeated squaring. The closure step is monotone on the subset order by construction, so an unconverged closure at the cap is depth and nothing else.";
       }
-    );
+    ) (current: edgeMaps.unionEdges current (square current current)) mat;
+
+  # The two doors every closure surface is: the options (`maxIter`), then the accessor record,
+  # guarded against the options' own name.
+  closureClassDoor =
+    surface: core:
+    let
+      options = door {
+        name = "gen-graph.${surface}";
+        optional = [ "maxIter" ];
+      } (o: record (core o));
+      record = door {
+        name = "gen-graph.${surface}";
+        required = [
+          "edges"
+          "nodes"
+        ];
+        open = true;
+        optionsStep = options;
+      };
+    in
+    options;
+
+  closureOf =
+    surface:
+    assert builtins.elem surface closureClass;
+    closureClassDoor surface (closureCore surface);
 
   transitiveClosure = closureOf "transitiveClosure";
 
-  transitiveReduction =
+  transitiveReduction = closureClassDoor "transitiveReduction" (
+    o:
     args@{ edges, nodes, ... }:
     let
       mat = edgeMaps.threaded.materialize (within "transitiveReduction" "materialize") {
         inherit edges nodes;
       };
-      closure = closureOf "transitiveReduction" args;
+      closure = closureCore "transitiveReduction" o args;
       toKey = attrKey "transitiveReduction";
       keyedAttrs' = keyedAttrs "transitiveReduction";
       redundant = prelude.mapAttrs (
@@ -434,9 +471,15 @@ let
         ) targets
       ) mat;
     in
-    edgeMaps.threaded.differenceEdges (within "transitiveReduction" "differenceEdges") mat redundant;
+    edgeMaps.threaded.differenceEdges (within "transitiveReduction" "differenceEdges") mat redundant
+  );
 in
 {
+  # The unchecked cores, for another file's internal callers (P2 §p2.3.2). Not published.
+  cores = {
+    closureOf = closureCore;
+    inherit closureClassDoor fixpointCore;
+  };
   inherit
     fixpoint
     seededFixpoint

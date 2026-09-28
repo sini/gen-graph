@@ -20,25 +20,27 @@ let
   sorted = builtins.sort builtins.lessThan;
   byJson = builtins.sort (a: b: builtins.toJSON a < builtins.toJSON b);
 
-  diamond = labeledFrom {
-    nodes = [
-      "l"
-      "r"
-      "s"
-      "t"
-    ];
-    perLabel.e =
-      id:
+  diamond =
+    labeledFrom
       {
-        s = [
-          "l"
-          "r"
-        ];
-        l = [ "t" ];
-        r = [ "t" ];
+        e =
+          id:
+          {
+            s = [
+              "l"
+              "r"
+            ];
+            l = [ "t" ];
+            r = [ "t" ];
+          }
+          .${id} or [ ];
       }
-      .${id} or [ ];
-  };
+      [
+        "l"
+        "r"
+        "s"
+        "t"
+      ];
 in
 {
   flake.tests.labeled-transpose = {
@@ -68,16 +70,16 @@ in
       # two labels between the same pair must both survive the reversal
       expr =
         let
-          g = labeledFrom {
-            nodes = [
-              "s"
-              "x"
-            ];
-            perLabel = {
-              a = id: if id == "s" then [ "x" ] else [ ];
-              b = id: if id == "s" then [ "x" ] else [ ];
-            };
-          };
+          g =
+            labeledFrom
+              {
+                a = id: if id == "s" then [ "x" ] else [ ];
+                b = id: if id == "s" then [ "x" ] else [ ];
+              }
+              [
+                "s"
+                "x"
+              ];
         in
         byJson ((labeledTranspose g).labeledEdges "x");
       expected = [
@@ -118,18 +120,28 @@ in
       # the accessor is transposed. Forward from `root` reaches the contained nodes;
       # reverse from `u1` reaches its containers.
       expr = {
-        forward = sorted (query {
-          graph = labeledFixtures.world;
-          from = "root";
-          follow = r.plus (r.lit "contains");
-          mode = "all";
-        });
-        reverse = sorted (query {
-          graph = labeledTranspose labeledFixtures.world;
-          from = "u1";
-          follow = r.plus (r.lit "contains");
-          mode = "all";
-        });
+        forward = sorted (
+          query
+            {
+              mode = "all";
+            }
+            {
+              graph = labeledFixtures.world;
+              from = "root";
+              follow = r.plus (r.lit "contains");
+            }
+        );
+        reverse = sorted (
+          query
+            {
+              mode = "all";
+            }
+            {
+              graph = labeledTranspose labeledFixtures.world;
+              from = "u1";
+              follow = r.plus (r.lit "contains");
+            }
+        );
       };
       expected = {
         forward = [
@@ -147,21 +159,31 @@ in
     };
     test-labeled-transpose-does-not-cross-labels = {
       # reversing `member` must not make `contains` reachable from the same root
-      expr = sorted (query {
-        graph = labeledTranspose labeledFixtures.world;
-        from = "u1";
-        follow = r.plus (r.lit "member");
-        mode = "all";
-      });
+      expr = sorted (
+        query
+          {
+            mode = "all";
+          }
+          {
+            graph = labeledTranspose labeledFixtures.world;
+            from = "u1";
+            follow = r.plus (r.lit "member");
+          }
+      );
       expected = [ "g1" ];
     };
     test-labeled-transpose-cycle-terminates = {
-      expr = sorted (query {
-        graph = labeledTranspose labeledFixtures.cyclic;
-        from = "m";
-        follow = r.parse "member contains*";
-        mode = "all";
-      });
+      expr = sorted (
+        query
+          {
+            mode = "all";
+          }
+          {
+            graph = labeledTranspose labeledFixtures.cyclic;
+            from = "m";
+            follow = r.parse "member contains*";
+          }
+      );
       expected = [
         "a"
         "b"

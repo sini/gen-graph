@@ -146,10 +146,8 @@ in
         # the door is lazy: a pred that never forces its argument never applies `nodeData`
         selectNodeData = G.select (g // { nodeData = 1; }) (_: true);
         fixpoint = G.fixpoint {
-          seed = E;
-          step = x: x;
           refusal = 1;
-        };
+        } (x: x) E;
       };
       expected = {
         select = [ ];

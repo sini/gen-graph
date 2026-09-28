@@ -8,7 +8,17 @@ let
     notEdgeList
     renderId
     ;
-  roots =
+  inherit (prelude) door;
+  # An accessor record is R5's data record: open, its missing fields refused by name at the door's
+  # application (P2 rule 3).
+  accessorDoor =
+    name: required:
+    door {
+      name = "gen-graph.${name}";
+      inherit required;
+      open = true;
+    };
+  roots = accessorDoor "roots" [ "edges" "nodes" ] (
     { edges, nodes, ... }:
     let
       e = edgesAccessor "roots" edges;
@@ -30,9 +40,10 @@ let
         ) nodes
       );
     in
-    builtins.sort builtins.lessThan (builtins.filter (id: !(allTargets ? ${toKey id})) nodes);
+    builtins.sort builtins.lessThan (builtins.filter (id: !(allTargets ? ${toKey id})) nodes)
+  );
 
-  leaves =
+  leaves = accessorDoor "leaves" [ "edges" "nodes" ] (
     { edges, nodes, ... }:
     let
       e = edgesAccessor "leaves" edges;
@@ -45,9 +56,10 @@ let
         in
         if builtins.isList es then es == [ ] else throw (notEdgeList "leaves" id es)
       ) nodes
-    );
+    )
+  );
 
-  select =
+  select = accessorDoor "select" [ "nodes" "nodeData" ] (
     { nodes, nodeData, ... }:
     pred:
     let
@@ -61,7 +73,8 @@ let
         b = p (nd id);
       in
       if builtins.isBool b then b else badResult "select" "pred" "on the node ${renderId id}" "a bool" b
-    ) nodes;
+    ) nodes
+  );
 in
 {
   inherit roots leaves select;

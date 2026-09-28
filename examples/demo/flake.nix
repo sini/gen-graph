@@ -88,7 +88,7 @@
 
       # All paths from gateway to database
       # → [ [ "gateway" "web" "api" "database" ] ]
-      gatewayToDb = graph.pathsBetween g "gateway" "database";
+      gatewayToDb = graph.pathsBetween { } g "gateway" "database";
 
       # Predicate-filtered reachability: only datastore IDs reachable from gateway
       # (preserves BFS discovery order)
@@ -101,7 +101,7 @@
 
       # What breaks if database goes down? (reverse transitive reachability)
       # → [ "api" "gateway" "web" "worker" ]
-      databaseImpact = graph.dependents g "database";
+      databaseImpact = graph.dependents { } g "database";
 
       # Cycle detection on a healthy DAG (should be empty)
       # → []
@@ -139,10 +139,10 @@
       edgeMap = graph.materialize g;
 
       # Transitive closure: full reachability as edge map
-      closure = graph.transitiveClosure g;
+      closure = graph.transitiveClosure { } g;
 
       # Transitive reduction: minimal edges preserving reachability
-      minimal = graph.transitiveReduction g;
+      minimal = graph.transitiveReduction { } g;
 
       # Edge filtering: only edges targeting datastores
       datastoreEdges =
@@ -157,7 +157,10 @@
         let
           em = graph.materialize g;
         in
-        graph.compose em em;
+        graph.compose {
+          first = em;
+          second = em;
+        };
 
       # --- Registry utility: fromRegistry for declarative data ---
 
@@ -178,10 +181,8 @@
             };
           };
           regG = graph.fromRegistry {
-            inherit registry;
-            edges = graph.field "imports";
             parent = _id: entry: entry.parent or null;
-          };
+          } (graph.field "imports") registry;
         in
         graph.reachableFrom regG "svc:web";
       # → [ "svc:api" "svc:db" ]
@@ -202,12 +203,10 @@
             };
           };
           regG = graph.fromRegistry {
-            inherit registry;
-            edges = graph.field "imports";
             parent = _id: entry: entry.parent or null;
-          };
+          } (graph.field "imports") registry;
         in
-        graph.ancestorsOf regG "svc:db";
+        graph.ancestorsOf { } regG "svc:db";
       # → [ "svc:api" "svc:web" ]
     };
 }

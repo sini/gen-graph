@@ -26,9 +26,22 @@ let
         if builtins.isList es then es else throw (notEdgeList who id es)
       )
     );
-  materialize = materializeAs "materialize";
+  inherit (prelude) door;
+  # An accessor record is R5's data record: open, its missing fields refused by name at the door's
+  # application (P2 rule 3).
+  accessorDoor =
+    name: required:
+    door {
+      name = "gen-graph.${name}";
+      inherit required;
+      open = true;
+    };
+  materialize = accessorDoor "materialize" [
+    "edges"
+    "nodes"
+  ] (materializeAs "materialize");
 
-  materializeParents =
+  materializeParents = accessorDoor "materializeParents" [ "nodes" "parent" ] (
     { parent, nodes, ... }:
     let
       pa = callableAt "materializeParents" "parent" "a node id or null" parent;
@@ -48,7 +61,8 @@ let
               p;
         }) nodes
       )
-    );
+    )
+  );
 
   # Convert target list to attrset for O(1) membership
   _targetSet =
@@ -104,7 +118,17 @@ let
         builtins.filter (to: !(bSet ? ${toKey to})) aTargets
       ) a
     );
-  differenceEdges = differenceEdgesAs "differenceEdges";
+  # Set difference is not commutative, so its two edge maps are ONE record whose field names carry
+  # what the argument order did (P2, R7 (b)): `differenceEdges { minuend; subtrahend; }` is the
+  # minuend's edges less the subtrahend's.
+  differenceEdges = door {
+    name = "gen-graph.differenceEdges";
+    required = [
+      "minuend"
+      "subtrahend"
+    ];
+    open = true;
+  } (r: differenceEdgesAs "differenceEdges" r.minuend r.subtrahend);
 
   selectEdges =
     pred: edgeMap:

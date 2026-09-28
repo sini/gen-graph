@@ -231,7 +231,9 @@ let
               map (
                 v:
                 let
-                  ps = pathsBetween { inherit edges; } v u;
+                  ps = pathsBetween { } {
+                    inherit edges;
+                  } v u;
                 in
                 if ps == [ ] then [ ] else builtins.head ps
               ) (builtins.filter (v: sccOf.${v} == sccOf.${u}) (edges u))

@@ -1,12 +1,12 @@
-# NOT A SUITE. The door family (den-hoag-7gp66 P1, spec §v1.2/§v1.7): every published door that takes a
-# record composes gen-prelude's `checkOptions` / `checkRequired`. `ci/tests/doors.nix` asserts the
-# refusals catchable and the valid call unchanged; `ci/tests-error.nix` (`door-refusals`,
-# `door-naming`) pins them by message. Held once so both assert about the same objects. It sits under
-# `_fixtures/` because the tree importer ignores any path with that segment.
+# NOT A SUITE. The door family (den-hoag-7gp66 P1, then P2): every published step that takes a record
+# is a `prelude.door` — an OPTIONS step (closed) or a RECORD step (open, R5). `ci/tests/doors.nix`
+# asserts the refusals catchable, the valid call unchanged and the published contract equal to the
+# row; `ci/tests-error.nix` (`door-refusals`, `door-naming`) pins them by message. Held once so both
+# assert about the same objects. It sits under `_fixtures/` because the tree importer ignores any
+# path with that segment.
 #
-# Per door: `door`, a `good` record the door accepts, and — for a door with required fields — the one
-# `drop`ped to make it incomplete. RECORD doors are open (R5): an extra field is admitted. OPTIONS
-# and MIXED doors are closed: an unknown field is refused. `unknown` is the field no door accepts.
+# `unknown` is the field no door accepts. A positional step is not a door (P2 §p2.3.2: no field
+# contract to publish), so the operands that left a record for positions are not rows here.
 { genGraph }:
 let
   G = genGraph;
@@ -19,69 +19,20 @@ let
   };
   isRegistered = id: builtins.elem id g.nodes;
   labeled = G.labeledFrom {
-    perLabel.x = g.edges;
-    inherit (g) nodes;
-  };
+    x = g.edges;
+  } g.nodes;
 in
 {
   unknown = "notAFieldOfThisDoor";
 
-  records = {
-    mkNodeRef = {
-      door = G.mkNodeRef;
-      good = { inherit isRegistered; };
-      drop = "isRegistered";
-      required = [ "isRegistered" ];
-    };
-    nodeRefFindings = {
-      door = G.nodeRefFindings;
-      good = { inherit isRegistered; };
-      drop = "isRegistered";
-      required = [ "isRegistered" ];
-    };
-    mkEndpointProjection = {
-      door = G.mkEndpointProjection;
-      good = {
-        childBearing = _: false;
-        isNode = isRegistered;
-      };
-      drop = "isNode";
-      required = [
-        "childBearing"
-        "isNode"
-      ];
-    };
-    mkProjectionFindings = {
-      door = G.mkProjectionFindings;
-      good = {
-        childBearing = _: false;
-        isNode = isRegistered;
-      };
-      drop = "isNode";
-      required = [
-        "childBearing"
-        "isNode"
-      ];
-    };
-    labeledFrom = {
-      door = G.labeledFrom;
-      good = {
-        perLabel.x = g.edges;
-        inherit (g) nodes;
-      };
-      drop = "perLabel";
-      required = [
-        "perLabel"
-        "nodes"
-      ];
-    };
-  };
-
+  # ── EVERY OPTIONS STEP (P2 rule 2) ──
+  # Closed: `{ }` is admitted, an unknown field is refused catchably when the options are applied
+  # (G1/G4), and the published contract is this row's `optional` (D3). `name` is the door's name
+  # where it is not the row's.
   options = {
     mkGraph = {
       door = G.mkGraph;
-      good = { };
-      accepted = [
+      optional = [
         "edges"
         "parents"
         "nodeData"
@@ -89,86 +40,69 @@ in
     };
     topoOrder = {
       door = G.topoOrder;
-      good = { };
-      accepted = [
+      optional = [
         "keyOf"
         "lessThan"
       ];
     };
     topoOrderKahn = {
       door = G.topoOrderKahn;
-      good = { };
-      accepted = [
+      optional = [
         "keyOf"
         "lessThan"
       ];
     };
     "regex.parseWith" = {
       door = G.regex.parseWith;
-      good = { };
-      accepted = [ "maxLength" ];
+      optional = [ "maxLength" ];
     };
-  };
-
-  mixed = {
     fixpoint = {
       door = G.fixpoint;
-      good = {
-        seed = { };
-        step = c: c;
-      };
-      drop = "step";
-      required = [
-        "seed"
-        "step"
-      ];
-      accepted = [
-        "seed"
-        "step"
+      optional = [
         "maxIter"
         "refusal"
       ];
     };
+    fromRegistry = {
+      door = G.fromRegistry;
+      optional = [ "parent" ];
+    };
+    ancestorsOf = {
+      door = G.ancestorsOf;
+      optional = [ "maxDepth" ];
+    };
+    pathsBetween = {
+      door = G.pathsBetween;
+      optional = [ "maxDepth" ];
+    };
+    dependents = {
+      door = G.dependents;
+      optional = [ "maxIter" ];
+    };
+    condensationClosure = {
+      door = G.condensationClosure;
+      optional = [ "maxIter" ];
+    };
+    transitiveClosure = {
+      door = G.transitiveClosure;
+      optional = [ "maxIter" ];
+    };
+    transitiveReduction = {
+      door = G.transitiveReduction;
+      optional = [ "maxIter" ];
+    };
+    closureOf = {
+      door = G.closureOf "transitiveClosure";
+      name = "transitiveClosure";
+      optional = [ "maxIter" ];
+    };
     seededFixpoint = {
       door = G.seededFixpoint;
-      good = {
-        seed = { };
-        frontier = { };
-        step = _: _: { };
-      };
-      drop = "frontier";
-      required = [
-        "seed"
-        "frontier"
-        "step"
-      ];
-      accepted = [
-        "seed"
-        "frontier"
-        "step"
-        "maxIter"
-      ];
+      optional = [ "maxIter" ];
     };
     foldPreorder = {
       door = G.foldPreorder;
-      good = {
-        roots = [ "a" ];
-        key = f: f;
-        expand = acc: _: { inherit acc; };
-        acc = 0;
-      };
-      drop = "expand";
-      required = [
-        "roots"
-        "key"
-        "expand"
-        "acc"
-      ];
-      accepted = [
-        "roots"
-        "key"
-        "expand"
-        "acc"
+      optional = [
         "visited"
         "maxDepth"
         "surface"
@@ -176,21 +110,7 @@ in
     };
     expandPreorder = {
       door = G.expandPreorder;
-      good = {
-        roots = [ "a" ];
-        key = f: f;
-        inherit (g) edges;
-      };
-      drop = "key";
-      required = [
-        "roots"
-        "key"
-        "edges"
-      ];
-      accepted = [
-        "roots"
-        "key"
-        "edges"
+      optional = [
         "resolve"
         "emit"
         "seen0"
@@ -200,145 +120,322 @@ in
     };
     foldReach = {
       door = G.foldReach;
-      good = {
-        roots = [ ];
-        inherit (g) edges;
-        target = e: e;
-        project = _: [ ];
-        itemKey = i: i;
-      };
-      drop = "itemKey";
-      required = [
-        "roots"
-        "edges"
-        "target"
-        "project"
-        "itemKey"
-      ];
-      accepted = [
-        "roots"
-        "edges"
-        "target"
-        "project"
-        "itemKey"
+      optional = [
         "visited0"
         "seen0"
         "nodes0"
         "maxDepth"
       ];
     };
-    fromRegistry = {
-      door = G.fromRegistry;
-      good = {
-        registry = {
-          a.deps = [ "b" ];
-          b = { };
-        };
-        edges = G.field "deps";
-      };
-      drop = "registry";
-      required = [
-        "registry"
-        "edges"
-      ];
-      accepted = [
-        "registry"
-        "edges"
-        "parent"
-      ];
-    };
     fromScan = {
       door = G.fromScan;
-      good = {
-        items = [ ];
-        scan = _: [ ];
-        project = r: r;
-      };
-      drop = "scan";
-      required = [
-        "items"
-        "scan"
-        "project"
-      ];
-      accepted = [
-        "items"
-        "scan"
-        "project"
+      optional = [
         "nodeData"
         "parents"
       ];
     };
     queryArrivals = {
       door = G.queryArrivals;
-      good = {
-        graph = labeled;
-        from = "a";
-        follow = G.regex.parse "x*";
-        advance = _: 1;
-      };
-      drop = "advance";
-      required = [
-        "graph"
-        "from"
-        "follow"
-        "advance"
-      ];
-      accepted = [
-        "graph"
-        "from"
-        "follow"
-        "advance"
-        "where"
-      ];
-    };
-    # `queryAll`/`queryPaths` are not doors: they are reached only through `query` (modes `all` and
-    # `paths`, plus `visible`/`layers`/`fixpoint` which thread through them internally) and through
-    # `queryFold` (den-hoag-7gp66 P1, P-1). The formals check now runs at `query`/`queryFold`
-    # themselves, so an unknown or missing field is refused catchably naming the door the caller
-    # called, never the private function behind it.
-    query = {
-      door = G.query;
-      good = {
-        graph = labeled;
-        from = "a";
-        follow = G.regex.parse "x*";
-      };
-      drop = "follow";
-      required = [
-        "graph"
-        "from"
-        "follow"
-      ];
-      accepted = [
-        "graph"
-        "from"
-        "follow"
-        "where"
-      ];
+      optional = [ "where" ];
     };
     queryFold = {
       door = G.queryFold;
-      good = {
-        empty = 0;
-        combine = a: _: a;
+      optional = [
+        "valueOf"
+        "where"
+      ];
+    };
+    query = {
+      door = G.query;
+      optional = [
+        "mode"
+        "where"
+        "order"
+        "groupBy"
+        "combine"
+        "empty"
+        "valueOf"
+      ];
+    };
+  };
+
+  # ── EVERY RECORD STEP (P2 rules 3 and 5, R7 (b)) ──
+  # Open (R5): `good` is admitted, `drop` refused catchably by name at the step's application, an
+  # extra field admitted, and the published contract is this row's `required` (D3). A record step
+  # behind an options step carries `misplaced`, one of that step's own option names: it is refused
+  # by name (`optionsStep`, G10) while an unrelated extra field is still admitted (G10-ctl).
+  records =
+    let
+      acc = {
+        inherit (g) edges nodes;
+      };
+      accessor = step: {
+        inherit step;
+        good = acc;
+        drop = "edges";
+        required = [
+          "edges"
+          "nodes"
+        ];
+      };
+      edgesOnly = step: {
+        inherit step;
+        good = {
+          inherit (g) edges;
+        };
+        drop = "edges";
+        required = [ "edges" ];
+      };
+      closure =
+        step:
+        accessor step
+        // {
+          misplaced = "maxIter";
+        };
+      labeledRow = step: {
+        inherit step;
+        good = labeled;
+        drop = "labeledEdges";
+        required = [
+          "labeledEdges"
+          "nodes"
+        ];
+      };
+      q = {
         graph = labeled;
         from = "a";
         follow = G.regex.parse "x*";
       };
-      drop = "graph";
-      required = [
+      qRequired = [
         "graph"
         "from"
         "follow"
       ];
-      accepted = [
-        "graph"
-        "from"
-        "follow"
-        "where"
-      ];
+    in
+    {
+      reachableFrom = edgesOnly G.reachableFrom;
+      reachableWhere = edgesOnly G.reachableWhere;
+      canReach = edgesOnly G.canReach;
+      selfReachable = edgesOnly G.selfReachable;
+      coScc = edgesOnly G.coScc;
+      coneRank = edgesOnly G.coneRank;
+      hoistEdges = accessor G.hoistEdges;
+      dependentsOf = accessor G.dependentsOf;
+      dependentsFrontier = accessor G.dependentsFrontier;
+      impactOf = accessor G.impactOf;
+      directDependents = accessor G.directDependents;
+      directDependentsOf = accessor G.directDependentsOf;
+      materialize = accessor G.materialize;
+      roots = accessor G.roots;
+      leaves = accessor G.leaves;
+      condensationOf = accessor G.condensationOf;
+      fbNode = accessor G.fbNode;
+      fbWork = accessor G.fbWork;
+      lowlink = accessor G.lowlink;
+      cycles = accessor G.cycles;
+      cyclePaths = accessor G.cyclePaths;
+      condensation = accessor G.condensation;
+      transpose = accessor G.transpose;
+      dependents = closure (G.dependents { });
+      condensationClosure = closure (G.condensationClosure { });
+      transitiveClosure = closure (G.transitiveClosure { });
+      transitiveReduction = closure (G.transitiveReduction { });
+      closureOf = closure (G.closureOf "transitiveClosure" { }) // {
+        name = "transitiveClosure";
+      };
+      topoOrder = accessor (G.topoOrder { }) // {
+        drop = "nodes";
+        required = [
+          "nodes"
+          "edges"
+        ];
+      };
+      topoOrderKahn = accessor (G.topoOrderKahn { }) // {
+        drop = "nodes";
+        required = [
+          "nodes"
+          "edges"
+        ];
+      };
+      materializeParents = {
+        step = G.materializeParents;
+        good = {
+          inherit (g) nodes;
+          parent = _: null;
+        };
+        drop = "parent";
+        required = [
+          "nodes"
+          "parent"
+        ];
+      };
+      select = {
+        step = G.select;
+        good = {
+          inherit (g) nodes;
+          nodeData = _: { };
+        };
+        drop = "nodeData";
+        required = [
+          "nodes"
+          "nodeData"
+        ];
+      };
+      ancestorsOf = {
+        step = G.ancestorsOf { };
+        good = {
+          parent = _: null;
+        };
+        drop = "parent";
+        required = [ "parent" ];
+        misplaced = "maxDepth";
+      };
+      pathsBetween = edgesOnly (G.pathsBetween { }) // {
+        misplaced = "maxDepth";
+      };
+      forgetLabels = labeledRow G.forgetLabels;
+      labeledTranspose = labeledRow G.labeledTranspose;
+      compose = {
+        step = G.compose;
+        good = {
+          first = { };
+          second = { };
+        };
+        drop = "second";
+        required = [
+          "first"
+          "second"
+        ];
+      };
+      differenceEdges = {
+        step = G.differenceEdges;
+        good = {
+          minuend = { };
+          subtrahend = { };
+        };
+        drop = "subtrahend";
+        required = [
+          "minuend"
+          "subtrahend"
+        ];
+      };
+      entryBetween = {
+        step = G.entryBetween;
+        good = {
+          before = [ ];
+          after = [ ];
+        };
+        drop = "after";
+        required = [
+          "before"
+          "after"
+        ];
+      };
+      seededFixpoint = {
+        step = G.seededFixpoint { };
+        good = {
+          seed = { };
+          frontier = { };
+          step = _: _: { };
+        };
+        drop = "frontier";
+        required = [
+          "seed"
+          "frontier"
+          "step"
+        ];
+        misplaced = "maxIter";
+      };
+      foldPreorder = {
+        step = G.foldPreorder { };
+        good = {
+          roots = [ "a" ];
+          key = f: f;
+          expand = acc: _: { inherit acc; };
+          acc = 0;
+        };
+        drop = "expand";
+        required = [
+          "roots"
+          "key"
+          "expand"
+          "acc"
+        ];
+        misplaced = "visited";
+      };
+      expandPreorder = {
+        step = G.expandPreorder { };
+        good = {
+          roots = [ "a" ];
+          key = f: f;
+          inherit (g) edges;
+        };
+        drop = "key";
+        required = [
+          "roots"
+          "key"
+          "edges"
+        ];
+        misplaced = "emit";
+      };
+      foldReach = {
+        step = G.foldReach { };
+        good = {
+          roots = [ ];
+          inherit (g) edges;
+          target = e: e;
+          project = _: [ ];
+          itemKey = i: i;
+        };
+        drop = "itemKey";
+        required = [
+          "roots"
+          "edges"
+          "target"
+          "project"
+          "itemKey"
+        ];
+        misplaced = "seen0";
+      };
+      fromScan = {
+        step = G.fromScan { };
+        good = {
+          items = [ ];
+          scan = _: [ ];
+          project = r: r;
+        };
+        drop = "scan";
+        required = [
+          "items"
+          "scan"
+          "project"
+        ];
+        misplaced = "nodeData";
+      };
+      queryArrivals = {
+        step = G.queryArrivals { };
+        good = q // {
+          advance = _: 1;
+        };
+        drop = "advance";
+        required = qRequired ++ [ "advance" ];
+        misplaced = "where";
+      };
+      query = {
+        step = G.query { };
+        good = q;
+        drop = "follow";
+        required = qRequired;
+        misplaced = "mode";
+      };
+      queryFold = {
+        step = G.queryFold { } (a: _: a) 0;
+        good = q;
+        drop = "graph";
+        required = qRequired;
+        misplaced = "valueOf";
+      };
     };
-  };
 
   # R6 (§v1.7 "a primitive refusal naming the door"; spec cell 5): a door that reaches a shared
   # primitive refuses under ITS OWN name, `gen-graph.<door>: … (in <primitive>)`. `reached` drives each
@@ -357,15 +454,15 @@ in
   reachedByTarget = {
     dependents = {
       prim = "compose";
-      run = a: G.dependents a "a";
+      run = a: G.dependents { } a "a";
     };
     transitiveClosure = {
       prim = "compose";
-      run = a: G.transitiveClosure a;
+      run = a: G.transitiveClosure { } a;
     };
     transitiveReduction = {
       prim = "differenceEdges";
-      run = a: G.transitiveReduction a;
+      run = a: G.transitiveReduction { } a;
     };
   };
   reached = {
@@ -379,19 +476,19 @@ in
     };
     condensationClosure = {
       prim = "condensationOf";
-      run = a: G.condensationClosure a;
+      run = a: G.condensationClosure { } a;
     };
     dependents = {
       prim = "materialize";
-      run = a: G.dependents a "a";
+      run = a: G.dependents { } a "a";
     };
     transitiveClosure = {
       prim = "materialize";
-      run = a: G.transitiveClosure a;
+      run = a: G.transitiveClosure { } a;
     };
     transitiveReduction = {
       prim = "materialize";
-      run = a: G.transitiveReduction a;
+      run = a: G.transitiveReduction { } a;
     };
     transpose = {
       prim = "materialize";

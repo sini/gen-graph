@@ -151,29 +151,17 @@ let
     };
 
   self = {
-    # MIXED door (den-hoag-7gp66 P1, §v1.2): `checkOptions` over `checkRequired`, closed over the whole
-    # set — a missing field or an unknown one is refused by name, catchably, when the record is applied.
-    fromRegistry =
-      args:
+    # `fromRegistry { parent ? (_: _: null); } edges registry` (P2, R7): the options first, one closed
+    # set checked when `fromRegistry opts` is formed; `edges` is configuration and the registry is
+    # the subject, so it comes last. Positional arity is structural, so no record check remains.
+    fromRegistry = prelude.door {
+      name = "gen-graph.fromRegistry";
+      optional = [ "parent" ];
+    } self.fromRegistryCore;
+    fromRegistryCore =
+      o: edges: registry:
       let
-        checked =
-          prelude.checkOptions "gen-graph.fromRegistry"
-            [
-              "registry"
-              "edges"
-              "parent"
-            ]
-            (
-              prelude.checkRequired "gen-graph.fromRegistry" [
-                "registry"
-                "edges"
-              ] args
-            );
-        inherit (checked)
-          registry
-          edges
-          ;
-        parent = checked.parent or (_id: _entry: null);
+        parent = o.parent or (_id: _entry: null);
         registry' =
           setAt "fromRegistry" "registry" "an attrset from a node identifier to its entry"
             registry;
@@ -187,7 +175,7 @@ let
           else
             throw "gen-graph.fromRegistry: edges is a ${builtins.typeOf edges}, not a function from a node id and its registry entry to a list of node ids";
       in
-      builtins.seq checked {
+      {
         inherit nodes;
         # both are applied to the id and then to its entry, so the first application must return a
         # function; its final result is the downstream surface's to read
@@ -248,24 +236,26 @@ let
       in
       _id: entry: builtins.concatLists (map (name: entry.${name} or [ ]) ns);
 
-    # OPTIONS door (den-hoag-7gp66 P1, §v1.2): closed — an unknown option is refused by name,
-    # catchably, when the record is applied.
+    # A pure OPTIONS door (P2, `prelude.door`): closed — an unknown option is refused by name,
+    # catchably, when `mkGraph opts` is applied.
     mkGraph =
-      args:
-      let
-        checked = prelude.checkOptions "gen-graph.mkGraph" [
-          "edges"
-          "parents"
-          "nodeData"
-        ] args;
-      in
-      builtins.seq checked (
-        mkGraphAs "mkGraph" {
-          edges = checked.edges or [ ];
-          parents = checked.parents or [ ];
-          nodeData = checked.nodeData or { };
+      prelude.door
+        {
+          name = "gen-graph.mkGraph";
+          optional = [
+            "edges"
+            "parents"
+            "nodeData"
+          ];
         }
-      );
+        (
+          o:
+          mkGraphAs "mkGraph" {
+            edges = o.edges or [ ];
+            parents = o.parents or [ ];
+            nodeData = o.nodeData or { };
+          }
+        );
 
     # fromScan — the graph a REFERENCE SCAN derives. Given a collection of scannable items, a
     # scan reading the references out of an item's value, and a projection from a reference to the
@@ -303,34 +293,40 @@ let
     # would be unrecoverable without a second scan. `field`/`fields` are edge extractors reading a
     # DECLARED list off an entry — a declaration is what a derivation replaces — and they hand
     # back no reference either.
-    # MIXED door (den-hoag-7gp66 P1, §v1.2): `checkOptions` over `checkRequired`, closed over the whole
-    # set — a missing field or an unknown one is refused by name, catchably, when the record is applied.
-    fromScan =
-      args:
+    # `fromScan { nodeData ? { }; parents ? [ ]; } { items; scan; project; }` (P2, R7): the options
+    # first, closed, then the three operands as ONE open record — rule 5's record, read at the unit:
+    # `items` is the subject rule 4 could name, but `scan` and `project` are two functions with no
+    # natural order between them (a scan reads references out of a value, a projection names the
+    # id a reference points at), so the doubt is recorded here and the record kept. An option given
+    # on the record is refused as misplaced (`optionsStep`), never silently ignored.
+    fromScan = prelude.door {
+      name = "gen-graph.fromScan";
+      optional = [
+        "nodeData"
+        "parents"
+      ];
+    } (o: self.fromScanRecord (self.fromScanCore o));
+    fromScanRecord = prelude.door {
+      name = "gen-graph.fromScan";
+      required = [
+        "items"
+        "scan"
+        "project"
+      ];
+      open = true;
+      optionsStep = self.fromScan;
+    };
+    fromScanCore =
+      o:
+      {
+        items,
+        scan,
+        project,
+        ...
+      }:
       let
-        checked =
-          prelude.checkOptions "gen-graph.fromScan"
-            [
-              "items"
-              "scan"
-              "project"
-              "nodeData"
-              "parents"
-            ]
-            (
-              prelude.checkRequired "gen-graph.fromScan" [
-                "items"
-                "scan"
-                "project"
-              ] args
-            );
-        inherit (checked)
-          items
-          scan
-          project
-          ;
-        nodeData = checked.nodeData or { };
-        parents = checked.parents or [ ];
+        nodeData = o.nodeData or { };
+        parents = o.parents or [ ];
         sc = callableAt "fromScan" "scan" "a list of references" scan;
         pj = callableAt "fromScan" "project" "a node id (a string)" project;
         its = listAt "fromScan" "items" "a list of { id; value; } items" items;
@@ -409,15 +405,13 @@ let
           ) n
         );
       in
-      builtins.seq checked (
-        mkGraphAs "fromScan" {
-          edges = keyedEdges;
-          inherit nodeData parents;
-        }
-        // {
-          inherit derivedEdges;
-        }
-      );
+      mkGraphAs "fromScan" {
+        edges = keyedEdges;
+        inherit nodeData parents;
+      }
+      // {
+        inherit derivedEdges;
+      };
 
     fixtures = {
       diamond = self.mkGraph {
@@ -683,4 +677,9 @@ let
     };
   };
 in
-self
+# The doors' unchecked cores and the record step live in `self` beside their doors; none is published.
+builtins.removeAttrs self [
+  "fromRegistryCore"
+  "fromScanRecord"
+  "fromScanCore"
+]

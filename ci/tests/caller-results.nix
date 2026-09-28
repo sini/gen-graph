@@ -31,19 +31,18 @@ let
       else
         [ ];
   };
-  q =
-    extra:
-    query (
-      {
-        inherit graph;
-        from = "a";
-        follow = x;
-      }
-      // extra
-    );
+  # The options are `query`'s own set (P2); the record is the query, with `graph` replaceable.
+  qOn =
+    g: opts:
+    query opts {
+      graph = g;
+      from = "a";
+      follow = x;
+    };
+  q = qOn graph;
   arrivals =
-    extra:
-    queryArrivals (
+    opts: extra:
+    queryArrivals opts (
       {
         inherit graph;
         from = "a";
@@ -52,7 +51,7 @@ let
       }
       // extra
     );
-  bounded = marks: (boundedBy graph (_: marks)).withheld "a";
+  bounded = marks: (boundedBy (_: marks) graph).withheld "a";
   admitted = v: (builtins.tryEval (builtins.deepSeq v true)).success;
 
   # every walk mode, with a `where` returning an int and a `where` that is not a function
@@ -81,15 +80,15 @@ let
       combine = a: b: a ++ [ b ];
       where = w;
     };
-    arrivals = arrivals { where = w; };
+    arrivals = arrivals { where = w; } { };
   };
   otherArms = {
-    advanceString = arrivals { advance = _: "far"; };
+    advanceString = arrivals { } { advance = _: "far"; };
     groupByInt = q {
       mode = "visible";
       groupBy = _: 1;
     };
-    marksOfInt = (boundedBy graph (_: 1)).labeledEdges "a";
+    marksOfInt = (boundedBy (_: 1) graph).labeledEdges "a";
     markInt = bounded [ 1 ];
     markNoAdmits = bounded [ { name = "m"; } ];
     admitsNotFunction = bounded [
@@ -105,21 +104,22 @@ let
       }
     ];
     markNoName = bounded [ { admits = _: false; } ];
-    pInt = cyclicEdgesWhere graph (_: 1);
-    pNotFunction = cyclicEdgesWhere graph 1;
+    pInt = cyclicEdgesWhere (_: 1) graph;
+    pNotFunction = cyclicEdgesWhere 1 graph;
     # a set whose `__functor` is not a function is not callable, at every door incl. `edgesAt`
     whereFunctorInt = q {
       where = {
         __functor = 1;
       };
     };
-    labeledEdgesFunctorInt = q {
-      graph = graph // {
+    labeledEdgesFunctorInt = qOn (
+      graph
+      // {
         labeledEdges = {
           __functor = 1;
         };
-      };
-    };
+      }
+    ) { };
   };
   admittedOf = arms: builtins.filter (k: admitted arms.${k}) (builtins.attrNames arms);
 in
@@ -142,7 +142,7 @@ in
     test-the-lawful-arms-answer = {
       expr = {
         where = admittedOf (whereArms (n: n == "b"));
-        advance = map (a: a.distance) (arrivals { });
+        advance = map (a: a.distance) (arrivals { } { });
         withheld = bounded [
           {
             name = "m";

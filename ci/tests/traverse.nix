@@ -115,34 +115,34 @@ in
       ];
     };
     test-ancestors-tree = {
-      expr = ancestorsOf fixtures.tree "grandchild";
+      expr = ancestorsOf { } fixtures.tree "grandchild";
       expected = [
         "child1"
         "root"
       ];
     };
     test-ancestors-root = {
-      expr = ancestorsOf fixtures.tree "root";
+      expr = ancestorsOf { } fixtures.tree "root";
       expected = [ ];
     };
     test-ancestors-child = {
-      expr = ancestorsOf fixtures.tree "child2";
+      expr = ancestorsOf { } fixtures.tree "child2";
       expected = [ "root" ];
     };
     test-paths-diamond = {
-      expr = builtins.length (pathsBetween fixtures.diamond "a" "d");
+      expr = builtins.length (pathsBetween { } fixtures.diamond "a" "d");
       expected = 2;
     };
     test-paths-no-path = {
-      expr = pathsBetween fixtures.chain "d" "a";
+      expr = pathsBetween { } fixtures.chain "d" "a";
       expected = [ ];
     };
     test-paths-cyclic-terminates = {
-      expr = builtins.length (pathsBetween fixtures.cyclic "a" "c");
+      expr = builtins.length (pathsBetween { } fixtures.cyclic "a" "c");
       expected = 1;
     };
     test-paths-self = {
-      expr = pathsBetween fixtures.chain "a" "a";
+      expr = pathsBetween { } fixtures.chain "a" "a";
       expected = [ [ "a" ] ];
     };
     test-ancestors-cyclic-terminates = {
@@ -162,7 +162,7 @@ in
             ];
           };
         in
-        ancestorsOf g "a";
+        ancestorsOf { } g "a";
       expected = [ "b" ];
     };
     test-reachable-disconnected = {
@@ -349,10 +349,15 @@ in
       in
       {
         expr = returns (
-          pathsBetween {
-            inherit (c) edges;
-            maxDepth = 8;
-          } c.top c.bottom
+          pathsBetween
+            {
+              maxDepth = 8;
+            }
+            {
+              inherit (c) edges;
+            }
+            c.top
+            c.bottom
         );
         expected = false;
       };
@@ -366,10 +371,15 @@ in
       {
         expr = builtins.length (
           builtins.head (
-            pathsBetween {
-              inherit (c) edges;
-              maxDepth = 8;
-            } c.top c.bottom
+            pathsBetween
+              {
+                maxDepth = 8;
+              }
+              {
+                inherit (c) edges;
+              }
+              c.top
+              c.bottom
           )
         );
         expected = 9;
@@ -384,7 +394,11 @@ in
         c = chain 2002;
       in
       {
-        expr = returns (pathsBetween { inherit (c) edges; } c.top c.bottom);
+        expr = returns (
+          pathsBetween { } {
+            inherit (c) edges;
+          } c.top c.bottom
+        );
         expected = false;
       };
 
@@ -393,7 +407,13 @@ in
         c = chain 2001;
       in
       {
-        expr = builtins.length (builtins.head (pathsBetween { inherit (c) edges; } c.top c.bottom));
+        expr = builtins.length (
+          builtins.head (
+            pathsBetween { } {
+              inherit (c) edges;
+            } c.top c.bottom
+          )
+        );
         expected = 2001;
       };
 
@@ -416,10 +436,14 @@ in
       in
       {
         expr = returns (
-          ancestorsOf {
-            inherit (c) parent;
-            maxDepth = 8;
-          } c.top
+          ancestorsOf
+            {
+              maxDepth = 8;
+            }
+            {
+              inherit (c) parent;
+            }
+            c.top
         );
         expected = false;
       };
@@ -430,7 +454,11 @@ in
         c = ancestorsChain 2;
       in
       {
-        expr = builtins.length (ancestorsOf { inherit (c) parent; } c.top);
+        expr = builtins.length (
+          ancestorsOf { } {
+            inherit (c) parent;
+          } c.top
+        );
         expected = 1;
       };
   };

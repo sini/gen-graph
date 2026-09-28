@@ -28,8 +28,18 @@ let
     ;
   edgeMaps = import ./edge-maps.nix { inherit prelude; };
   fp = import ./fixpoint.nix { inherit prelude; };
-  traverse = import ./traverse.nix;
+  traverse = import ./traverse.nix { inherit prelude; };
   partition = import ./partition.nix { inherit prelude; };
+  inherit (prelude) door;
+  # An accessor record is R5's data record: open, its missing fields refused by name at the door's
+  # application (P2 rule 3).
+  accessorDoor =
+    name: required:
+    door {
+      name = "gen-graph.${name}";
+      inherit required;
+      open = true;
+    };
 
   # Shared reverse-edge index: id -> [ids with an edge to id].
   # Extracted from dependentsOf so dependentsFrontier reuses it.
@@ -91,20 +101,24 @@ let
   # The answer is read off the transposed closure's KEYS, so a dependent whose name carries string
   # context comes back as its text; `dependentsOf` and `directDependents` read the reverse index,
   # which carries the original, and keep it.
-  dependents =
+  # `dependents { maxIter ? 1000; } { edges; nodes; } targetId` (P2): the closure's cap is an option
+  # (`fixpoint.nix`, `closureOf`).
+  dependents = fp.cores.closureClassDoor "dependents" (
+    o:
     args@{ edges, nodes, ... }:
     targetId:
     let
       # The closure class by name, so the ceiling refuses under THIS surface's name rather
       # than under the one it borrows the construction from (`fixpoint.nix`, `closureOf`).
-      closure = fp.closureOf "dependents" args;
+      closure = fp.cores.closureOf "dependents" o args;
       reversed = _transposeMat "dependents" closure;
     in
     builtins.seq (identifier "dependents" targetId) (
       builtins.sort builtins.lessThan (
         builtins.filter (id: id != targetId) (reversed.${attrKey "dependents" targetId} or [ ])
       )
-    );
+    )
+  );
 
   # Single-target reverse reachability via reverse traversal (this library's own; the
   # Arntzenius 2016 attribution that stood here is withdrawn — see the file header).
@@ -139,9 +153,14 @@ let
       revEdges = id: reverseIndex.${toKey id} or [ ];
     in
     builtins.seq (identifier who targetId) (
-      builtins.sort builtins.lessThan (traverse.reachableFrom { edges = revEdges; } targetId)
+      builtins.sort builtins.lessThan (
+        traverse.threaded.reachableFrom "reachableFrom" { edges = revEdges; } targetId
+      )
     );
-  dependentsOf = _dependentsOfAs "dependentsOf";
+  dependentsOf = accessorDoor "dependentsOf" [
+    "edges"
+    "nodes"
+  ] (_dependentsOfAs "dependentsOf");
 
   # Reverse-reachability cone of targetId with an early cutoff: a node's own dependents are
   # descended into only when `prune node` is true. A pruned node is still included (it was
@@ -157,7 +176,7 @@ let
   # that limit: Θ(n + E) for the reverse index, then Θ( Σ_{u ∈ expanded} (1 + indeg u) ) over
   # what `prune` admits — a pruned node is reached without paying its in-degree — and NO
   # accumulator term, because there is no accumulator to copy.
-  dependentsFrontier =
+  dependentsFrontier = accessorDoor "dependentsFrontier" [ "edges" "nodes" ] (
     { edges, nodes, ... }:
     targetId: prune:
     let
@@ -197,7 +216,8 @@ let
       builtins.sort builtins.lessThan (
         builtins.filter (id: id != targetId) (map (item: item.key) reached)
       )
-    );
+    )
+  );
 
   # Reverse all edge directions, return new accessor set. Mokhov 2017 §5.2 Graph
   # Transpose: transpose flips the arguments of `connect` and leaves `overlay`
@@ -205,20 +225,23 @@ let
   # (the `connect` relation); `parent` is a separate containment dimension
   # `registry.mkGraph` builds from its own edge list, and `nodeData` is per-node
   # data — neither is part of the algebra transpose realises, so both carry
-  # through UNCHANGED, the same way `overlay`/`nodes` does. Defaulted rather than
-  # required: a caller composing transpose over a bare `{ edges; nodes; }`
-  # accessor (no containment/data dimension in play) keeps working.
+  # through UNCHANGED, the same way `overlay`/`nodes` does. They are ACCESSOR-RECORD fields (P2
+  # rule 3, treatment C), read off the open record when it carries them and defaulted when it does
+  # not, so a caller composing transpose over a bare `{ edges; nodes; }` accessor (no
+  # containment/data dimension in play) keeps working. P2 does not reshape this door (den-hoag-7gp66
+  # P2 L1: the row's options split would drop a carried `parent`/`nodeData` silently, so the row is
+  # held at its shape for a ruling); only its form changes, to a door over the open record.
   # The reversed edges' TARGETS are the forward map's keys, so a name carrying string context
   # comes back as its text; `directDependents` answers the same question with the original kept.
-  transpose =
-    {
-      edges,
-      nodes,
-      parent ? (_id: null),
-      nodeData ? (_id: { }),
-      ...
-    }:
+  transpose = accessorDoor "transpose" [
+    "edges"
+    "nodes"
+  ] transposeCore;
+  transposeCore =
+    args@{ edges, nodes, ... }:
     let
+      parent = args.parent or (_id: null);
+      nodeData = args.nodeData or (_id: { });
       mat = edgeMaps.threaded.materialize (within "transpose" "materialize") { inherit edges nodes; };
       rev = _transposeMat "transpose" mat;
       toKey = attrKey "transpose";
@@ -247,7 +270,7 @@ let
   # This surface owes no cost claim of its own: there is no in-library caller to owe one to, and
   # no bench arm prices it. A caller probing many pairs re-materializes BOTH closures at every
   # pair, and wants `transitiveClosure` or a `condensation` record held once instead.
-  coScc =
+  coScc = accessorDoor "coScc" [ "edges" ] (
     { edges, ... }:
     u: v:
     builtins.seq (identifier "coScc" u) (
@@ -257,7 +280,8 @@ let
         in
         (u == v) || (canReach u v && canReach v u)
       )
-    );
+    )
+  );
 
   # ── PARTITION ARM: THE CLOSURE CONSTRUCTION, PUBLISHED BY NAME ──
   # An arm of the partition front door (`condensation`, `lib/partition.nix`), not the door:
@@ -297,12 +321,13 @@ let
   # fixpoint's ceiling on the result of every arm rather than on this one.
   # (Tarjan 1972, Lemma 9 for SCCs; Mokhov 2017 §4.6 Preorders and Equivalence Relations
   # for the quotient-graph idiom — a condensation is the quotient by the co-SCC equivalence.)
-  condensationClosure =
+  condensationClosure = fp.cores.closureClassDoor "condensationClosure" (
+    o:
     args@{ edges, nodes, ... }:
     let
       # The closure class by name (`fixpoint.nix`, `closureOf`): the ceiling below is this
       # arm's, and its refusal says so.
-      closure = fp.closureOf "condensationClosure" args;
+      closure = fp.cores.closureOf "condensationClosure" o args;
       toKey = attrKey "condensationClosure";
       keyedAttrs' = keyedAttrs "condensationClosure";
       # O(1) membership (mirrors transitiveReduction's closureSets) → O(n²), not O(n³).
@@ -317,10 +342,14 @@ let
     in
     partition.threaded.condensationOf (within "condensationClosure" "condensationOf") {
       inherit edges nodes;
-    } repOf;
+    } repOf
+  );
 
   # Impact analysis alias (uses efficient single-target path).
-  impactOf = _dependentsOfAs "impactOf";
+  impactOf = accessorDoor "impactOf" [
+    "edges"
+    "nodes"
+  ] (_dependentsOfAs "impactOf");
 
   # `coneRank` used to live here. It is an ORDERING surface — it emits an order, and it now
   # takes its warming order from the ordering arm by name — so it lives with the ordering
@@ -328,15 +357,22 @@ let
 
   # DIRECT reverse-adjacency (full map) — the public face of _reverseIndex.
   # DIRECT (immediate dependents), in contrast to dependentsOf's TRANSITIVE closure.
-  directDependents = { edges, nodes, ... }: _reverseIndex "directDependents" { inherit edges nodes; };
-  directDependentsOf =
+  directDependents = accessorDoor "directDependents" [ "edges" "nodes" ] (
+    { edges, nodes, ... }: _reverseIndex "directDependents" { inherit edges nodes; }
+  );
+  directDependentsOf = accessorDoor "directDependentsOf" [ "edges" "nodes" ] (
     accessor: id:
     builtins.seq (identifier "directDependentsOf" id) (
       (_reverseIndex (within "directDependentsOf" "directDependents") accessor)
       .${attrKey "directDependentsOf" id} or [ ]
-    );
+    )
+  );
 in
 {
+  # The unchecked cores, for another file's internal callers (P2 §p2.3.2). Not published.
+  cores = {
+    inherit transposeCore;
+  };
   inherit
     dependents
     dependentsOf
