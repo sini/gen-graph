@@ -2244,5 +2244,78 @@ in
           cells F.reachedByTarget F.badTarget F.saysTarget
         )
       );
+
+    # ── den-hoag-nvrl1: THE QUERY FAMILY'S OPTIONS, ONE CLOSED SET IN EVERY MODE (P2) ──
+    # Where an unknown field once aborted uncatchably naming an internal (`all`, `paths`) or was
+    # dropped silently (`series`), each mode now refuses it by name at `query opts`, naming the door
+    # the caller called; a missing record field, and an option given on the record, are refused at
+    # the record's own application. `ci/tests/p2-doors.nix` asserts each refusal catchable.
+    flake.testsError.p2-query-closure =
+      let
+        g = genGraph.labeledFrom {
+          x = _: [ ];
+        } [ "a" ];
+        q = {
+          graph = g;
+          from = "a";
+          follow = genGraph.regex.parse "x*";
+        };
+        modes = {
+          all = { };
+          series = { };
+          paths = { };
+          visible.groupBy = a: a.node;
+          layers = { };
+          fixpoint = {
+            empty = 0;
+            combine = n: _: n + 1;
+          };
+        };
+        withMode = m: modes.${m} // { mode = m; };
+        esc = builtins.replaceStrings [ "." "(" ")" ] [ "\\." "\\(" "\\)" ];
+        cell = expr: msg: {
+          expr = builtins.seq expr true;
+          expectedError = {
+            type = "ThrownError";
+            msg = "^" + esc msg + "$";
+          };
+        };
+        options = "'mode', 'where', 'order', 'groupBy', 'combine', 'empty', 'valueOf'";
+        perMode = m: [
+          {
+            name = "test-${m}-an-unknown-option-is-refused-by-name";
+            value =
+              cell (genGraph.query (withMode m // { notAFieldOfThisDoor = 1; }))
+                "gen-graph.query: 'notAFieldOfThisDoor' is not an option of this door; the options are closed (accepted: ${options}) (in prelude.checkOptions)";
+          }
+          {
+            name = "test-${m}-a-missing-record-field-is-refused-by-name";
+            value =
+              cell (genGraph.query (withMode m) (builtins.removeAttrs q [ "follow" ]))
+                "gen-graph.query: required field 'follow' is missing (required: 'graph', 'from', 'follow') (in prelude.checkRequired)";
+          }
+          {
+            name = "test-${m}-an-option-on-the-record-is-refused-by-name";
+            value =
+              cell (genGraph.query (withMode m) (q // { where = _: true; }))
+                "gen-graph.query: 'where' is an option of gen-graph.query, not a field of this record (in prelude.checkGuarded)";
+          }
+        ];
+      in
+      builtins.listToAttrs (builtins.concatMap perMode (builtins.attrNames modes))
+      // {
+        test-queryFold-an-unknown-option-is-refused-by-name =
+          cell (genGraph.queryFold { notAFieldOfThisDoor = 1; })
+            "gen-graph.queryFold: 'notAFieldOfThisDoor' is not an option of this door; the options are closed (accepted: 'valueOf', 'where') (in prelude.checkOptions)";
+        test-queryFold-a-missing-record-field-is-refused-by-name =
+          cell (genGraph.queryFold { } (a: _: a) 0 (builtins.removeAttrs q [ "graph" ]))
+            "gen-graph.queryFold: required field 'graph' is missing (required: 'graph', 'from', 'follow') (in prelude.checkRequired)";
+        test-an-unknown-mode-is-refused-at-the-options = cell (genGraph.query {
+          mode = "bogus";
+        }) "gen-graph.query: unknown mode 'bogus'";
+        test-fixpoint-without-its-monoid-is-refused-at-the-options =
+          cell (genGraph.query { mode = "fixpoint"; })
+            "gen-graph.query: mode \"fixpoint\" requires the option 'combine' (the fold's monoid is `combine` and `empty`)";
+      };
   };
 }
