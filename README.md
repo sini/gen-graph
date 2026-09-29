@@ -1512,18 +1512,24 @@ nix flake check ./ci               # the batch gate, which covers ./ci#tests; un
 `_`-prefixed included — and the remedy is `git add` or a move. The unguarded forms read a
 git-filtered copy of the tree, so an untracked cell is silently absent and the run stays green.
 
-**740 tests** across **36 suites** in `./ci#tests`
-(`nix-unit --flake ./ci#tests` ⇒ `740/740 successful`, `fb04df8`) (`arms`, `arrivals`,
-`boundaries`, `caller-functions`, `caller-results`, `closure-order`, `context-node-names`,
-`declared-edges`, `edge-maps`, `edges-results`, `endpoints`, `entry`, `enumerate`,
-`fixpoint-tests`, `global`, `hoist`, `identifier-doors`, `integration`, `labeled-door`,
-`labeled-global`, `labeled-transpose`, `order`, `order-front-door`, `partition`,
-`prelude-domain`, `preorder`, `purity`, `query`, `regex`, `registry`, `scan`, `series`,
+**815 tests** across **44 suites** in `./ci#tests`
+(`nix-unit --flake ./ci#tests` ⇒ `815/815 successful`) (`arms`, `arrivals`,
+`boundaries`, `caller-functions`, `caller-results`, `closure-order`, `closure-targets`,
+`construction`, `context-node-names`,
+`declared-edges`, `doors`, `edge-maps`, `edges-results`, `endpoints`, `entry`, `enumerate`,
+`fixpoint-tests`, `gen-ci-examples`, `global`, `hoist`, `identifier-doors`, `integration`,
+`key-former`, `labeled-door`,
+`labeled-global`, `labeled-transpose`, `order`, `order-contract-fence`, `order-front-door`,
+`p2-doors`, `partition`,
+`prelude-domain`, `preorder`, `purity`, `query`, `regex`, `registry`, `repl`, `scan`, `series`,
 `surface`, `topo`, `traverse`, `walks`),
 plus **210** in `./ci#testsError` (`nix-unit --flake ./ci#testsError` ⇒ `210/210 successful`,
 `fb04df8`) — run under [nix-unit](https://github.com/nix-community/nix-unit) via
 the gen CI harness (`gen.lib.mkCi`). The `purity` suite asserts the library source stays
-nixpkgs-lib-free (gen-prelude only).
+nixpkgs-lib-free (gen-prelude only). `gen-ci-examples` is gen-harness's examples guard
+(declared in `ci/tests/examples.nix`, `gen.ci.examples`): it holds that `examples/`
+directory names equal the declared names, and that every declared example forces under
+`deepSeq`.
 
 **Why two outputs.** `checks.default` is a batch asserter that evaluates `expr == expected`
 unconditionally over `flake.tests` and nothing else, so a cell with no `expected` and a
