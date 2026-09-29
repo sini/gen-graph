@@ -36,4 +36,9 @@ published traverse
 // published queryLib
 // {
   inherit regex;
+  # The refusal machinery every door above applies with `"gen-graph"` (den-hoag-gayc U1a): a plain
+  # function of `prefix`, so another library reaches the SAME module applied to its own name
+  # (`key "gen-scope"`) rather than a second key former. Unapplied here — a caller supplies its own
+  # prefix; `published`'s `threaded`/`cores` strip does not apply to a function.
+  key = import ./key.nix;
 }

@@ -28,7 +28,7 @@
 #   visited key prunes that frame's whole subtree WITHOUT forcing it.
 { prelude }:
 let
-  inherit (import ./key.nix)
+  inherit (import ./key.nix "gen-graph")
     attrKey
     badResult
     callable
