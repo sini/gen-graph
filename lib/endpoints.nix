@@ -58,7 +58,7 @@
 # constrains correctness (ADR-0032 ruling 2).
 { prelude }:
 let
-  inherit (import ./key.nix) badResult callableAt renderId;
+  inherit (import ./key.nix "gen-graph") badResult callableAt renderId;
   # THE THREE REFUSALS, WRITTEN ONCE AND SHARED BY BOTH SURFACES BELOW. The validator RETURNS these
   # and the projection THROWS the first of them, so the two surfaces cannot come to state different
   # contracts: the throw IS the first finding, never a second copy of the same three tests.

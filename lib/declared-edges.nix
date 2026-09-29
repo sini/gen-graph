@@ -102,7 +102,7 @@ let
     name: i: v:
     "gen-graph.mkDeclaredEdges: key '${name}' element ${toString i}: got ${builtins.typeOf v}, which was not built by mkNodeRef";
 
-  inherit (import ./key.nix)
+  inherit (import ./key.nix "gen-graph")
     attrKey
     badResult
     callableAt

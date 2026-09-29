@@ -15,7 +15,7 @@
 #   REVERSED, not erased.
 { prelude }:
 let
-  inherit (import ./key.nix)
+  inherit (import ./key.nix "gen-graph")
     attrKey
     badResult
     callableAt
