@@ -48,7 +48,7 @@
 # other's meaning.
 { prelude }:
 let
-  inherit (import ./key.nix)
+  inherit (import ./key.nix "gen-graph")
     attrKey
     edgesAccessor
     identifier

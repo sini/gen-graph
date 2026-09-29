@@ -40,7 +40,7 @@ let
       inherit required;
       open = true;
     };
-  inherit (import ./key.nix)
+  inherit (import ./key.nix "gen-graph")
     attrKey
     badResult
     callableAt

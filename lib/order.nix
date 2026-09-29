@@ -78,7 +78,7 @@
 # analysis is on the way out either way.
 { prelude }:
 let
-  inherit (import ./key.nix)
+  inherit (import ./key.nix "gen-graph")
     attrKey
     badResult
     callable

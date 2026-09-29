@@ -67,6 +67,7 @@ let
     "intersectEdges"
     "isDeclaredEdges"
     "isNodeRef"
+    "key"
     "labeledFixtures"
     "labeledFrom"
     "labeledTranspose"

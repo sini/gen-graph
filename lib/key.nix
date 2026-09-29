@@ -41,8 +41,14 @@
 #
 # ★ A SHARED PRIMITIVE REACHED THROUGH ANOTHER DOOR REFUSES UNDER THAT DOOR'S NAME (R6, den-hoag-7gp66):
 # the door passes `within door prim` where the primitive takes its `who`, and the refusal reads
-# `gen-graph.<door>: … (in <prim>)` — the caller is told the door they called, and where it failed.
+# `<prefix>.<door>: … (in <prim>)` — the caller is told the door they called, and where it failed.
 # Every refusal below renders `who` through `say`, which is the identity on a plain door name.
+#
+# `prefix` is the library name every refusal below is rendered under (den-hoag-gayc U1a). gen-graph's
+# own callers apply this file with `"gen-graph"`; a published copy of this same module, reached over
+# `published.key`, lets another library (gen-scope, den-hoag-gayc U1b) apply it with its own name. It
+# is one shared module bound differently at each call, not a second key former.
+prefix:
 let
   within =
     who: prim:
@@ -60,9 +66,9 @@ let
   say =
     who: text:
     if builtins.isString who then
-      "gen-graph.${who}: ${text}"
+      "${prefix}.${who}: ${text}"
     else
-      "gen-graph.${who.door}: ${text} (in ${who.prim})";
+      "${prefix}.${who.door}: ${text} (in ${who.prim})";
 
   # `hasContext` second: on a context-free name the discard is the identity, so skipping it spares
   # the string copy it would make on the path every existing caller is on.
@@ -150,12 +156,12 @@ let
   # walks no longer have the ceiling `maxDepth` capped.
   retiredMaxDepth =
     who:
-    "gen-graph.${who}: maxDepth is retired. This walk is a builtins.genericClosure loop, not a recursion, so it has no depth ceiling for a cap to sit below; remove the argument.";
+    "${prefix}.${who}: maxDepth is retired. This walk is a builtins.genericClosure loop, not a recursion, so it has no depth ceiling for a cap to sit below; remove the argument.";
 
   nodeKey =
     who: v:
     if builtins.isAttrs v || builtins.isList v || builtins.isFunction v || v == null then
-      throw "gen-graph.${who}: got ${builtins.typeOf v}, expected a node identifier (a string or another scalar)"
+      throw "${prefix}.${who}: got ${builtins.typeOf v}, expected a node identifier (a string or another scalar)"
     else
       v;
 in
