@@ -1154,7 +1154,7 @@ let
         if !builtins.elem mode queryModes then
           throw "gen-graph.query: unknown mode '${mode}'"
         else if mode == "visible" && (o.groupBy or null) == null then
-          throw "gen-graph.queryVisible: groupBy is required and is never defaulted (den-hoag-l7af / ADR-0024 ruling 3); a caller wanting the per-node reading states `groupBy = ans: ans.node;` explicitly"
+          throw "gen-graph.queryVisible: groupBy is required and is never defaulted, because a default competition key would make the competition vacuous; a caller wanting the per-node reading states `groupBy = ans: ans.node;` explicitly"
         else if missing != [ ] then
           throw "gen-graph.query: mode \"fixpoint\" requires the option '${builtins.head missing}' (the fold's monoid is `combine` and `empty`)"
         else
