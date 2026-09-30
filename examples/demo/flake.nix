@@ -2,15 +2,14 @@
   description = "gen-graph demo: accessor-based graph queries";
 
   inputs = {
-    gen-graph.url = "github:sini/gen-graph";
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
   };
 
   outputs =
-    { gen-graph, nixpkgs, ... }:
+    { nixpkgs, ... }:
     let
       lib = nixpkgs.lib;
-      graph = gen-graph.lib;
+      graph = import ../.. { };
 
       # Microservice dependency graph
       #
