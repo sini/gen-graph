@@ -1355,6 +1355,45 @@ witness itself is the product. The two families also differ observably: `all` an
 revisits (the (node × state) product), while witness modes enumerate acyclic paths only, so a
 self-loop witness that `all` reports is not enumerated by `paths`.
 
+### Identifier keys and refusals (`key`)
+
+`key` is the module every door in this library forms attribute names and refusals with, published
+**unapplied** so another library binds the same module under its own name: `key "gen-scope"`
+renders every refusal as `gen-scope.<door>: …`, and gen-graph's own doors apply it as
+`key "gen-graph"`. It is one module bound twice, not a second key former.
+
+```nix
+k = graph.key "my-lib";
+k.attrKey "lookup" "web"              # → "web"
+k.attrKey "lookup" 1                  # refuses: my-lib.lookup: got int, expected a node identifier (a string)
+k.keyedAttrs "index" [ "a" "b" ] (n: n + "!")   # → { a = "a!"; b = "b!"; }
+```
+
+**A key is a FORMER, not an identity.** `attrKey who k` is the identifier's text with its store
+context discarded — the partition `==` already induces, so two names key alike exactly when they
+compare equal. Nothing is hashed and nothing new is named: a binding keyed here carries the
+caller's original value, context included, and the key only indexes it. This is gen-prelude
+`unique`'s keying, for the same reason: Nix refuses a string with context as an attribute name,
+uncatchably, while `==` and `genericClosure` keys ignore context, so keying the raw name would
+abort on a name the rest of the library accepts. A non-string is refused by the door's name
+rather than coerced (`unsafeDiscardStringContext` would turn an `outPath` set into its string).
+
+The bindings, each taking the calling door's name `who` first:
+
+| binding                                        | what it is                                                                                                                                 |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `attrKey who k`                                | the key of a node identifier (a string), context discarded; a non-string is refused                                                        |
+| `keyedAttrs who names f`                       | `genAttrs` keyed by text; `f` receives the original name                                                                                   |
+| `identifier who v`                             | `v` if it is a string, else the named refusal (a door that keys its id)                                                                    |
+| `nodeKey who v`                                | `v` if it is a scalar, else refused (a door whose closure keys on `toJSON`, not the raw id)                                                |
+| `notAnIdentifier who v`                        | the refusal text for a non-string id: names the type, never the value                                                                      |
+| `renderId id`                                  | an id for a message: JSON for a string, `<a type>` otherwise, so a refusal cannot abort while rendering                                    |
+| `say who text`, `within door prim`             | render `<prefix>.<door>: text`; through `within`, a shared primitive reached from another door refuses as `<prefix>.<door>: … (in <prim>)` |
+| `callable v`, `callableAt surface name want f` | a function or a functor; the door that returns it or refuses it by name                                                                    |
+| `badResult`, `notA`, `notEdgeList`             | refusal texts for a caller function's result, a caller field, and an `edges` result of the wrong type                                      |
+| `edgesAccessor who f`                          | the `edges` accessor, or its refusal                                                                                                       |
+| `retiredMaxDepth who`                          | the refusal text for the retired `maxDepth` argument                                                                                       |
+
 ## Usage Example
 
 ```nix
