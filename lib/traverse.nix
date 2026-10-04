@@ -237,17 +237,19 @@ let
     door
       {
         name = "gen-graph.ancestorsOf";
+        next = ancestorsRecordSpec;
         optional = [ "maxDepth" ];
       }
       (
         o: if (o.maxDepth or null) != null then throw (retiredMaxDepth "ancestorsOf") else ancestorsRecord
       );
-  ancestorsRecord = door {
+  ancestorsRecordSpec = {
     name = "gen-graph.ancestorsOf";
     required = [ "parent" ];
     open = true;
     optionsStep = ancestorsOf;
-  } ancestorsCore;
+  };
+  ancestorsRecord = door ancestorsRecordSpec ancestorsCore;
   ancestorsCore =
     { parent, ... }:
     startId:
@@ -299,14 +301,16 @@ let
 
   pathsBetween = door {
     name = "gen-graph.pathsBetween";
+    next = pathsRecordSpec;
     optional = [ "maxDepth" ];
   } (o: pathsRecord (pathsCore (o.maxDepth or pathsMaxDepth)));
-  pathsRecord = door {
+  pathsRecordSpec = {
     name = "gen-graph.pathsBetween";
     required = [ "edges" ];
     open = true;
     optionsStep = pathsBetween;
   };
+  pathsRecord = door pathsRecordSpec;
   pathsCore =
     maxDepth:
     { edges, ... }:

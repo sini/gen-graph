@@ -60,6 +60,8 @@ let
     builtins.attrNames (optionDoors // F.options)
   );
   optionsOf = n: (optionDoors.${n} or F.options.${n}.door).__contract.optional;
+  # The record step a published nest reaches, past its positional nodes (den-hoag-ak8va).
+  recordNext = c: if c != null && c ? positional then recordNext c.next else c;
   flag =
     v: names:
     builtins.listToAttrs (
@@ -160,6 +162,36 @@ in
         # the fifteen, `queryFold` and `closureOf`
         chained = 17;
       };
+    };
+    # PARITY (den-hoag-ak8va, gate C1; gating): every chained door publishes its record step AS
+    # DATA, `__contract.next` (past `queryFold`'s positional `combine` and `empty`), and the nest,
+    # read without application, equals the contract the record step answers with. `chained` is
+    # the surface enumeration above, so a chain added later is covered without a new row.
+    test-every-chained-door-publishes-its-record-step-as-next = {
+      expr = builtins.listToAttrs (
+        map (n: {
+          name = n;
+          value =
+            recordNext ((optionDoors.${n} or F.options.${n}.door).__contract.next or null)
+            == F.records.${n}.step.__contract;
+        }) chained
+      );
+      expected = builtins.listToAttrs (
+        map (n: {
+          name = n;
+          value = true;
+        }) chained
+      );
+    };
+    test-queryFold-publishes-its-positional-steps = {
+      expr = map (c: c.positional or null) [
+        genGraph.queryFold.__contract.next
+        genGraph.queryFold.__contract.next.next
+      ];
+      expected = [
+        "combine"
+        "empty"
+      ];
     };
     test-every-record-step-publishes-the-row-as-its-contract = {
       expr = each (d: {

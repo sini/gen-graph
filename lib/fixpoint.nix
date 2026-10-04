@@ -236,9 +236,10 @@ let
   # is refused as misplaced (`optionsStep`), never silently dropped back to the default.
   seededFixpoint = door {
     name = "gen-graph.seededFixpoint";
+    next = seededRecordSpec;
     optional = [ "maxIter" ];
   } (o: seededRecord (seededCore o));
-  seededRecord = door {
+  seededRecordSpec = {
     name = "gen-graph.seededFixpoint";
     required = [
       "seed"
@@ -248,6 +249,7 @@ let
     open = true;
     optionsStep = seededFixpoint;
   };
+  seededRecord = door seededRecordSpec;
   seededCore =
     o:
     {
@@ -421,9 +423,10 @@ let
     let
       options = door {
         name = "gen-graph.${surface}";
+        next = recordSpec;
         optional = [ "maxIter" ];
       } (o: record (core o));
-      record = door {
+      recordSpec = {
         name = "gen-graph.${surface}";
         required = [
           "edges"
@@ -432,6 +435,7 @@ let
         open = true;
         optionsStep = options;
       };
+      record = door recordSpec;
     in
     options;
 

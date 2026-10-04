@@ -199,6 +199,7 @@ let
     let
       options = door {
         name = "gen-graph.${who}";
+        next = graphSpec;
         optional = [
           "keyOf"
           "lessThan"
@@ -207,7 +208,7 @@ let
       # `keyOf` / `lessThan` on the graph record are refused by name (G10): an accessor value can
       # carry a `keyOf` of its own (gen-view's `accumulatorRelation`), which the open record would
       # otherwise admit and never read.
-      graph = door {
+      graphSpec = {
         name = "gen-graph.${who}";
         required = [
           "nodes"
@@ -216,6 +217,7 @@ let
         open = true;
         optionsStep = options;
       };
+      graph = door graphSpec;
     in
     options;
 

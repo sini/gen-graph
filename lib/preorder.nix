@@ -223,6 +223,7 @@ let
     door
       {
         name = "gen-graph.foldPreorder";
+        next = foldPreorderRecordSpec;
         optional = [
           "visited"
           "maxDepth"
@@ -236,7 +237,7 @@ let
         else
           foldPreorderRecord (foldPreorderCore o)
       );
-  foldPreorderRecord = door {
+  foldPreorderRecordSpec = {
     name = "gen-graph.foldPreorder";
     required = [
       "roots"
@@ -247,6 +248,7 @@ let
     open = true;
     optionsStep = foldPreorder;
   };
+  foldPreorderRecord = door foldPreorderRecordSpec;
   foldPreorderCore =
     o:
     {
@@ -364,6 +366,7 @@ let
     door
       {
         name = "gen-graph.expandPreorder";
+        next = expandPreorderRecordSpec;
         optional = [
           "resolve"
           "emit"
@@ -379,7 +382,7 @@ let
         else
           expandPreorderRecord (expandPreorderCore o)
       );
-  expandPreorderRecord = door {
+  expandPreorderRecordSpec = {
     name = "gen-graph.expandPreorder";
     required = [
       "roots"
@@ -389,6 +392,7 @@ let
     open = true;
     optionsStep = expandPreorder;
   };
+  expandPreorderRecord = door expandPreorderRecordSpec;
   expandPreorderCore =
     o:
     {
@@ -470,6 +474,7 @@ let
     door
       {
         name = "gen-graph.foldReach";
+        next = foldReachRecordSpec;
         optional = [
           "visited0"
           "seen0"
@@ -484,7 +489,7 @@ let
         else
           foldReachRecord (foldReachCore o)
       );
-  foldReachRecord = door {
+  foldReachRecordSpec = {
     name = "gen-graph.foldReach";
     required = [
       "roots"
@@ -496,6 +501,7 @@ let
     open = true;
     optionsStep = foldReach;
   };
+  foldReachRecord = door foldReachRecordSpec;
   foldReachCore =
     o:
     {

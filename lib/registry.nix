@@ -301,12 +301,13 @@ let
     # on the record is refused as misplaced (`optionsStep`), never silently ignored.
     fromScan = prelude.door {
       name = "gen-graph.fromScan";
+      next = self.fromScanRecordSpec;
       optional = [
         "nodeData"
         "parents"
       ];
     } (o: self.fromScanRecord (self.fromScanCore o));
-    fromScanRecord = prelude.door {
+    fromScanRecordSpec = {
       name = "gen-graph.fromScan";
       required = [
         "items"
@@ -316,6 +317,7 @@ let
       open = true;
       optionsStep = self.fromScan;
     };
+    fromScanRecord = prelude.door self.fromScanRecordSpec;
     fromScanCore =
       o:
       {
@@ -680,6 +682,7 @@ in
 # The doors' unchecked cores and the record step live in `self` beside their doors; none is published.
 builtins.removeAttrs self [
   "fromRegistryCore"
+  "fromScanRecordSpec"
   "fromScanRecord"
   "fromScanCore"
 ]

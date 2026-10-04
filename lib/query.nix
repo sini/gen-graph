@@ -715,9 +715,10 @@ let
   # here and the record kept. A `where` given on the record is refused as misplaced (`optionsStep`).
   queryArrivals = door {
     name = "gen-graph.queryArrivals";
+    next = queryArrivalsRecordSpec;
     optional = [ "where" ];
   } (o: queryArrivalsRecord (queryArrivalsCore (o.where or (_: true))));
-  queryArrivalsRecord = door {
+  queryArrivalsRecordSpec = {
     name = "gen-graph.queryArrivals";
     required = [
       "graph"
@@ -728,6 +729,7 @@ let
     open = true;
     optionsStep = queryArrivals;
   };
+  queryArrivalsRecord = door queryArrivalsRecordSpec;
   queryArrivalsCore =
     where:
     {
@@ -1038,19 +1040,18 @@ let
   # are a node and an expression with no natural order between them, so the doubt is recorded
   # here and the record kept — the same reading as `queryArrivals`'s. Each door that takes it
   # binds its own record door once, guarded against that door's own options (`optionsStep`), so
-  # an option placed in the record is refused by name rather than silently ignored.
-  queryRecordOf =
-    optionsStep:
-    door {
-      inherit (optionsStep.__contract) name;
-      required = [
-        "graph"
-        "from"
-        "follow"
-      ];
-      open = true;
-      inherit optionsStep;
-    };
+  # an option placed in the record is refused by name rather than silently ignored. The spec is
+  # bound once and is also that door's `next` (den-hoag-ak8va), so `name` is passed in: reading it
+  # from `optionsStep.__contract` would read the door while its own `next` is being built.
+  queryRecordSpecOf = name: optionsStep: {
+    inherit name optionsStep;
+    required = [
+      "graph"
+      "from"
+      "follow"
+    ];
+    open = true;
+  };
 
   # Fold a combining operation over a query's answer set, in canonical
   # (sorted-node) order. The caller's (empty, combine) is expected to be a
@@ -1067,6 +1068,13 @@ let
     door
       {
         name = "gen-graph.queryFold";
+        next = {
+          positional = "combine";
+          next = {
+            positional = "empty";
+            next = queryFoldRecordSpec;
+          };
+        };
         optional = [
           "valueOf"
           "where"
@@ -1076,7 +1084,8 @@ let
         o: combine: empty:
         queryFoldRecord (queryFoldCore o combine empty)
       );
-  queryFoldRecord = queryRecordOf queryFold;
+  queryFoldRecordSpec = queryRecordSpecOf "gen-graph.queryFold" queryFold;
+  queryFoldRecord = door queryFoldRecordSpec;
   queryFoldCore =
     o: combine: empty: r:
     let
@@ -1127,6 +1136,7 @@ let
     door
       {
         name = "gen-graph.query";
+        next = queryRecordSpec;
         optional = [
           "mode"
           "where"
@@ -1160,7 +1170,8 @@ let
         else
           queryRecord (queryCore mode o)
       );
-  queryRecord = queryRecordOf query;
+  queryRecordSpec = queryRecordSpecOf "gen-graph.query" query;
+  queryRecord = door queryRecordSpec;
   queryCore =
     mode: o: r:
     let
