@@ -31,10 +31,10 @@
 # OQ13 ruled it the answer for a node id everywhere (arm a, 2026-09-26): the `genericClosure`
 # doors (`reachableFrom`, `reachableWhere`, `canReach`, `coScc`, `selfReachable`, `reachableVia`,
 # `selfReachableVia`, `fromRegistryDown`) route their targets through `identifier` now, not
-# `nodeKey`. `nodeKey` itself is UNCHANGED and still admits int/bool/float — it remains `query`'s
-# and `queryArrivals`'s own entry guard, whose closures key on `builtins.toJSON […]` rather than on
-# the raw id, so a scalar there never reaches `genericClosure`'s native comparator and the
-# type-heterogeneity abort this ruling closes does not arise for them (den-hoag-3w9e7's rescope).
+# `nodeKey`. `nodeKey` itself is UNCHANGED and still admits int/bool/float — it is the entry guard
+# for a door whose closure keys on `builtins.toJSON […]` rather than on the raw id, so a scalar there
+# never reaches `genericClosure`'s native comparator and the type-heterogeneity abort this ruling
+# closes does not arise for it (den-hoag-3w9e7's rescope).
 #
 # `who` is the door the caller invoked. A door binds its former once, `toKey = attrKey who;`, so a
 # key formed costs one application, as it did before the refusal existed.
@@ -91,8 +91,8 @@ let
   identifier = who: v: if builtins.isString v then v else throw (notAnIdentifier who v);
 
   # For a door whose body only hands the id to the caller's accessor, never to `genericClosure`'s
-  # own key comparator: `query`'s and `queryArrivals`' closures key on `builtins.toJSON […]`, not
-  # on the raw id, so a scalar id never reaches a native cross-type `<` there and this guard still
+  # own key comparator: such a closure keys on `builtins.toJSON […]`, not on the raw id, so a
+  # scalar id never reaches a native cross-type `<` there and `nodeKey` still
   # refuses only the shapes that are never a node id (den-hoag-bkdkg C1), keeping every scalar. The
   # `genericClosure` doors that key on the raw id (`reachableFrom` and its siblings) do NOT use this
   # guard: den-hoag-7gp66 OQ13 ruled (arm a, 2026-09-26) that a node id is a string, so their target
