@@ -892,14 +892,10 @@ in
     flake.testsError.labeled-door =
       let
         inherit (genGraph)
-          boundedBy
+          cyclicEdgesWhere
           forgetLabels
           labeledTranspose
-          query
-          queryArrivals
-          regex
           ;
-        x = regex.star (regex.lit "x");
         on = es: {
           nodes = [
             "a"
@@ -907,13 +903,9 @@ in
           ];
           labeledEdges = id: if id == "a" then es else [ ];
         };
-        walk =
-          graph:
-          query { } {
-            inherit graph;
-            from = "a";
-            follow = x;
-          };
+        # The label read: a `p` that reads its label and is never true makes `cyclicEdgesWhere` read
+        # every edge's label and leave the targets unread, so the refusal is the label read's.
+        walk = cyclicEdgesWhere (l: l == "none");
         refusal = surface: tail: "^gen-graph\\.${surface}: labeledEdges \"a\" returned ${tail}$";
         labelTail = "an edge whose label is of type int; a label is a letter of the query alphabet, a string";
         datumTail = "an edge whose target is of type set; a target is a node id, a string";
@@ -938,28 +930,28 @@ in
           });
           expectedError = {
             type = "ThrownError";
-            msg = refusal "query" "a set, not a list of \\{ label; target; \\}";
+            msg = refusal "cyclicEdgesWhere" "a set, not a list of \\{ label; target; \\}";
           };
         };
         test-an-element-that-is-not-an-edge-is-refused-by-name = {
           expr = walk (on [ "b" ]);
           expectedError = {
             type = "ThrownError";
-            msg = refusal "query" "an element of type string, not an edge \\{ label; target; \\}";
+            msg = refusal "cyclicEdgesWhere" "an element of type string, not an edge \\{ label; target; \\}";
           };
         };
         test-an-edge-with-no-label-is-refused-by-name = {
           expr = walk (on [ { target = "b"; } ]);
           expectedError = {
             type = "ThrownError";
-            msg = refusal "query" "an edge with no label";
+            msg = refusal "cyclicEdgesWhere" "an edge with no label";
           };
         };
         test-an-edge-with-no-target-is-refused-by-name = {
-          expr = walk (on [ { label = "x"; } ]);
+          expr = (forgetLabels (on [ { label = "x"; } ])).edges "a";
           expectedError = {
             type = "ThrownError";
-            msg = refusal "query" "an edge with no target";
+            msg = refusal "forgetLabels" "an edge with no target";
           };
         };
         test-a-non-string-label-is-refused-by-name = {
@@ -971,49 +963,7 @@ in
           ]);
           expectedError = {
             type = "ThrownError";
-            msg = refusal "query" labelTail;
-          };
-        };
-        test-a-non-string-target-is-refused-by-name-in-queryArrivals = {
-          expr = queryArrivals { } {
-            graph = on [
-              {
-                label = "x";
-                target = {
-                  n = "b";
-                };
-              }
-            ];
-            from = "a";
-            follow = x;
-            advance = s: s.distance + 1;
-          };
-          expectedError = {
-            type = "ThrownError";
-            msg = refusal "queryArrivals" "an edge whose target is of type set; a target is a node id, a string";
-          };
-        };
-        # The refusal names the surface that APPLIED the accessor, not the one that first forced
-        # the element: here `query` forces a label `boundedBy` read.
-        test-a-bounded-graph-refuses-as-boundedBy = {
-          expr = walk (
-            boundedBy
-              (_: [
-                {
-                  name = "m";
-                  admits = _: true;
-                }
-              ])
-              (on [
-                {
-                  label = 1;
-                  target = "b";
-                }
-              ])
-          );
-          expectedError = {
-            type = "ThrownError";
-            msg = refusal "boundedBy" labelTail;
+            msg = refusal "cyclicEdgesWhere" labelTail;
           };
         };
         # A surface that reads every target at a node refuses the datum a walk leaves unread.
@@ -1055,14 +1005,7 @@ in
           };
           expectedError = {
             type = "ThrownError";
-            msg = "^gen-graph\\.query: the graph's labeledEdges is a list, not a function from a node id to a list of \\{ label; target; \\}$";
-          };
-        };
-        test-an-absent-accessor-is-refused-by-name-where-no-formal-requires-it = {
-          expr = walk { nodes = [ "a" ]; };
-          expectedError = {
-            type = "ThrownError";
-            msg = "^gen-graph\\.query: the graph's labeledEdges is absent, not a function from a node id to a list of \\{ label; target; \\}$";
+            msg = "^gen-graph\\.cyclicEdgesWhere: the graph's labeledEdges is a list, not a function from a node id to a list of \\{ label; target; \\}$";
           };
         };
         # FALSIFIER, not a door: a pattern formal is a function, and what a function does with a
@@ -1078,7 +1021,7 @@ in
             msg = "expected a set but found a string";
           };
         };
-        # ABSENCE IS A DECISION (`lib/query.nix`, THE LABELED CONTRACT IS TOTAL): at the two
+        # ABSENCE IS A DECISION (`lib/edge-maps.nix`, THE LABELED RECORD): at the two
         # surfaces taking the labeled record, `labeledEdges` stays a required field of their door,
         # so its omission reports itself at the call, by name and catchably (P2), rather than
         # answering from `nodes` alone.
@@ -1104,13 +1047,9 @@ in
     flake.testsError.caller-results =
       let
         inherit (genGraph)
-          boundedBy
           cyclicEdgesWhere
-          query
-          queryArrivals
-          regex
+          forgetLabels
           ;
-        x = regex.star (regex.lit "x");
         graph = {
           nodes = [
             "a"
@@ -1128,114 +1067,28 @@ in
             else
               [ ];
         };
-        q = opts: qOn graph opts;
-        qOn =
-          g: opts:
-          query opts {
-            graph = g;
-            from = "a";
-            follow = x;
-          };
-        bounded = marks: (boundedBy (_: marks) graph).withheld "a";
+        edgesOf = g: (forgetLabels g).edges "a";
         refusal = surface: tail: {
           type = "ThrownError";
           msg = "^gen-graph\\.${surface}: ${tail}$";
         };
       in
       {
-        test-a-non-bool-where-is-refused-by-name = {
-          expr = q { where = _: 1; };
-          expectedError = refusal "query" "where \"a\" returned a int, not a bool";
-        };
-        test-a-non-function-where-is-refused-by-name = {
-          expr = q { where = 1; };
-          expectedError = refusal "query" "where is a int, not a function returning a bool";
-        };
         # a set whose `__functor` is not a function is not callable (gen-view's `callable`)
-        test-a-non-function-functor-where-is-refused-by-name = {
-          expr = q {
-            where = {
-              __functor = 1;
-            };
-          };
-          expectedError = refusal "query" "where is a set, not a function returning a bool";
-        };
         test-a-non-function-functor-labeledEdges-is-refused-by-name = {
-          expr = qOn (
+          expr = edgesOf (
             graph
             // {
               labeledEdges = {
                 __functor = 1;
               };
             }
-          ) { };
-          expectedError = refusal "query" "the graph's labeledEdges is a set, not a function from a node id to a list of \\{ label; target; \\}";
-        };
-        test-a-non-int-advance-is-refused-by-name-where-the-distance-is-read = {
-          expr = map (a: a.distance) (
-            queryArrivals { } {
-              inherit graph;
-              from = "a";
-              follow = x;
-              advance = _: "far";
-            }
           );
-          expectedError = refusal "queryArrivals" "advance on the step \"a\" -x-> \"b\" returned a string, not an int, the distance after the step";
-        };
-        test-a-non-string-groupBy-is-refused-by-name = {
-          expr = q {
-            mode = "visible";
-            groupBy = _: 1;
-          };
-          expectedError = refusal "queryVisible" "groupBy on the answer at \"a\" returned a int, not a string, the answer's competition key";
-        };
-        test-a-non-list-marksOf-is-refused-by-name = {
-          expr = (boundedBy (_: 1) graph).labeledEdges "a";
-          expectedError = refusal "boundedBy" "marksOf \"a\" returned a int, not a list of marks \\{ name; admits; \\}";
-        };
-        test-a-non-mark-is-refused-by-name = {
-          expr = bounded [ 1 ];
-          expectedError = refusal "boundedBy" "marksOf \"a\" returned a int, not a mark \\{ name; admits; \\}";
-        };
-        test-a-mark-with-no-admits-is-refused-by-name = {
-          expr = bounded [ { name = "m"; } ];
-          expectedError = refusal "boundedBy" "marksOf \"a\" returned a mark with no admits, not a mark \\{ name; admits; \\}";
-        };
-        test-a-non-function-admits-is-refused-by-name = {
-          expr = bounded [
-            {
-              name = "m";
-              admits = 1;
-            }
-          ];
-          expectedError = refusal "boundedBy" "a mark's admits is a int, not a function returning a bool";
-        };
-        test-a-non-bool-admits-is-refused-by-name = {
-          expr = bounded [
-            {
-              name = "m";
-              admits = _: 1;
-            }
-          ];
-          expectedError = refusal "boundedBy" "a mark's admits on the label \"x\" returned a int, not a bool";
-        };
-        test-a-mark-with-no-name-is-refused-by-name = {
-          expr = bounded [ { admits = _: false; } ];
-          expectedError = refusal "boundedBy" "marksOf \"a\" returned a mark with no name; `withheld` reports a mark by its name";
+          expectedError = refusal "forgetLabels" "the graph's labeledEdges is a set, not a function from a node id to a list of \\{ label; target; \\}";
         };
         test-a-non-bool-p-is-refused-by-name = {
           expr = cyclicEdgesWhere (_: 1) graph;
           expectedError = refusal "cyclicEdgesWhere" "p on the label \"x\" returned a int, not a bool";
-        };
-        # FALSIFIER, not a door: a pattern formal is a function, and what it does with a node id is
-        # not decidable before applying it. UNANCHORED, because the text is Nix's — the day a door
-        # covers this input, the cell reds and says so.
-        test-a-pattern-formal-where-still-aborts-on-a-node-id = {
-          expr = q { where = { x }: true; };
-          expectedError = {
-            type = "TypeError";
-            msg = "expected a set but found a string";
-          };
         };
       };
 
@@ -1260,20 +1113,7 @@ in
         X = {
           name = "a";
         };
-        qa = from: {
-          graph = genGraph.labeledFrom {
-            l = g.edges;
-          } g.nodes;
-          inherit from;
-          follow = genGraph.regex.parse "l*";
-        };
         str = who: "^gen-graph\\.${who}: got set, expected a node identifier \\(a string\\)$";
-        # `scalar` stays the message for `query`/`queryArrivals` only (den-hoag-7gp66 OQ13 does not
-        # reach them, `lib/query.nix`'s own comment says why); every `genericClosure` door OQ13 does
-        # reach (reachableFrom, reachableWhere, canReach, selfReachable, coScc, reachableVia,
-        # selfReachableVia) moved to `str` below (den-hoag-3w9e7).
-        scalar =
-          who: "^gen-graph\\.${who}: got set, expected a node identifier \\(a string or another scalar\\)$";
         cell = msg: expr: {
           inherit expr;
           expectedError = {
@@ -1302,10 +1142,6 @@ in
         test-selfReachableVia = cell (str "selfReachableVia") (
           genGraph.selfReachableVia (genGraph.hoistEdges g) X
         );
-        test-query = cell (scalar "query") (genGraph.query { } (qa X));
-        test-queryArrivals = cell (scalar "queryArrivals") (
-          genGraph.queryArrivals { } (qa X // { advance = _: 1; })
-        );
       };
 
     # THE KEY FORMER (den-hoag-2m5iy, ADR-0025 item 1): a non-string reaching a site that KEYS an
@@ -1322,9 +1158,6 @@ in
           };
         };
         node = who: type: "^gen-graph\\.${who}: got ${type}, expected a node identifier \\(a string\\)$";
-        label =
-          who: type:
-          "^gen-graph\\.${who}: got ${type}, expected a label \\(a letter of the query alphabet, a string\\)$";
       in
       {
         test-directDependents-non-string-edge-target = cell (node "directDependents" "int") (
@@ -1350,16 +1183,6 @@ in
             edges = _: [ ];
           } 1
         );
-        test-ranksOf-null-label = cell (label "ranksOf" "null") (
-          genGraph.ranksOf {
-            labels = [
-              "x"
-              null
-              "y"
-            ];
-          }
-        );
-        test-rankOf-null-label = cell (label "rankOf" "null") (genGraph.rankOf { labels = [ "x" ]; } null);
       };
 
     # THE PARTITION FAMILY'S DOMAIN IS A CLOSED ACCESSOR (ADR-0025 item 1). An edge to x ∉ `nodes`
@@ -1741,10 +1564,6 @@ in
           cell "fromRegistry"
             "parent \"b\" returned a null, not a function from a registry entry to a node id or null"
             (F.binary.fromRegistry-parent);
-        test-binary-queryFold-combine =
-          cell "queryFold"
-            "combine on the accumulator returned a int, not a function from a value to the next accumulator"
-            (F.binary.queryFold-combine);
         test-binary-seededFixpoint =
           cell "seededFixpoint"
             "step at iteration 0 returned a set, not a function from the accumulator to an edge map"
@@ -1796,9 +1615,6 @@ in
         test-nf-fromScan-scan =
           cell "fromScan" "scan is a int, not a function returning a list of references"
             (nf "fromScan-scan");
-        test-nf-labeledFrom =
-          cell "labeledFrom" "perLabel.x is a int, not a function returning a list of node ids"
-            (nf "labeledFrom");
         test-nf-materializeParents =
           cell "materializeParents" "parent is a int, not a function returning a node id or null"
             (nf "materializeParents");
@@ -1854,13 +1670,6 @@ in
         test-pass-expandPreorder-resolve =
           cell "expandPreorder" "resolve is a int, not a function returning a payload"
             (F.passThrough.expandPreorder-resolve 1);
-        test-pass-queryFold-combine =
-          cell "queryFold"
-            "combine is a int, not a function returning a function from a value to the next accumulator"
-            (F.passThrough.queryFold-combine 1);
-        test-pass-queryFold-valueOf =
-          cell "queryFold" "valueOf is a int, not a function returning a value"
-            (F.passThrough.queryFold-valueOf 1);
         test-pass-select-nodeData =
           cell "select" "nodeData is a int, not a function returning a node's data"
             (F.passThrough.select-nodeData 1);
@@ -1897,9 +1706,6 @@ in
         test-res-fromScan-scan =
           cell "fromScan" "scan on the item \"a\" returned a int, not a list of references"
             (res "fromScan-scan");
-        test-res-labeledFrom =
-          cell "labeledFrom" "perLabel.x \"a\" returned a int, not a list of node ids"
-            (res "labeledFrom");
         test-res-materializeParents =
           cell "materializeParents" "parent \"a\" returned a set, not a node id or null"
             (res "materializeParents");
@@ -2245,77 +2051,5 @@ in
         )
       );
 
-    # ── den-hoag-nvrl1: THE QUERY FAMILY'S OPTIONS, ONE CLOSED SET IN EVERY MODE (P2) ──
-    # Where an unknown field once aborted uncatchably naming an internal (`all`, `paths`) or was
-    # dropped silently (`series`), each mode now refuses it by name at `query opts`, naming the door
-    # the caller called; a missing record field, and an option given on the record, are refused at
-    # the record's own application. `ci/tests/p2-doors.nix` asserts each refusal catchable.
-    flake.testsError.p2-query-closure =
-      let
-        g = genGraph.labeledFrom {
-          x = _: [ ];
-        } [ "a" ];
-        q = {
-          graph = g;
-          from = "a";
-          follow = genGraph.regex.parse "x*";
-        };
-        modes = {
-          all = { };
-          series = { };
-          paths = { };
-          visible.groupBy = a: a.node;
-          layers = { };
-          fixpoint = {
-            empty = 0;
-            combine = n: _: n + 1;
-          };
-        };
-        withMode = m: modes.${m} // { mode = m; };
-        esc = builtins.replaceStrings [ "." "(" ")" ] [ "\\." "\\(" "\\)" ];
-        cell = expr: msg: {
-          expr = builtins.seq expr true;
-          expectedError = {
-            type = "ThrownError";
-            msg = "^" + esc msg + "$";
-          };
-        };
-        options = "'mode', 'where', 'order', 'groupBy', 'combine', 'empty', 'valueOf'";
-        perMode = m: [
-          {
-            name = "test-${m}-an-unknown-option-is-refused-by-name";
-            value =
-              cell (genGraph.query (withMode m // { notAFieldOfThisDoor = 1; }))
-                "gen-graph.query: 'notAFieldOfThisDoor' is not an option of this door; the options are closed (accepted: ${options}) (in prelude.checkOptions)";
-          }
-          {
-            name = "test-${m}-a-missing-record-field-is-refused-by-name";
-            value =
-              cell (genGraph.query (withMode m) (builtins.removeAttrs q [ "follow" ]))
-                "gen-graph.query: required field 'follow' is missing (required: 'graph', 'from', 'follow') (in prelude.checkRequired)";
-          }
-          {
-            name = "test-${m}-an-option-on-the-record-is-refused-by-name";
-            value =
-              cell (genGraph.query (withMode m) (q // { where = _: true; }))
-                "gen-graph.query: 'where' is an option of gen-graph.query, not a field of this record (in prelude.checkGuarded)";
-          }
-        ];
-      in
-      builtins.listToAttrs (builtins.concatMap perMode (builtins.attrNames modes))
-      // {
-        test-queryFold-an-unknown-option-is-refused-by-name =
-          cell (genGraph.queryFold { notAFieldOfThisDoor = 1; })
-            "gen-graph.queryFold: 'notAFieldOfThisDoor' is not an option of this door; the options are closed (accepted: 'valueOf', 'where') (in prelude.checkOptions)";
-        test-queryFold-a-missing-record-field-is-refused-by-name =
-          cell (genGraph.queryFold { } (a: _: a) 0 (builtins.removeAttrs q [ "graph" ]))
-            "gen-graph.queryFold: required field 'graph' is missing (required: 'graph', 'from', 'follow') (in prelude.checkRequired)";
-        test-an-unknown-mode-is-refused-at-the-options = cell (genGraph.query {
-          mode = "bogus";
-        }) "gen-graph.query: unknown mode 'bogus'";
-        test-fixpoint-without-its-monoid-is-refused-at-the-options =
-          cell (genGraph.query { mode = "fixpoint"; })
-            "gen-graph.query: mode \"fixpoint\" requires the option 'combine' (the fold's monoid is `combine` and `empty`)";
-      };
   };
 }

@@ -1,30 +1,34 @@
 # ── THE LABELED TRANSPOSE ───────────────────────────────────────────────────────
 # The claim is not that a reverse index exists — `global.nix` has had one — but that
-# the reverse read CARRIES THE LABEL, so a reverse query is the forward construction
-# over a transposed accessor with the query's own parameters untouched. The control
-# that makes the claim mean anything is the composition it replaces: forgetting the
-# labels and transposing the plain accessor, which answers with bare targets and has
-# nothing left for a label regex to read.
+# the reverse read CARRIES THE LABEL. The control that makes the claim mean anything is
+# the composition it replaces: forgetting the labels and transposing the plain accessor,
+# which answers with bare targets and has nothing left for a label to be read from.
 { genGraph, ... }:
 let
   inherit (genGraph)
-    labeledFrom
     labeledFixtures
     labeledTranspose
     forgetLabels
     transpose
-    query
-    regex
     ;
-  r = regex;
-  sorted = builtins.sort builtins.lessThan;
   byJson = builtins.sort (a: b: builtins.toJSON a < builtins.toJSON b);
 
-  diamond =
-    labeledFrom
-      {
-        e =
-          id:
+  # s —e→ l, s —e→ r, l —e→ t, r —e→ t, written as data.
+  diamond = {
+    nodes = [
+      "l"
+      "r"
+      "s"
+      "t"
+    ];
+    labeledEdges =
+      id:
+      map
+        (target: {
+          label = "e";
+          inherit target;
+        })
+        (
           {
             s = [
               "l"
@@ -33,14 +37,9 @@ let
             l = [ "t" ];
             r = [ "t" ];
           }
-          .${id} or [ ];
-      }
-      [
-        "l"
-        "r"
-        "s"
-        "t"
-      ];
+          .${id} or [ ]
+        );
+  };
 in
 {
   flake.tests.labeled-transpose = {
@@ -59,7 +58,7 @@ in
     };
     test-labeled-transpose-CONTROL-forgetting-first-erases-the-label = {
       # the composition this surface replaces: same graph, same run, bare targets —
-      # a label regex has nothing to step against
+      # no label is left to read
       expr = (transpose (forgetLabels diamond)).edges "t";
       expected = [
         "l"
@@ -70,16 +69,27 @@ in
       # two labels between the same pair must both survive the reversal
       expr =
         let
-          g =
-            labeledFrom
-              {
-                a = id: if id == "s" then [ "x" ] else [ ];
-                b = id: if id == "s" then [ "x" ] else [ ];
-              }
-              [
-                "s"
-                "x"
-              ];
+          g = {
+            nodes = [
+              "s"
+              "x"
+            ];
+            labeledEdges =
+              id:
+              if id == "s" then
+                [
+                  {
+                    label = "a";
+                    target = "x";
+                  }
+                  {
+                    label = "b";
+                    target = "x";
+                  }
+                ]
+              else
+                [ ];
+          };
         in
         byJson ((labeledTranspose g).labeledEdges "x");
       expected = [
@@ -114,80 +124,6 @@ in
         == byJson (labeledFixtures.world.labeledEdges n)
       ) labeledFixtures.world.nodes;
       expected = true;
-    };
-    test-labeled-transpose-serves-the-reverse-read-with-one-construction = {
-      # THE POINT: the same query expression, the same follow, the same mode — only
-      # the accessor is transposed. Forward from `root` reaches the contained nodes;
-      # reverse from `u1` reaches its containers.
-      expr = {
-        forward = sorted (
-          query
-            {
-              mode = "all";
-            }
-            {
-              graph = labeledFixtures.world;
-              from = "root";
-              follow = r.plus (r.lit "contains");
-            }
-        );
-        reverse = sorted (
-          query
-            {
-              mode = "all";
-            }
-            {
-              graph = labeledTranspose labeledFixtures.world;
-              from = "u1";
-              follow = r.plus (r.lit "contains");
-            }
-        );
-      };
-      expected = {
-        forward = [
-          "h1"
-          "h2"
-          "u1"
-          "u2"
-          "vm1"
-        ];
-        reverse = [
-          "h1"
-          "root"
-        ];
-      };
-    };
-    test-labeled-transpose-does-not-cross-labels = {
-      # reversing `member` must not make `contains` reachable from the same root
-      expr = sorted (
-        query
-          {
-            mode = "all";
-          }
-          {
-            graph = labeledTranspose labeledFixtures.world;
-            from = "u1";
-            follow = r.plus (r.lit "member");
-          }
-      );
-      expected = [ "g1" ];
-    };
-    test-labeled-transpose-cycle-terminates = {
-      expr = sorted (
-        query
-          {
-            mode = "all";
-          }
-          {
-            graph = labeledTranspose labeledFixtures.cyclic;
-            from = "m";
-            follow = r.parse "member contains*";
-          }
-      );
-      expected = [
-        "a"
-        "b"
-      ];
     };
     test-labeled-transpose-node-with-no-in-edges = {
       expr = (labeledTranspose labeledFixtures.world).labeledEdges "root";

@@ -36,6 +36,20 @@
         inherit genGraph;
         genPrelude = prelude;
       };
-      extraModules = [ ./tests-error.nix ];
+      extraModules = [
+        ./tests-error.nix
+        # The resolution surfaces the one calculus retired (den-hoag-gayc D16): each is a TOMBSTONE
+        # (`lib/default.nix`), so `checks.root-surface` excludes it from the walk, and the generated
+        # `root-surface-retired.test-retired-<name>` cell pins this exact message at the root seam —
+        # a resurrected or reworded tombstone reds.
+        {
+          gen.ci.rootSurface.retired = {
+            boundedBy = "gen-graph: `boundedBy` is retired. Boundary marks are read inside gen-scope's `resolve`: each node of the evaluation declares `marks`, a stated `bound` narrows further, and the result's `withheld` names every edge a mark withheld.";
+            labeledFrom = "gen-graph: `labeledFrom` is retired. A graph to resolve over is lifted into a gen-scope evaluated scope and walked by `resolve`; a labeled record kept as data for `forgetLabels`, `labeledTranspose` or `cyclicEdgesWhere` is written by hand, `{ nodes = [ … ]; labeledEdges = id: [ { label; target; } … ]; }`.";
+            query = "gen-graph: `query` is retired. Resolution is gen-scope's one calculus over an evaluated scope: `resolve { wf = wellFormed { alphabet = [ … ]; expression = \"…\"; }; mode = \"reachable\"; dataFilter = f; } self id` — modes `all` / `paths` / `visible` are `reachable` / `witnesses` / `visible`, and a `where` predicate `p` is `dataFilter = n: if p n then true else null`. Every evaluation `resolve` reads declares `marks` (`_: _: [ ]` states none).";
+            regex = "gen-graph: `regex` is retired. A label expression is gen-scope's `wellFormed { alphabet; expression; }`, written as a string or built by the published constructors `wfl` (`lit`, `seq`, `alt`, `star`, `opt`, `plus`, `any`); the derivative engine is not published.";
+          };
+        }
+      ];
     };
 }

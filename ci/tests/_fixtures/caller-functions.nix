@@ -100,7 +100,6 @@ let
     mkProjectionFindings-childBearing = f: projection G.mkProjectionFindings { childBearing = f; } okSa;
     mkProjectionFindings-isNode = f: projection G.mkProjectionFindings { isNode = f; } okSa;
     mkProjectionFindings-structuralAttributesOf = f: projection G.mkProjectionFindings { } f;
-    labeledFrom = f: labeled { x = f; };
     fromRegistry-parent =
       f:
       G.ancestorsOf { } (G.fromRegistry
@@ -157,15 +156,6 @@ let
       // over;
     in
     mk fs.childBearing fs.isNode sa "a";
-  labeled =
-    perLabel:
-    (G.forgetLabels (
-      G.labeledFrom perLabel [
-        "a"
-        "b"
-      ]
-    )).edges
-      "a";
 
   # the lawful function for each construction, and a result of the wrong type at the same arity
   lawful = {
@@ -198,7 +188,6 @@ let
     mkProjectionFindings-childBearing = _: false;
     mkProjectionFindings-isNode = _: true;
     mkProjectionFindings-structuralAttributesOf = okSa;
-    labeledFrom = id: if id == "a" then [ "b" ] else [ ];
     fromRegistry-parent = _: e: e.up or null;
   };
   malformed = {
@@ -231,7 +220,6 @@ let
     mkProjectionFindings-childBearing = _: 1;
     mkProjectionFindings-isNode = _: 1;
     mkProjectionFindings-structuralAttributesOf = _: 1;
-    labeledFrom = _: 1;
     fromRegistry-parent = _: _: { };
   };
   shapes = {
@@ -294,7 +282,6 @@ let
       a = { };
     }) "a";
     expandPreorder-emit = passThrough.expandPreorder-emit (_: 0);
-    queryFold-combine = passThrough.queryFold-combine (_: 0);
   };
 
   # Functions the library applies and whose results it hands on unread: a door each, and no result
@@ -303,15 +290,11 @@ let
     select-nodeData = f: G.select (g // { nodeData = f; }) (d: d == { v = "a"; });
     expandPreorder-resolve = f: (expanded { resolve = f; }).nodes;
     expandPreorder-emit = f: (expanded { emit = f; }).nodes;
-    queryFold-combine = f: folded { combine = f; };
-    queryFold-valueOf = f: folded { valueOf = f; };
   };
   passLawful = {
     select-nodeData = g.nodeData;
     expandPreorder-resolve = x: x;
     expandPreorder-emit = _: p: p;
-    queryFold-combine = n: v: n + builtins.stringLength v;
-    queryFold-valueOf = x: x;
   };
   # `over` is an option of `expandPreorder` (`resolve`, `emit`), so it is the options step (P2).
   expanded =
@@ -321,33 +304,6 @@ let
       key = x: x;
       inherit (g) edges;
     };
-  # `over` replaces the monoid (`combine`) or an option (`valueOf`), each at its own position (P2).
-  folded =
-    over:
-    let
-      combine = over.combine or (n: v: n + builtins.stringLength v);
-    in
-    G.queryFold (builtins.removeAttrs over [ "combine" ]) combine 0 ({
-      graph = {
-        nodes = [
-          "a"
-          "b"
-        ];
-        labeledEdges =
-          id:
-          if id == "a" then
-            [
-              {
-                label = "x";
-                target = "b";
-              }
-            ]
-          else
-            [ ];
-      };
-      from = "a";
-      follow = G.regex.star (G.regex.lit "x");
-    });
 in
 {
   inherit

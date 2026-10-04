@@ -55,7 +55,7 @@ let
     s.success && isDoor s.value && s.value.__contract.open
   ) (builtins.attrNames optionDoors);
   # Every chained door: the derived ones, and each fixture row pairing an options step with a record
-  # step further along (`queryFold`'s record is its fourth operand; `closureOf` is not a surface name).
+  # step further along (`closureOf` is not a surface name).
   chained = builtins.filter (n: builtins.elem n chainedAtOnce || F.records ? ${n}) (
     builtins.attrNames (optionDoors // F.options)
   );
@@ -151,20 +151,18 @@ in
           "foldReach"
           "fromScan"
           "pathsBetween"
-          "query"
-          "queryArrivals"
           "seededFixpoint"
           "topoOrder"
           "topoOrderKahn"
           "transitiveClosure"
           "transitiveReduction"
         ];
-        # the fifteen, `queryFold` and `closureOf`
-        chained = 17;
+        # the thirteen and `closureOf`
+        chained = 14;
       };
     };
     # PARITY (den-hoag-ak8va, gate C1; gating): every chained door publishes its record step AS
-    # DATA, `__contract.next` (past `queryFold`'s positional `combine` and `empty`), and the nest,
+    # DATA, `__contract.next` (past any positional nodes), and the nest,
     # read without application, equals the contract the record step answers with. `chained` is
     # the surface enumeration above, so a chain added later is covered without a new row.
     test-every-chained-door-publishes-its-record-step-as-next = {
@@ -182,16 +180,6 @@ in
           value = true;
         }) chained
       );
-    };
-    test-queryFold-publishes-its-positional-steps = {
-      expr = map (c: c.positional or null) [
-        genGraph.queryFold.__contract.next
-        genGraph.queryFold.__contract.next.next
-      ];
-      expected = [
-        "combine"
-        "empty"
-      ];
     };
     test-every-record-step-publishes-the-row-as-its-contract = {
       expr = each (d: {

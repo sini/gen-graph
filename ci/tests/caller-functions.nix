@@ -1,9 +1,9 @@
 # ── EVERY OTHER CALLER FUNCTION'S RESULT IS REFUSED WHERE IT IS READ (den-hoag-hekcx) ───────────
-# `edges` (den-hoag-0mqv1) and the query's functions (den-hoag-pqp4z) were the first two
+# `edges` (den-hoag-0mqv1) and the retired query's functions (den-hoag-pqp4z) were the first two
 # populations. The rest of the published surface applies `pred`, `prune`, `parent`, `succ`,
 # `lessThan`, `keyOf`, `key`, `expand`, `project`, `itemKey`, `step`, `refusal`, `scan`,
-# `isRegistered`, `childBearing`, `isNode`, `structuralAttributesOf` and `perLabel`'s members, and
-# applies `nodeData`, `resolve`, `emit`, `combine` and `valueOf` without reading their results.
+# `isRegistered`, `childBearing`, `isNode` and `structuralAttributesOf`, and applies `nodeData`,
+# `resolve` and `emit` without reading their results.
 # Unguarded, a result of the wrong type aborted past `tryEval`, a non-function aborted on its first
 # application, a binary function's under-applied first result aborted on its second, and
 # `materializeParents` carried a structured `parent` result into its answer at exit 0. The
@@ -95,8 +95,6 @@ in
           "b"
           "c"
         ];
-        queryFold-combine = 2;
-        queryFold-valueOf = 2;
       };
     };
     # CONTROL: the lawful function answers at every construction, so the refusals above are the
@@ -115,8 +113,8 @@ in
         materializeParentsScalar = surfaces.materializeParents (_: 1);
       };
       expected = {
-        admitted = 30;
-        total = 31;
+        admitted = 29;
+        total = 30;
         select = [ "a" ];
         ancestorsOf = [
           "b"

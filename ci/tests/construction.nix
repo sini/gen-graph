@@ -1,5 +1,5 @@
 # ── THE CONSTRUCTION FAMILY REFUSES MALFORMED CALLER DATA BY NAME (den-hoag-ndte) ───────────────
-# `mkGraph`, `fromScan`, `fromRegistry`, `labeledFrom`, `field` and `fields` read caller data, and
+# `mkGraph`, `fromScan`, `fromRegistry`, `field` and `fields` read caller data, and
 # a read that met the wrong shape aborted past `tryEval`. Each read is guarded where it already
 # was (`lib/registry.nix`), so every malformed construction refuses catchably, and a read that
 # never met the defect answers exactly as before. The constructions are
