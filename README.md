@@ -1551,8 +1551,8 @@ nix flake check ./ci               # the batch gate, which covers ./ci#tests; un
 `_`-prefixed included — and the remedy is `git add` or a move. The unguarded forms read a
 git-filtered copy of the tree, so an untracked cell is silently absent and the run stays green.
 
-**815 tests** across **44 suites** in `./ci#tests`
-(`nix-unit --flake ./ci#tests` ⇒ `815/815 successful`) (`arms`, `arrivals`,
+**817 tests** across **44 suites** in `./ci#tests`
+(`nix-unit --flake ./ci#tests` ⇒ `817/817 successful`) (`arms`, `arrivals`,
 `boundaries`, `caller-functions`, `caller-results`, `closure-order`, `closure-targets`,
 `construction`, `context-node-names`,
 `declared-edges`, `doors`, `edge-maps`, `edges-results`, `endpoints`, `entry`, `enumerate`,
