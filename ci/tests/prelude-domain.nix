@@ -1,7 +1,7 @@
 # THE DEDUP'S DOMAIN, AS A CONTRACT GATE.
 #
 # `prelude.unique` is the dedup five call sites in `lib/` depend on — `edge-maps.materialize`
-# and `unionEdges`, `fixpoint`'s closure step, `query`'s labeled edges and `registry`'s edge
+# and `unionEdges`, `fixpoint`'s closure step, `forgetLabels`' projection and `registry`'s edge
 # index — and gen-graph hands it node ids, which are strings.
 #
 # ★ THE CONTRACT IS TOTALITY, AND THE STRING PATH IS AN OPTIMIZATION RATHER THAN A DOMAIN

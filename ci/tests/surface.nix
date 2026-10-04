@@ -4,7 +4,7 @@
 # library later and the container does not, so a construct that is only reachable THROUGH a
 # composition would have to be rebuilt at the fold, while a published one moves intact. This cell
 # is what makes "published" a checked fact: a construct quietly demoted to an internal binding,
-# reachable only as a side effect of calling `query`, takes this cell red rather than being noticed
+# reachable only as a side effect of calling another surface, takes this cell red rather than being noticed
 # at the fold. A rename or a drop is intentional and moves the list below in the same commit;
 # anything else is drift.
 #
@@ -18,7 +18,7 @@
 # arming. The control below reads the SAME `pinned` list at an input the main arm never supplies.
 #
 # ★ SORTED WITH NIX'S OWN `<`, NEVER A SHELL `sort`. Nix orders strings bytewise and a locale
-# collation puts `coScc` and `ranksOf` in a different order, so a pin generated through a shell
+# collation puts `coScc` and `compose` in a different order, so a pin generated through a shell
 # `sort` reads FALSE on a correct tree — a false red indistinguishable from a missing export.
 { genGraph, ... }:
 let
@@ -82,15 +82,9 @@ let
     "mkProjectionFindings"
     "mkSpawnedNodeRef"
     "nodeRefFindings"
-    "pathLess"
     "pathsBetween"
     "phaseOrder"
     "query"
-    "queryArrivals"
-    "queryFold"
-    "rankOf"
-    "rankWordOf"
-    "ranksOf"
     "reachableFrom"
     "reachableVia"
     "reachableWhere"
@@ -108,7 +102,6 @@ let
     "transitiveReduction"
     "transpose"
     "unionEdges"
-    "wordLess"
   ];
 in
 {

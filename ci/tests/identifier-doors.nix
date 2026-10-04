@@ -20,34 +20,12 @@ let
   X = {
     name = "a";
   };
-  lg =
-    G.labeledFrom
-      {
-        l = id: es.${id} or [ ];
-      }
-      [
-        "a"
-        "b"
-      ];
-  qa = from: {
-    graph = lg;
-    inherit from;
-    follow = G.regex.parse "l*";
-  };
   refused = v: !(builtins.tryEval (builtins.deepSeq v true)).success;
 
   # Integer ids, under an accessor keyed on them. The doors whose bodies only hand the id to the
   # accessor, `genericClosure` and `==` answer correctly here, and the guard keeps them doing so.
   ie = n: if n < 3 then [ (n + 1) ] else [ ];
   succ = n: map (k: { key = k; }) (ie n);
-  iq = {
-    graph = {
-      labeledEdges = _: [ ];
-      nodes = [ 0 ];
-    };
-    from = 0;
-    follow = G.regex.parse "l*";
-  };
 in
 {
   flake.tests.identifier-doors = {
@@ -70,10 +48,8 @@ in
         (G.coScc g X "b")
         (G.reachableVia (G.hoistEdges g) X)
         (G.selfReachableVia (G.hoistEdges g) X)
-        (G.query { } (qa X))
-        (G.queryArrivals { } (qa X // { advance = _: 1; }))
       ];
-      expected = builtins.genList (_: true) 17;
+      expected = builtins.genList (_: true) 15;
     };
     test-a-member-id-still-answers-at-every-identifier-door = {
       expr = [
@@ -89,8 +65,6 @@ in
         (G.directDependentsOf g "b")
         (G.coScc g "a" "b")
         (G.reachableVia (G.hoistEdges g) "a")
-        (G.query { } (qa "a"))
-        (map (a: a.node) (G.queryArrivals { } (qa "a" // { advance = _: 1; })))
       ];
       expected = [
         [ "b" ]
@@ -110,14 +84,6 @@ in
         [ "a" ]
         false
         [ "b" ]
-        [
-          "a"
-          "b"
-        ]
-        [
-          "a"
-          "b"
-        ]
       ];
     };
     # den-hoag-bkdkg C1 held these bodies key-polymorphic; den-hoag-7gp66 OQ13 (arm a, 2026-09-26)
@@ -137,22 +103,10 @@ in
       ];
       expected = builtins.genList (_: true) 8;
     };
-    # `query`/`queryArrivals` key on `builtins.toJSON […]`, never the raw id (§ key.nix, `nodeKey`'s
-    # doc comment): bkdkg C1's reasoning still holds for these two, unreached by OQ13's ruling.
-    test-the-toJSON-keyed-doors-still-answer-on-integer-ids = {
-      expr = [
-        (map (a: a.node) (G.queryArrivals { } (iq // { advance = _: 1; })))
-        (G.query { mode = "series"; } iq)
-      ];
-      expected = [
-        [ 0 ]
-        [ 0 ]
-      ];
-    };
     # The guards live in the door bodies, so the published formals survive: a guard at an export
     # wrapper would read `{ }` here (measured on the rejected prototype, `roots`). Each door is a
     # `prelude.door` functor now (P2), so the formals are read through the functor-aware reader
-    # (OQ15), and a curried door publishes its FIRST step: `ancestorsOf`'s and `queryFold`'s options.
+    # (OQ15), and a curried door publishes its FIRST step: `ancestorsOf`'s options.
     test-the-published-argument-lists-survive = {
       expr = map genPrelude.functionArgs [
         G.roots
@@ -160,7 +114,6 @@ in
         G.ancestorsOf
         G.dependentsOf
         G.impactOf
-        G.queryFold
       ];
       expected = [
         {
@@ -176,10 +129,6 @@ in
         {
           edges = false;
           nodes = false;
-        }
-        {
-          valueOf = true;
-          where = true;
         }
       ];
     };

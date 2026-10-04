@@ -1,19 +1,17 @@
 # ── A CALLER FUNCTION'S RESULT IS REFUSED WHERE IT IS CONSUMED (den-hoag-pqp4z) ───────────────
-# `where`, `groupBy`, `advance`, `marksOf`, a mark's `admits` and `cyclicEdgesWhere`'s `p` are
-# applied by the labeled surfaces and their results read. Unguarded, a result of the wrong type
-# aborted past `tryEval` (`expected a Boolean but found an integer`), or — `advance` — was carried
-# into the answer at exit 0. These cells assert every arm is refused CATCHABLY; the messages are
-# pinned on `testsError` (`ci/tests-error.nix`, `caller-results`).
+# `cyclicEdgesWhere`'s `p` is applied by the labeled surfaces and its result read, and the labeled
+# record's `labeledEdges` is applied wherever the record is read. Unguarded, a result of the wrong
+# type aborted past `tryEval` (`expected a Boolean but found an integer`). These cells assert every
+# arm is refused CATCHABLY; the messages are pinned on `testsError` (`ci/tests-error.nix`,
+# `caller-results`). The walk surfaces' `where`, `groupBy`, `advance` and `marksOf` retired with the
+# calculus (den-hoag-gayc U3); resolution is gen-scope's `resolve`.
 { genGraph, ... }:
 let
   inherit (genGraph)
-    boundedBy
     cyclicEdgesWhere
-    query
-    queryArrivals
-    regex
+    forgetLabels
     ;
-  x = regex.star (regex.lit "x");
+  # a —x→ b —y→ a: one cycle, carrying an `x` edge and a `y` edge.
   graph = {
     nodes = [
       "a"
@@ -29,110 +27,34 @@ let
           }
         ]
       else
-        [ ];
+        [
+          {
+            label = "y";
+            target = "a";
+          }
+        ];
   };
-  # The options are `query`'s own set (P2); the record is the query, with `graph` replaceable.
-  qOn =
-    g: opts:
-    query opts {
-      graph = g;
-      from = "a";
-      follow = x;
-    };
-  q = qOn graph;
-  arrivals =
-    opts: extra:
-    queryArrivals opts (
-      {
-        inherit graph;
-        from = "a";
-        follow = x;
-        advance = s: s.distance + 1;
-      }
-      // extra
-    );
-  bounded = marks: (boundedBy (_: marks) graph).withheld "a";
   admitted = v: (builtins.tryEval (builtins.deepSeq v true)).success;
 
-  # every walk mode, with a `where` returning an int and a `where` that is not a function
-  whereArms = w: {
-    all = q { where = w; };
-    series = q {
-      mode = "series";
-      where = w;
-    };
-    paths = q {
-      mode = "paths";
-      where = w;
-    };
-    visible = q {
-      mode = "visible";
-      groupBy = a: a.node;
-      where = w;
-    };
-    layers = q {
-      mode = "layers";
-      where = w;
-    };
-    fixpoint = q {
-      mode = "fixpoint";
-      empty = [ ];
-      combine = a: b: a ++ [ b ];
-      where = w;
-    };
-    arrivals = arrivals { where = w; } { };
-  };
   otherArms = {
-    advanceString = arrivals { } { advance = _: "far"; };
-    groupByInt = q {
-      mode = "visible";
-      groupBy = _: 1;
-    };
-    marksOfInt = (boundedBy (_: 1) graph).labeledEdges "a";
-    markInt = bounded [ 1 ];
-    markNoAdmits = bounded [ { name = "m"; } ];
-    admitsNotFunction = bounded [
-      {
-        name = "m";
-        admits = 1;
-      }
-    ];
-    admitsInt = bounded [
-      {
-        name = "m";
-        admits = _: 1;
-      }
-    ];
-    markNoName = bounded [ { admits = _: false; } ];
     pInt = cyclicEdgesWhere (_: 1) graph;
     pNotFunction = cyclicEdgesWhere 1 graph;
     # a set whose `__functor` is not a function is not callable, at every door incl. `edgesAt`
-    whereFunctorInt = q {
-      where = {
-        __functor = 1;
-      };
-    };
-    labeledEdgesFunctorInt = qOn (
-      graph
-      // {
-        labeledEdges = {
-          __functor = 1;
-        };
-      }
-    ) { };
+    labeledEdgesFunctorInt =
+      (forgetLabels (
+        graph
+        // {
+          labeledEdges = {
+            __functor = 1;
+          };
+        }
+      )).edges
+        "a";
   };
   admittedOf = arms: builtins.filter (k: admitted arms.${k}) (builtins.attrNames arms);
 in
 {
   flake.tests.caller-results = {
-    test-every-walk-mode-refuses-a-non-bool-where-catchably = {
-      expr = admittedOf (whereArms (_: 1));
-      expected = [ ];
-    };
-    test-every-walk-mode-refuses-a-non-function-where-catchably = {
-      expr = admittedOf (whereArms 1);
-      expected = [ ];
-    };
     test-every-other-caller-function-result-is-refused-catchably = {
       expr = admittedOf otherArms;
       expected = [ ];
@@ -141,53 +63,19 @@ in
     # guards and not a broken fixture
     test-the-lawful-arms-answer = {
       expr = {
-        where = admittedOf (whereArms (n: n == "b"));
-        advance = map (a: a.distance) (arrivals { } { });
-        withheld = bounded [
-          {
-            name = "m";
-            admits = _: false;
-          }
-        ];
+        p = cyclicEdgesWhere (l: l == "x") graph;
+        edges = (forgetLabels graph).edges "a";
       };
       expected = {
-        where = [
-          "all"
-          "arrivals"
-          "fixpoint"
-          "layers"
-          "paths"
-          "series"
-          "visible"
-        ];
-        advance = [
-          0
-          1
-        ];
-        withheld = [
+        p = [
           {
+            from = "a";
             label = "x";
-            target = "b";
-            marks = [ "m" ];
+            to = "b";
           }
         ];
+        edges = [ "b" ];
       };
-    };
-    # a mark's `name` is carried, never read for its type: gen-view's composition reports it as given
-    test-a-mark-name-is-carried-unforced = {
-      expr = bounded [
-        {
-          name = 1;
-          admits = _: false;
-        }
-      ];
-      expected = [
-        {
-          label = "x";
-          target = "b";
-          marks = [ 1 ];
-        }
-      ];
     };
   };
 }

@@ -107,7 +107,7 @@ Pass `prelude` explicitly to override it: `import ./path/to/gen-graph { prelude 
 - **Edge maps are always deduplicated.** `materialize` calls `lib.unique` on each target list. `unionEdges` calls `lib.unique` on merged lists.
 - **Set operations use attrset membership.** Intersection and difference build a target attrset for O(1) per-edge lookups.
 - **A name carrying string context is accepted.** A node, scope or label named after a package (`baseNameOf pkgs.hello`) cannot be an attribute name, so every attrset this library builds is keyed by the name's TEXT, the same partition `==` draws, while the name itself is returned with its context. The exception is an answer read off an edge map's keys (`transpose`'s edges, `dependents`, `fbWork`'s representative), which comes back as text; `directDependents`, `dependentsOf` and `fbNode` keep the context.
-- **A non-string where an attrset is keyed is refused by name.** An edge target, node or label that is not a string, reaching a surface that keys an attrset by it, is a catchable `throw` naming the door (`gen-graph.directDependents: got int, expected a node identifier (a string)`), where Nix's own type error escapes `tryEval`. A shared primitive reached through another door refuses under that door's name and says where: `dependents` on an int target refuses as `gen-graph.dependents: got int, expected a node identifier (a string) (in compose)`. A null label in `ranksOf` is refused, not dropped. The `genericClosure` traversals (`reachableFrom`, `reachableWhere`, `canReach`, `selfReachable`, `coScc`, `fromRegistryDown` and the hoisted `reachableVia`/`selfReachableVia`) refuse any non-string target by name (`gen-graph.reachableFrom: got set, expected a node identifier (a string)`) — a node id is a string; an int, bool or float target is refused the same way a set, list, function or null one already was.
+- **A non-string where an attrset is keyed is refused by name.** An edge target, node or label that is not a string, reaching a surface that keys an attrset by it, is a catchable `throw` naming the door (`gen-graph.directDependents: got int, expected a node identifier (a string)`), where Nix's own type error escapes `tryEval`. A shared primitive reached through another door refuses under that door's name and says where: `dependents` on an int target refuses as `gen-graph.dependents: got int, expected a node identifier (a string) (in compose)`. The `genericClosure` traversals (`reachableFrom`, `reachableWhere`, `canReach`, `selfReachable`, `coScc`, `fromRegistryDown` and the hoisted `reachableVia`/`selfReachableVia`) refuse any non-string target by name (`gen-graph.reachableFrom: got set, expected a node identifier (a string)`) — a node id is a string; an int, bool or float target is refused the same way a set, list, function or null one already was.
 
 ## API Reference
 
@@ -547,8 +547,7 @@ and the operators forming each edge) need the members, not a throw.
   reaches this library's Kahn arm the same way. **Not** gen-class's `mkClasses { nodes; keyOf; }` argument, which
   shares the name and the `node -> string` shape but plays the opposite role: that key
   *partitions* nodes into share-classes, deliberately mapping many nodes to one key, while
-  this one *identifies* a node and a collision in it is a refusal. (`query.nix` also binds
-  a local `keyOf` internally; it is not part of any public surface.)
+  this one *identifies* a node and a collision in it is a refusal.
 - **`lessThan`** orders those keys. Ordering by a *frozen* key is what makes the result a
   function of the node set rather than of the input permutation (clause 2 below); which
   order incomparable nodes take is clause 3's, declared and not normative, and `lessThan` is
@@ -886,7 +885,6 @@ gen-graph.mkGraph: nodeData is a list, not an attrset from a node identifier to 
 gen-graph.fromScan: items element 1 has no 'id'
 gen-graph.fromScan: scan on the item at position 0 returned a int, not a list of references
 gen-graph.fromRegistry: registry is a list, not an attrset from a node identifier to its entry
-gen-graph.labeledFrom: perLabel is a list, not an attrset from a label to a function returning a list of node ids
 gen-graph.fields: names element 0 is a int, not an attribute name (a string)
 ```
 
@@ -1050,96 +1048,57 @@ refusal, naming its own entry point.
 list, `[ ]` when clean — the same dual-surface convention `mkProjectionFindings` follows next door.
 Assert on the returned message rather than on a caught throw.
 
-### Labeled Queries
+### Labeled Records
 
-The label-blind surface above (`edges : id → [id]`) is untouched; labeled queries are a
-layer for graphs whose edges carry a **kind**. A labeled graph is `{ labeledEdges; nodes; }`:
+The label-blind surface above (`edges : id → [id]`) is untouched. A graph whose edges carry a
+**kind** is written as a labeled record, `{ labeledEdges; nodes; }`, by hand, as data:
 
 ```
 labeledEdges : id → [ { label; target; } ]
 nodes        : [ id ]
 ```
 
-Reachability is then constrained by a **regex over labels** — a query answers a node iff the
-word spelled by the labels along some path from `from` matches the `follow` expression.
-
-**`labeledFrom perLabel nodes`** adapts one plain accessor per edge kind into the
-labeled contract:
-
 ```nix
-g = graph.labeledFrom {
-    contains = id: containsEdges id;   # each returns a plain [ id ] list
-    member   = id: memberEdges id;
-  } [ "root" "h1" "u1" "g1" ];
+g = {
+  nodes = [ "root" "h1" "u1" "g1" ];
+  labeledEdges = id:
+    map (target: { label = "contains"; inherit target; }) (containsEdges id)
+    ++ map (target: { label = "member"; inherit target; }) (memberEdges id);
+};
 ```
 
-**`nodes` is a required formal, and that is breaking** — the constructor used to take the
-per-label map alone. A labeled query is *seeded*: it starts `from` a node and walks, so it
-never needed a domain. Every global surface is *node-set-total* and cannot work without
-one, and an accessor's domain is not enumerable, so a node set omitted at construction
-cannot be recovered afterwards — the global half was simply unreachable from a labeled
-graph, and the way that got reported was an arity abort deep inside a callee, which
-`tryEval` cannot catch. A **default** would have made the same failure silent: every global
-surface would answer, about a domain the caller never stated.
+**This library does not resolve over it.** Resolution — reachability under a label expression,
+witness paths, visibility under a label order, boundary marks — is gen-scope's one calculus,
+`resolve`, over an evaluated scope (ADR-0008; den-hoag-gayc). `query`, `regex`, `labeledFrom` and
+`boundedBy` are tombstones that refuse by name and say what replaced them; `series`, `layers`,
+`fixpoint`, `queryFold`, `queryArrivals` and the rank helpers had no caller and are gone. What
+stays here is classical, and each surface is **node-set-total**, which is why `nodes` is part of
+the record: an accessor's domain is not enumerable, so a node set cannot be recovered from
+`labeledEdges` afterwards.
 
 **`forgetLabels g`** is the one published bridge, `labeledGraph → { edges; nodes; }`. Every
-global surface composes with a labeled graph through it and only through it. Parallel edges
+global surface composes with a labeled record through it and only through it. Parallel edges
 differing only in label collapse, because the plain accessor is a set of targets — the same
 contract `mkGraph` states.
 
 ```nix
-graph.condensation (graph.forgetLabels g)   # SCC partition of a labeled graph
+graph.condensation (graph.forgetLabels g)   # SCC partition of a labeled record
 ```
 
-**`labeledTranspose g`** reverses every edge **and carries its label**, so a reverse read is
-the forward construction over a transposed accessor with `follow`, `order` and `groupBy`
-untouched — one construction with a direction argument, not two that can drift apart.
+**`labeledTranspose g`** reverses every edge **and carries its label**.
 
 ```nix
-query { } {
-  graph = g;
-  from = "root";
-  follow = regex.parse "contains+";
-}
-query { } {
-  graph = graph.labeledTranspose g;
-  from = "u1";
-  follow = regex.parse "contains+";
-}
-# → what root contains         /         → what contains u1
+(graph.labeledTranspose g).labeledEdges "u1"
+# → [ { label = "contains"; target = "h1"; } ]   who points at u1, and by which kind
 ```
 
 Mokhov 2017 §5.2's law is that transpose flips the arguments of `connect` and leaves
 `overlay` unchanged: direction is **reversed, not erased**. Going through `forgetLabels` to
-reach the plain `transpose` erases exactly the component a label regex reads, which is why
-this is not sugar for that composition. It is Θ(n + E) — one accessor pass, one `groupBy`,
-shared by every lookup and not forced at all if the transposed graph is never queried — and
-it is expressible only because `nodes` is a required formal: reversal asks who points **at**
-a node, which an accessor's non-enumerable domain cannot answer alone.
-
-**`boundedBy marksOf g`** applies per-node **boundary marks** to a labeled graph, yielding a
-labeled graph plus a companion diagnostic. A mark is `{ name; admits; }` — a name the
-diagnostic can quote and a `label → bool` predicate. `marksOf : id → [ mark ]`, and an
-unmarked node returns `[ ]`.
-
-```nix
-b = graph.boundedBy (
-  id: if id == "gate" then [ { name = "sealed"; admits = l: l == "e"; } ] else [ ]
-) g;
-
-b.labeledEdges "gate"   # → [ { label = "e"; target = "ok"; } ]         the admitted edges
-b.withheld     "gate"   # → [ { label = "q"; target = "no"; marks = [ "sealed" ]; } ]
-```
-
-The construction only ever **removes** edges, so a caller holding the bounded graph has no
-operation that recovers a withheld one: widening is not forbidden, it is unsayable. That is
-also why marks are applied at the accessor rather than inside the label regex — `deriv`
-takes a label and an expression and never sees a node, so a per-node intersection is not
-expressible there at all. **`withheld` is not optional**: a filtering accessor that said
-nothing would answer a boundary and an absent edge identically, and those two must not be
-indistinguishable in the diagnostic as well as in the answer. An edge withheld by several
-marks is one entry naming all of them — picking one would make the report depend on mark
-order.
+reach the plain `transpose` erases the labels, which is why this is not sugar for that
+composition. It is Θ(n + E) — one accessor pass, one `groupBy`, shared by every lookup and not
+forced at all if the transposed record is never read — and it is expressible only because
+`nodes` is part of the record: reversal asks who points **at** a node, which an accessor's
+non-enumerable domain cannot answer alone.
 
 **`cyclicEdgesWhere p g`** — the edges whose label satisfies `p` **and** which lie on a
 cycle, as `[ { from; label; to; } ]` sorted by `(from, label, to)`. Empty means no cycle of
@@ -1151,7 +1110,7 @@ graph.cyclicEdgesWhere (l: l == "neg") g
 # → [ ] , or e.g. [ { from = "c"; label = "neg"; to = "a"; } ]
 ```
 
-The construction is the composition the total contract exists for: forget the labels,
+The construction is the composition the total record exists for: forget the labels,
 partition the projection into strongly connected components, then join back onto the
 retained labelled edges — two endpoints in one component are mutually reachable, so the
 edge between them closes a cycle, and a self-loop is one already. That decomposition is
@@ -1160,200 +1119,11 @@ it. The predicate is the caller's: this library is label-agnostic and does not k
 labels are special, so it answers about the graph and leaves the meaning of an empty answer
 to whoever supplied the predicate.
 
-**`regex`** builds `follow` expressions, as constructors or a compact string:
-
-```
-regex.lit / seq / alt / star / opt / plus / any / eps / empty   # constructors
-regex.parse : string → regex                                     # compact form
-regex.parseWith : { maxLength ? 1000 } → string → regex          # the same, cap stated
-```
-
-Grammar (`parse`): whitespace = sequence, `|` = alternation (binds loosest), postfix `*` `?`
-`+`, parentheses group, `_` is the any-label wildcard, labels are `[A-Za-z0-9_-]+`, and `""`
-parses to `eps`. Postfix is whitespace-insensitive — `a *` is `a*`. Malformed input throws a
-named `gen-graph.regex.parse: …` error. So does a pattern longer than the cap (1,000
-characters by default): past it the parser's recursion would meet the evaluator's call-depth
-ceiling, an abort `tryEval` cannot catch. A caller nested deep in its own stack lowers it with
-`parseWith { maxLength = …; }`.
-
-```nix
-regex.parse "contains* member"          # zero-or-more contains, then one member
-regex.parse "own | include owni"        # a declaration here, or one hop through an include
-```
-
-`regex.stateKey r` is the canonical key of a constructor-built term: a sha256 Merkle digest
-over the normal form, one hash per constructed node, compared and never read. Its preimage is
-injective, so a `lit` label carrying `* | . ( )` keys apart from any composite. Keys are
-computed as terms are built, so reading one on a term already built costs constant stack at
-any depth. A value the constructors did not build has no key, and `stateKey` refuses it by name.
-
-`regex.nullable r` and `regex.deriv l r` hold no depth ceiling on a constructor-built term:
-`nullable` is carried on every node as it is built, and `deriv` past a height of 64, or past an
-unfolded size of 1,024 nodes, memoises its subterms and forces them bottom-up, in a constant few
-dozen frames (measured to 100,000 nested levels). A term whose subterms are shared (nested
-`(…?)+`) is therefore not derived once per path: a derivative takes at most max(1,024, distinct
-subterms) steps. A seq is a right-nested cons, so each of its suffixes is a term built once, and
-one step walks each suffix once: a step on a seq of width m costs linearly in m. Both refuse a
-value the constructors did not build, by the same name.
-
-**`query`** runs a labeled query in one of five modes:
-
-```
-query : { mode?; where?; order?; groupBy?; combine?; empty?; valueOf?; } → { graph; from; follow; } → result
-```
-
-The options are ONE closed set, the same in every mode: an unknown option is
-refused by name when `query opts` is formed, whatever the mode, and an option given on the query
-record is refused as misplaced. `groupBy` is required only in `visible` mode, and `combine` and
-`empty` only in `fixpoint` mode; each is refused by name at `query opts` when its mode lacks it —
-`groupBy` is total, never defaulted, so a caller must state its grouping rather than inherit one
-silently.
-
-| Mode            | Result                                             | Notes                                                                                                                                                                                                               |
-| --------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `all` (default) | sorted `[ id ]`                                    | reachable set; `from` included iff `follow` is nullable. `genericClosure` over the (node × derivative-state) product — scales, no path materialization                                                              |
-| `series`        | `[ id ]` in visitation order                       | the same closure with the answer-set layer deleted. No `attrNames` sort, and a node reached in two **distinct** nullable derivative states is answered twice instead of once. Same cost class, same cycle tolerance |
-| `paths`         | `[ { node; path = [ { label; from; to; } … ]; } ]` | labeled path **witnesses** (the "why"); acyclic paths only                                                                                                                                                          |
-| `visible`       | `{ visible; shadowed; }`                           | nearest-wins resolution under `order`, grouped by `groupBy` — REQUIRED, never defaulted; a caller wanting the per-node reading states `groupBy = ans: ans.node;`                                                    |
-| `layers`        | `[ [ answer … ] … ]`                               | all answers grouped into ordered layers by rank word (the cascade shape)                                                                                                                                            |
-| `fixpoint`      | fold result                                        | dispatch-alias for `queryFold` (below)                                                                                                                                                                              |
-
-**`all` versus `series`, because the difference is exactly two lines and neither is cosmetic.**
-`all` ends `builtins.attrNames (builtins.listToAttrs …)`. `attrNames` sorts, so `all`'s answer
-order is a fact about node *names* and not about the graph; and `listToAttrs` is first-wins on
-the node name, so a node the closure reached in two different nullable derivative states — and
-had already told apart — comes back once. `series` returns the closure's own order and keeps
-that distinction. It does **not** make the traversal multiplicity-preserving in general: the
-⟨node, derivative-state⟩ seen-key survives, and must, because it is what fences cycles (the
-answer set never did). Two paths reconverging on one node in the *same* state still give one
-answer, and two distinct labels still collapse when `follow` derivates both to one state —
-that is `queryArrivals`' key, not this one. `all` is unchanged and every existing caller keeps
-its answer.
-
-`order = { labels = [ … ]; endOfPath ? -1; }` gives a per-query specificity order: earlier
-labels are more specific, unlisted labels rank after all listed. `endOfPath` is the rank of
-*stopping* — the default `-1` makes a proper prefix beat its extensions (prefix-wins); a higher
-rank lets continuation on lower-ranked labels beat stopping.
-
-```nix
-query {
-  mode = "visible";
-  order.labels = [ "own" "include" ];   # own shadows include
-  groupBy = ans: ans.node;              # required: the per-node reading
-} {
-  graph = g;
-  from = "s";
-  follow = regex.parse "own | include";
-}
-# → { visible = [ … own answers … ]; shadowed = [ … include answers … ]; }
-```
-
-**The rank-word calculus is exported raw**, beside the compositions built from it — a consumer that
-needs the order without `query`'s answer shape takes the piece rather than rebuilding it:
-
-| construct    | signature                              | reading                                                                                                                                                                                                                                 |
-| ------------ | -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ranksOf`    | `order → { <label> = int; }`           | the declaration read as ranks; earlier labels rank lower                                                                                                                                                                                |
-| `rankOf`     | `order → label → int`                  | an unlisted label is unranked and sorts last (`length order.labels`), so two *distinct* unlisted labels tie                                                                                                                             |
-| `rankWordOf` | `order → path → [ int ]`               | a witness path projected onto its label ranks                                                                                                                                                                                           |
-| `wordLess`   | `endOfPath → [ int ] → [ int ] → bool` | the strict word order; at exhaustion `endOfPath` competes against the other word's next rank. It takes the end-of-path rank as a plain `int` and is total on tied words, so it generalises past the flat `labels` list `pathLess` reads |
-| `pathLess`   | `order → path → path → bool`           | `wordLess (order.endOfPath or (-1))` lifted through `rankWordOf`                                                                                                                                                                        |
-
-> ★ **`pathLess` is a sort key on rank words, not the specificity order.** Néron et al. 2015 Fig. 2
-> recurses only where the head labels are `<`-comparable (Lex1) or *equal* (Lex2), so two paths whose
-> labels differ at equal rank are incomparable in **both** directions; `pathLess` decides them. At
-> `layers = [["P" "I"] ["X"]]`: `pathLess [P·X] [I·P]` and `pathLess [I·P] [P·X]` read `false`/`true`
-> where the specificity order reads `false`/`false`. A flat `labels` list cannot place two *listed*
-> labels in one layer — each keeps its own position and its own rank — so the `P`/`I` tie above needs
-> layers to exist at all. It still ties in one case: every label *absent* from the declaration falls to
-> the same bottom rank (`length order.labels`), so two distinct *unlisted* labels tie (`rankOf`, above)
-> — reachable, but unoccupied by anything this library's own suite exercises. That is why `pathLess`
-> and the specificity order still coincide in practice here — and why a consumer that can express or
-> occupy that tie must never substitute one for the other.
-
-**`queryFold`** folds a caller-supplied combine over the `all`-mode answer set in canonical
-sorted order (the group-closure / acl shape):
-
-```nix
-queryFold { } (acc: u: acc ++ [ u ]) [ ] {   # options { valueOf ? (id: id); where ? (_: true); }, combine, empty
-  graph = g;
-  from = "admins";
-  follow = regex.parse "includes* member";
-}
-```
-
-`combine` is expected to be a commutative-idempotent monoid; under those laws the canonical
-order is unobservable. Recursive node-valued fixpoints (a node's value depending on its
-neighbours') remain [`fixpoint`](#fixpoint) territory.
-
-**`queryArrivals`** walks the same product automaton as `all` and differs from it in exactly
-two ways, both of which are the point: it is keyed on the **arriving edge** rather than the
-node, and it returns a **sequence** rather than a set.
-
-```nix
-queryArrivals { } {                # options { where ? (_: true); }
-  graph = g;
-  from = "s";
-  follow = regex.parse "a | b";
-  advance = s: s.distance + 1;    # REQUIRED — the per-step distance rule
-}
-# → [ { node = "x"; distance = 1; via = { from = "s"; label = "a"; }; admission = regex.stateKey regex.eps; }
-#     { node = "x"; distance = 1; via = { from = "s"; label = "b"; }; admission = regex.stateKey regex.eps; } ]
-#   (the key of eps: nothing further is admitted here. `admission` is a digest, compared and
-#    never read)
-```
-
-`all` answers that query `[ "x" ]`. Its seen-key is ⟨node, derivative-state⟩ and an
-alternation derivates both labels to the same state, so the second edge vanishes with
-nothing in the answer to say it existed. Keying on ⟨arriving edge, derivative-state⟩ keeps
-both, and termination is untouched: edges are finite and derivatives are finite modulo the
-ACI identities `regex.nix` normalizes by, so the refined key set is still finite and still
-fences cycles — refining a fence does not remove it. The price is the in-degree factor
-(|E| × |derivatives| against `all`'s |V| × |derivatives|), which is why `all` keeps its own
-contract and this is a separate surface rather than a replacement. There is no
-`listToAttrs`/`attrNames` round trip either, so answers come out in visitation order with no
-reorder and no node-level dedup after the walk.
-
-`advance : { distance; from; label; to; } → int` is **required**. It is handed the distance
-already accumulated at the step's source together with the step, and returns the distance
-after it; plain hop count is `s: s.distance + 1`. A graph that reifies a relation as a node
-with labelled incidence — one relation spelled as two edges through the reified node — can
-write a rule that does not charge the edge completing the pair, so that a representation
-choice does not silently move a distance. It has no default: a defaulted distance rule is a
-semantics nobody wrote down.
-
-`via` is `null` at the root (it arrived by no edge, and saying so is a statement rather than
-a missing field) and `{ from; label; }` everywhere else. `admission` is the canonical key of
-the residual `follow` expression at the arrival — the admission policy still in force there,
-and the component a caller needs to state a ⟨node, state⟩ collapse of its own.
-
-> **`distance` is a first arrival, not a minimum, and the bound is sharp.** `genericClosure`
-> keeps the first item inserted under a key. That first arrival *is* the minimum when
-> `advance` is nondecreasing in hop count — visitation is nondecreasing in depth, which
-> `ci/tests/closure-order.nix` asserts against a seeded depth-first control — so plain hop
-> count and every positive-constant rule are safe. Under a rule that can charge **zero** it
-> is not: a longer route charging zero on some hops can total less, and the shorter one is
-> visited first. Whether the cheaper arrival survives at all depends on its **last** edge —
-> entering by a different final edge it is kept beside the dearer one and a caller can fold
-> the minimum out of the sequence; entering by the *same* final edge in the same state it
-> shares the key and is discarded, and then no fold of this sequence recovers it. A true
-> minimum under a zero-charging rule needs a relaxing traversal, which this is not.
-
-**gen-scope adapter recipe** (recipe only — gen-graph does **not** import gen-scope):
-
-```nix
-# consumer code: wrap gen-scope's per-label followEdge into the labeled contract
-g = graph.labeledFrom {
-    imports = id: scope.followEdge "imports" self id;
-    parent  = id: scope.followEdge "parent" self id;
-  } (scope.allIds self);
-```
-
-**Cost guidance.** `all` is `genericClosure`-backed and scales (no path materialization).
-`paths`/`visible`/`layers` enumerate witnesses and are enumeration-priced — use them when the
-witness itself is the product. The two families also differ observably: `all` answers node
-revisits (the (node × state) product), while witness modes enumerate acyclic paths only, so a
-self-loop witness that `all` reports is not enumerated by `paths`.
+**The accessor's result is checked where it is read.** A surface that applies `labeledEdges`
+refuses, by its own name and catchably, a result that is not a list, an element that is not an
+edge, and a label or target that is not a string — at the read, never before: a surface that
+reads no target (`cyclicEdgesWhere` under a `p` that is never true) does not refuse a datum
+target a caller lawfully hangs on a node.
 
 ### Identifier keys and refusals (`key`)
 
@@ -1551,19 +1321,18 @@ nix flake check ./ci               # the batch gate, which covers ./ci#tests; un
 `_`-prefixed included — and the remedy is `git add` or a move. The unguarded forms read a
 git-filtered copy of the tree, so an untracked cell is silently absent and the run stays green.
 
-**817 tests** across **44 suites** in `./ci#tests`
-(`nix-unit --flake ./ci#tests` ⇒ `817/817 successful`) (`arms`, `arrivals`,
-`boundaries`, `caller-functions`, `caller-results`, `closure-order`, `closure-targets`,
-`construction`, `context-node-names`,
+**655 tests** across **38 suites** in `./ci#tests`
+(`nix-unit --flake ./ci#tests` ⇒ `655/655 successful`) (`arms`, `caller-functions`,
+`caller-results`, `closure-targets`, `construction`, `context-node-names`,
 `declared-edges`, `doors`, `edge-maps`, `edges-results`, `endpoints`, `entry`, `enumerate`,
 `fixpoint-tests`, `gen-ci-examples`, `global`, `hoist`, `identifier-doors`, `integration`,
 `key-former`, `labeled-door`,
 `labeled-global`, `labeled-transpose`, `order`, `order-contract-fence`, `order-front-door`,
 `p2-doors`, `partition`,
-`prelude-domain`, `preorder`, `purity`, `query`, `regex`, `registry`, `repl`, `scan`, `series`,
+`prelude-domain`, `preorder`, `purity`, `registry`, `repl`, `scan`,
 `surface`, `topo`, `traverse`, `walks`),
-plus **210** in `./ci#testsError` (`nix-unit --flake ./ci#testsError` ⇒ `210/210 successful`,
-`fb04df8`) — run under [nix-unit](https://github.com/nix-community/nix-unit) via
+plus **390** in `./ci#testsError` (`nix-unit --flake ./ci#testsError` ⇒ `390/390 successful`)
+— run under [nix-unit](https://github.com/nix-community/nix-unit) via
 the gen CI harness (`gen.lib.mkCi`). The `purity` suite asserts the library source stays
 nixpkgs-lib-free (gen-prelude only). `gen-ci-examples` is gen-harness's examples guard
 (declared in `ci/tests/examples.nix`, `gen.ci.examples`): it holds that `examples/`
@@ -1579,7 +1348,9 @@ does read `expectedError`. Both outputs carry a pre-commit hook: `ci` and `ci-er
 
 ## Theoretical Foundations
 
-The algorithms and design principles draw from:
+The algorithms and design principles draw from the entries below. The resolution calculus's
+sources — Brzozowski 1964, Owens, Reppy & Turon 2009, Néron et al. 2015's label order and van
+Antwerpen et al. 2018 — left with it for gen-scope (den-hoag-gayc U3).
 
 - **Mokhov (2017)** — *Algebraic Graphs with Class*. *Informed by.* Algebraic graph construction primitives (overlay, connect, vertex, empty) and the compositional approach to graph representation inform gen-graph's edge map operations and structural combinators. Edge map set operations (`unionEdges`, `intersectEdges`, `differenceEdges`) are gen-graph's own contribution built on this algebraic foundation. Mokhov 2017 §4.5 supplies only the equivalence-class *notion* of reduction; `transitiveReduction` is a standard DAG transitive-reduction algorithm (gen-graph's own implementation) and assumes a DAG, since reduction is not unique under cycles. Transpose follows Mokhov 2017 §5.2 *Graph Transpose* directly: the law is that transpose flips the arguments of `connect` and leaves `overlay` unchanged, so direction is reversed rather than erased. `condensation`'s quotient-graph idiom is §4.6 *Preorders and Equivalence Relations* — a condensation is the quotient by the co-SCC equivalence.
 - **Arntzenius & Krishnaswami (2016)** — *Datafun: A Functional Datalog*. *Implements — **Lemma 4**, and that is the whole of the claim.* *Lemma 4 (Fixed points in finite-height pointed posets)*: any monotone map `f : P → P` on a poset of finite height with a least element `ε` has a least fixed point of the form `fⁿ(ε)`; the proof is that the iterates ascend and a chain in a finite-height poset cannot be infinite. gen-graph's ascent qualifies because the edge set over a finite node set is finite. The `fixpoint` operator's ascent check (the step must not withdraw an edge the accumulator already held — containment of edge content, which is the order `unionEdges` joins on and therefore the poset Lemma 4 takes its chain over, rather than edge count) matches Datafun's requirement that fixpoint computations operate over monotone functions on semilattices — but it is a **step check, not a convergence guarantee**, and the paper is explicit that monotonicity "is not sufficient by itself to guarantee termination" (pp. 11–12). Finiteness is what terminates it. ★ **Withdrawn as unsupported at the primary:** reverse reachability in `dependents`/`dependentsOf` does **not** follow a "Datafun reverse-query pattern" — *reverse* occurs 0 times in the paper — and `seededFixpoint` is not Datafun's semi-naive evaluation either (see `AGENTS.md` for the measurements and their controls). Both are gen-graph's own; the reverse operators are described on their own terms in `lib/global.nix`. `directDependents`/`directDependentsOf` expose the underlying reverse-adjacency index directly: the **immediate** reverse neighbours (one edge), in contrast to `dependentsOf`'s **transitive** reverse closure — the distinction matters when a consumer must enumerate only its direct producers' dependents without re-materializing the whole reverse cone.
@@ -1592,8 +1363,4 @@ The algorithms and design principles draw from:
 - **Tarjan (1972)** — *Depth-First Search and Linear Graph Algorithms*. *Implements.* The pre-order traversal combinators (`foldPreorder`, `expandPreorder`, `foldReach`) fold in DFS pre-order — a frame before its children, siblings in list order, each frame visited once via a first-occurrence visited set. First-occurrence is Tarjan's pre-order discovery numbering; `genericClosure` (BFS, single-keyed, payload-blind) structurally cannot express the order, payload or edge exposure these carry. Separately, **Lemma 9 (p.155) is the definition anchor** the SCC-partition sites cite — the strongly connected components as equivalence classes of mutual reachability; the paper does **not** supply the condensation/quotient construction, which is anchored at Mokhov (2017) §4.6. **`lowlink` implements STRONGCONNECT**, the SCC procedure of Theorem 13: DFS numbering, the stack of points, and the LOWLINK root test of Lemma 12. It is iterated rather than recursed — one `genericClosure` step per push, edge examined, frame finished or member popped, over a persistent 8-ary trie index — so its cost is Θ((n + m) · log₈ n), not the paper's O(V + E). It departs from the paper in one stated respect: a component is tagged by its smallest member, the library's contract, not by its root.
 - **Bentley & Saxe (1980)** — *Decomposable Searching Problems I: Static-to-Dynamic Transformation*. *Implements.* The pre-order walks' visited set: membership is a decomposable searching problem, so the static structure (a native attrset) is made dynamic by the logarithmic method — a flat buffer of 32 keys carried into levels of 32·2ⁱ keys as a binary counter — and each key is copied O(log(n/32)) times rather than once per later insert (`lib/preorder.nix`, `levels`).
 - **Meijer, Fokkinga & Paterson (1991)** — *Functional Programming with Bananas, Lenses, Envelopes and Barbed Wire*. *Informed by.* `foldPreorder` has the shape of a hylomorphism: the visited-set coalgebra unfolds the (possibly cyclic) graph into its finite DFS spanning forest, which `expand` folds (catamorphism) into the accumulator. `expandPreorder` and `foldReach` specialize that accumulator to an ordered witness list — an ordered, payload-carrying fold rather than a set-returning closure.
-- **Brzozowski (1964)** — *Derivatives of Regular Expressions*. *Implements.* The labeled-query `follow` kernel steps a Brzozowski derivative of the label regex alongside the graph walk; `deriv l r` and `nullable r` are the classical derivative and nullability functions, so a path's label word is accepted iff folding `deriv` over it lands in a nullable state. **The termination guarantee is also his**: Theorem 5.2 — "every regular expression has only a finite number of dissimilar derivatives" — where the similarity of Definition 5.2 is the ACI identities of *alternation only* (`R+R=R`, `P+Q=Q+P`, `(P+Q)+R=P+(Q+R)`). That is what bounds the state set and makes the canonical `stateKey` (a Merkle digest over the normal form) a sound seen-set key, so the `all` mode's (node × derivative-state) product automaton terminates on cyclic graphs. The bound holds *modulo* those identities, which means the normalization has to be performed rather than merely be available — Brzozowski's own proof (Appendix II) names `R+R=R` as the identity that terminates the process.
-- **Owens, Reppy & Turon (2009)** — *Regular-expression Derivatives Re-examined*. *Implements — the enlarged normalization, not the finiteness theorem.* Definition 4.1 is a strict superset of Brzozowski's similarity: on top of the ACI identities of alternation it adds sequence flattening with unit/zero absorption and star collapse, and it supplies the smart-constructor strategy this library follows, normalizing on the way in rather than canonicalizing after the fact. Owens, Reppy & Turon credit the finiteness result to Brzozowski themselves (§3.3, §4.1) and state no termination theorem for the enlarged rule set; relying on the composite is folklore, and safe in this direction, because every added identity is semantics-preserving and size-decreasing and so can only merge states that ACI alone would have kept apart. §4.2's character-set merge (`alt` of `any` with a literal) is **not** implemented — a minimality rule, never a termination one.
-- **Néron, Tolmach, Visser & Wachsmuth (2015)** — *A Theory of Name Resolution*. *Implements.* Beyond parent-chain resolution (above), the labeled query surface generalizes scope-graph reachability to arbitrary edge labels: `query`'s `follow` is a reachability regex over labels, and the `visible`/`layers` specificity order generalizes Néron's D < I < P label order.
 - **Apt, Blair & Walker (1988)** — *Towards a Theory of Declarative Knowledge*, Lemma 1. *Implements — the graph half only.* The lemma is a biconditional between a program property and a graph property: no cycle of the dependency graph contains a negative edge. `cyclicEdgesWhere` computes that graph property for a caller-supplied notion of "negative", and the construction is the paper's **own** proof method for the converse — decompose the dependency graph into strongly connected components (which is `condensation`), then read the retained labelled edges against that partition. gen-graph has no programs, no relation symbols and no clauses, and does not know which labels are negative, so it computes the graph side and names it accordingly; the program-level word belongs to a caller that has programs. The archived text carries an OCR hazard inside the converse half of that proof (a flattened inequality), so its *prose* is cited and no inequality from it is lifted into code, comment or oracle — the stratum-index arithmetic plays no part here, only the decomposition.
-- **van Antwerpen, Poulsen, Rouvoet & Visser (2018)** — *Scopes as Types*. *Implements.* The per-query label order carries an end-of-path token: `order.endOfPath` competes against a word's next label rank at exhaustion, so stopping can out- or under-rank continuation (default `-1` = prefix-wins), matching van Antwerpen's per-query ≤ with an end-of-path marker.

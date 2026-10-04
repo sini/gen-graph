@@ -178,11 +178,6 @@ in
           }).edges
             "a"
         );
-    labeledFrom-perLabel-not-a-set =
-      refusal "labeledFrom"
-        "perLabel is a list, not an attrset from a label to a function returning a list of node ids"
-        ((G.labeledFrom [ ] [ ]).labeledEdges "a")
-        ((G.labeledFrom { } [ ]).labeledEdges "a");
     field-name-not-a-string = refusal "field" "name is a int, not an attribute name (a string)" (G.field
       42
       "a"

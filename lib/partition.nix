@@ -50,6 +50,8 @@
 let
   inherit (import ./key.nix "gen-graph")
     attrKey
+    badResult
+    callableAt
     edgesAccessor
     identifier
     keyedAttrs
@@ -76,6 +78,8 @@ let
     };
   global = import ./global.nix { inherit prelude; };
   order = import ./order.nix { inherit prelude; };
+  edgeMaps = import ./edge-maps.nix { inherit prelude; };
+  inherit (edgeMaps.threaded) edgesAt labelOf targetOf;
   # An internal caller of a door calls its core (P2 §p2.3.2); this one runs once per component.
   reachableFrom = traverse.threaded.reachableFrom "reachableFrom";
 
@@ -744,6 +748,107 @@ let
   # under ITS OWN name (R6): `gen-graph.condensation: … (in lowlink)`, which says both which arm
   # it is bound to and that the caller reached it through `condensation`.
   condensation = accessorDoor "condensation" (lowlinkAs (within "condensation" "lowlink"));
+
+  # ── WHICH EDGES SATISFYING `p` LIE ON A CYCLE ──
+  # `cyclicEdgesWhere : labeledGraph → (label → bool) → [ { from; label; to; } ]`.
+  # Empty ⇒ no cycle of this graph carries an edge whose label satisfies `p`.
+  #
+  # It completes a family rather than opening one: `cycles` answers WHICH NODES lie on a
+  # cycle, `cyclePaths` answers WHICH WALK, and this answers WHICH EDGES SATISFYING p — the
+  # `Where` suffix `reachableWhere` already establishes.
+  #
+  # THE CONSTRUCTION IS THE COMPOSITION, and it is why the labeled contract had to become
+  # total: forget the labels, partition the projection into strongly connected components,
+  # then JOIN BACK onto the retained labelled edge list. Two endpoints in one component are
+  # mutually reachable, so the edge between them closes a cycle; an edge to itself is one
+  # already. The projection ALONE cannot answer this — it has forgotten the labels — and the
+  # labelled edges alone cannot either, because being on a cycle is a global property. The
+  # pair answers it exactly.
+  #
+  # THEORY. Apt, Blair & Walker 1988, *Towards a Theory of Declarative Knowledge*, Lemma 1:
+  # a program is stratified iff its dependency graph has no cycle containing a negative
+  # edge; the proof of the converse decomposes the dependency graph into strongly connected
+  # components (archived text at `used/markdown/apt-1988-towards-theory-declarative-
+  # knowledge.md`:522-523 and :539, papers `d7c2e73`). So `condensation` is not a
+  # construction that happens to agree with the result — it is the primary's own proof
+  # method, and this query is that method's graph half.
+  #
+  # ★ THE GRAPH HALF IS ALL THIS LIBRARY CAN SEE, WHICH IS WHY THE NAME IS WHAT IT IS.
+  # Lemma 1 is a BICONDITIONAL between a program property and a graph property. gen-graph
+  # has no programs, no relation symbols and no clauses; and which labels count as negative
+  # arrives from the caller, so the library does not even know that much. Naming this result
+  # after the program-level property would have the library assert a theorem about objects
+  # it cannot observe. A caller that does have programs — the well-definedness gate,
+  # ruled to gen-view (boundedWellDefinedSchedule; den-hoag-6poeg) — names it there,
+  # where the reading "this label MEANS negation" exists.
+  #
+  # WITNESSES, not a boolean: a caller refusing a graph has to say which edges did it, and
+  # the answer is exactly the material for that message. The order is (from, label, to)
+  # ascending so the answer is a function of the graph and not of accessor enumeration.
+  #
+  # COST: Θ((n + m) · log₈ n) for the partition, on top of one pass over the labelled edges. The
+  # partition arm is `lowlink` (above), Tarjan's DFS iterated over a persistent 8-ary
+  # trie, which is where the log comes from. The `&&` below short-circuits, so the partition is
+  # forced only if some edge satisfies `p`, and then it is forced WHOLE by the first tag read:
+  # with `p` never true the surface costs the edge pass alone. Measured in `nrFunctionCalls`
+  # (`ci/bench/cost-classes.nix`, arms `cyclicEdgesWhere` / `…One` / `…None`, which bind `p` to
+  # every edge / one edge / no edge), `p` on every edge, n = 1000 → 20000: `cycle` 451,095 →
+  # 10,660,107, `chain` 446,045 → 10,560,053, `rand` 550,845 → 12,863,196, span exponents 1.06 /
+  # 1.06 / 1.05; `nrOpUpdateValuesCopied` flat at 127 on all three. Each doubling inside one
+  # trie depth reads ×2.00; the one that adds a level (4000 → 8000) reads ×2.36. Bound to
+  # `fbNode` the same `cycle` cells read 10,096,051 → 40,192,051 → 160,384,051 at n = 1000 /
+  # 2000 / 4000 (×3.98, ×3.99).
+  # ★ THE TRADE, stated rather than absorbed: `fbNode` forced one tag per endpoint lazily, so with
+  # `p` true on ONE edge of a 5000-node `cycle` it cost 420,104 calls where this surface now
+  # costs 2,605,120 (×6.2). That is a constant factor on a sparse `p`, bought for a class bound on
+  # every `p`: `fbNode`'s per-endpoint cost depends on reach, so no threshold on the number of
+  # p-edges bounds it, and routing between arms by that count inside the binder would be a
+  # second default beside the door's (README, *The partition routing contract*). `p` never true
+  # costs 50,021 either way. A target outside `nodes` is refused by this door's name, `(in lowlink)`.
+  # `cyclicEdgesWhere p graph` (P2, R7): the predicate configures, the labeled graph is the subject.
+  cyclicEdgesWhere =
+    p: graph:
+    let
+      toKey = attrKey "cyclicEdgesWhere";
+      plain = edgeMaps.cores.forgetLabels graph;
+      # The partition ARM by name, never the door: this consumer reads the tag map and
+      # nothing else, so it has no stake in which algorithm the door defaults to.
+      inherit (lowlinkAs (within "cyclicEdgesWhere" "lowlink") plain) sccOf;
+      hits = builtins.concatMap (
+        from:
+        map
+          (e: {
+            inherit from;
+            label = labelOf "cyclicEdgesWhere" from e;
+            to = targetOf "cyclicEdgesWhere" from e;
+          })
+          (
+            builtins.filter (
+              e:
+              (
+                let
+                  l = labelOf "cyclicEdgesWhere" from e;
+                  b = p l;
+                in
+                if builtins.isBool b then
+                  b
+                else
+                  badResult "cyclicEdgesWhere" "p" "on the label ${builtins.toJSON l}" "a bool" b
+              )
+              && sccOf.${toKey from} == sccOf.${toKey (targetOf "cyclicEdgesWhere" from e)}
+            ) (edgesAt "cyclicEdgesWhere" graph from)
+          )
+      ) plain.nodes;
+      less =
+        a: b:
+        if a.from != b.from then
+          a.from < b.from
+        else if a.label != b.label then
+          a.label < b.label
+        else
+          a.to < b.to;
+    in
+    builtins.seq (callableAt "cyclicEdgesWhere" "p" "a bool" p) (builtins.sort less hits);
 in
 {
   inherit
@@ -751,6 +856,7 @@ in
     condensationOf
     cycles
     cyclePaths
+    cyclicEdgesWhere
     fbNode
     fbWork
     lowlink

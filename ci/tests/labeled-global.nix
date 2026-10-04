@@ -1,21 +1,16 @@
-# The labeled↔global composition: the total labeled contract, the one published
-# projection, and the query that needs both halves at once.
+# The labeled↔global composition: the total labeled record, the one published projection, and
+# the query (`cyclicEdgesWhere`) that needs both halves at once.
 #
-# The two halves of this library were built to different contracts — a labeled query is
-# SEEDED and never needed a node set, every global surface is NODE-SET-TOTAL and cannot work
-# without one — and nothing bridged them. `labeledFrom` now takes `nodes` as a required
-# formal and `forgetLabels` is the single sanctioned bridge, so the global half is reachable
-# from a labeled graph, by one definition, rather than unreachable behind an arity abort
-# that `tryEval` cannot catch.
+# Every global surface is NODE-SET-TOTAL and cannot work without a node set, so the labeled
+# record carries `nodes` beside `labeledEdges` and `forgetLabels` is the single sanctioned bridge:
+# the global half is reachable from a labeled record, by one definition. The record is written as
+# data (den-hoag-gayc U3); its constructor `labeledFrom` retired with the resolution calculus.
 #
-# ★ THE REMOVED DEFECT LEAVES NO NEGATIVE CELL, and that is stated rather than papered over.
-# With `nodes` required at the only constructor, the abort is UNREACHABLE — not caught — so
-# there is nothing to assert about it here. What is assertable is the positive composition
-# and the totality of the bridge, which is what this file does.
+# What is assertable is the positive composition and the totality of the bridge, which is what
+# this file does.
 { genGraph, ... }:
 let
   inherit (genGraph)
-    labeledFrom
     forgetLabels
     cyclicEdgesWhere
     condensation
@@ -26,14 +21,19 @@ let
     coneRank
     ;
 
-  # A labeled graph from per-label adjacency maps. The node set is written out at every
-  # fixture because the contract requires it, not because these cases need a wide domain.
-  lf =
-    nodes: pairs:
-    labeledFrom (builtins.mapAttrs (
-      _: m: id:
-      m.${id} or [ ]
-    ) pairs) nodes;
+  # A labeled record from per-label adjacency maps, labels in name order. The node set is written
+  # out at every fixture because the record requires it, not because these cases need a wide domain.
+  lf = nodes: pairs: {
+    inherit nodes;
+    labeledEdges =
+      id:
+      builtins.concatMap (
+        label:
+        map (target: {
+          inherit label target;
+        }) (pairs.${label}.${id} or [ ])
+      ) (builtins.attrNames pairs);
+  };
 
   # The negativity of a label is the CALLER's — the library is label-agnostic, so the
   # predicate arrives from here and the word "neg" is this file's, not gen-graph's.

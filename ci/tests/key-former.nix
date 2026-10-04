@@ -1,6 +1,6 @@
 # THE KEY FORMER REFUSES A NON-STRING BY THE DOOR'S NAME (den-hoag-2m5iy, ADR-0025 item 1). A
 # non-string where a door KEYS an attribute set used to meet Nix's own type error, which escapes
-# `builtins.tryEval`; `attrKey`, `keyedAttrs` and the two inline formers now refuse it by name. The
+# `builtins.tryEval`; `attrKey`, `keyedAttrs` and the inline formers now refuse it by name. The
 # message cells live on `testsError` (`key-former-refusal`). This file holds the two things an error
 # cell cannot say: that each refusal is a throw `tryEval` observes, and that a string answers as
 # before.
@@ -82,44 +82,6 @@ in
     test-a-hoisted-lookup-of-a-string-still-answers = {
       expr = hoisted "a";
       expected = [ ];
-    };
-    # `{ ${null} = …; }` DROPS the binding rather than aborting, so a null label used to vanish and
-    # the ranks after it renumbered. It is refused now; `rankOf`'s null aborted, and is refused too.
-    test-a-null-label-is-refused-catchably = {
-      expr = [
-        (caught (
-          G.ranksOf {
-            labels = [
-              "x"
-              null
-              "y"
-            ];
-          }
-        ))
-        (caught (G.rankOf { labels = [ "x" ]; } null))
-      ];
-      expected = [
-        {
-          success = false;
-          value = false;
-        }
-        {
-          success = false;
-          value = false;
-        }
-      ];
-    };
-    test-string-labels-still-rank = {
-      expr = G.ranksOf {
-        labels = [
-          "x"
-          "y"
-        ];
-      };
-      expected = {
-        x = 0;
-        y = 1;
-      };
     };
   };
 }

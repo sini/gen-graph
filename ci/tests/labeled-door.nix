@@ -1,29 +1,24 @@
 # ── THE ACCESSOR'S RESULT IS REFUSED WHERE IT IS READ ───────────────────────────
 # A labeled graph is a structural record, so `labeledEdges` is a caller-supplied function and
 # every surface applying it receives a value it did not construct. Unguarded, a malformed result
-# either aborted past `tryEval` at the read or — an int label never equals a literal, `series`
-# answers a non-string target as a node — was admitted without refusal at exit 0. These cells
+# either aborted past `tryEval` at the read or was admitted without refusal at exit 0. These cells
 # assert the refusal is CATCHABLE on every arm through every surface that reads it; the message
 # is asserted on `testsError` (`ci/tests-error.nix`, `labeled-door`), the only output that can.
 #
 # ★ THE NO-EARLIER CELL is the one that decides the construction. A field is checked where the
-# surface reads it and not before, so an edge a walk prunes on its label never has its target
-# judged: gen-view lawfully hangs `s —r→ d` edges whose target is a datum on nodes an `x*` walk
-# visits. An eager whole-result check refuses that graph, and no other suite here or in gen-view
-# notices — measured, den-hoag-vq94z spec §0.5.
+# surface reads it and not before, so an edge whose target a surface never reads never has its
+# target judged: gen-view lawfully hangs `s —r→ d` edges whose target is a datum. An eager
+# whole-result check refuses that graph — measured, den-hoag-vq94z spec §0.5. The walk modes that
+# first carried this cell retired with the calculus (den-hoag-gayc U3); `cyclicEdgesWhere` under a
+# `p` that reads its label and is never true reads every label and no target, which is the same
+# discriminator.
 { genGraph, ... }:
 let
   inherit (genGraph)
-    boundedBy
     cyclicEdgesWhere
     forgetLabels
     labeledTranspose
-    query
-    queryArrivals
-    regex
     ;
-  x = regex.star (regex.lit "x");
-  anyStar = regex.star regex.any;
 
   # every malformed arm is hung on node `a`; `b` is well formed
   arms = {
@@ -114,116 +109,30 @@ let
     inherit labeledEdges;
   };
 
-  walk =
-    mode: follow: graph:
-    if mode == "arrivals" then
-      queryArrivals { } {
-        inherit graph;
-        inherit follow;
-        from = "a";
-        advance = s: s.distance + 1;
-      }
-    else if mode == "visible" then
-      query
-        {
-          inherit mode;
-          groupBy = a: a.node;
-        }
-        {
-          inherit graph;
-          inherit follow;
-          from = "a";
-        }
-    else if mode == "fixpoint" then
-      query
-        {
-          inherit mode;
-          empty = [ ];
-          combine = a: b: a ++ [ b ];
-        }
-        {
-          inherit graph;
-          inherit follow;
-          from = "a";
-        }
-    else
-      query
-        {
-          inherit mode;
-        }
-        {
-          inherit graph;
-          inherit follow;
-          from = "a";
-        };
-  # each walk mode under `x*`, plus `all` under `any*` — `regex.deriv` on `any` never reads
-  # its letter, so that column is what shows the walk forces the label itself
-  modes = {
-    all = walk "all" x;
-    series = walk "series" x;
-    paths = walk "paths" x;
-    visible = walk "visible" x;
-    layers = walk "layers" x;
-    fixpoint = walk "fixpoint" x;
-    arrivals = walk "arrivals" x;
-    anyAll = walk "all" anyStar;
-  };
-  # the graph surfaces that apply the accessor outside a walk, and gen-view's composed shape
-  # (`query ∘ boundedBy ∘ labeledTranspose`, `gen-view/lib/relation.nix`)
+  # the graph surfaces that apply the accessor
   surfaces = {
-    bounded =
-      g:
-      query { } {
-        graph = boundedBy (_: [
-          {
-            name = "m";
-            admits = _: true;
-          }
-        ]) g;
-        from = "a";
-        follow = x;
-      };
-    composed =
-      g:
-      query { } {
-        graph = boundedBy (_: [ ]) (labeledTranspose g);
-        from = "b";
-        follow = x;
-      };
-    composedAny =
-      g:
-      query { } {
-        graph = boundedBy (_: [ ]) (labeledTranspose g);
-        from = "b";
-        follow = anyStar;
-      };
     transpose = g: (labeledTranspose g).labeledEdges "b";
     forget = g: (forgetLabels g).edges "a";
     cyclic = g: cyclicEdgesWhere (_: true) g;
+    # every label read, and no target: `p` forces its label and is never true, so the partition
+    # is never forced
+    labels = g: cyclicEdgesWhere (l: l == "none") g;
   };
 
   admitted = v: (builtins.tryEval (builtins.deepSeq v true)).success;
   # the arms a surface ADMITS; every other arm it refuses catchably, or the cell never returns
   admittedBy =
     run: builtins.filter (arm: admitted (run (graphOf arms.${arm}))) (builtins.attrNames arms);
-  valuesUnder = graph: builtins.mapAttrs (_: run: run graph) modes;
 in
 {
   flake.tests.labeled-door = {
-    test-every-walk-mode-refuses-every-malformed-arm-catchably = {
-      expr = builtins.mapAttrs (_: admittedBy) modes;
-      expected = builtins.mapAttrs (_: _: [ ]) modes;
-    };
-
     # A surface refuses exactly the arms whose field it reads. `forgetLabels` and
-    # `cyclicEdgesWhere` under `_: true` never read a label, so the two label arms pass them —
-    # the no-earlier clause, not a gap: the refusal arrives at the surface that reads it.
+    # `cyclicEdgesWhere` under `_: true` never read a label, so the two label arms pass them, and
+    # under `_: false` it reads no target, so the three target arms pass it — the no-earlier
+    # clause, not a gap: the refusal arrives at the surface that reads it.
     test-every-graph-surface-refuses-the-arms-it-reads-catchably = {
       expr = builtins.mapAttrs (_: admittedBy) surfaces;
       expected = {
-        bounded = [ ];
-        composed = [ ];
-        composedAny = [ ];
         transpose = [ ];
         forget = [
           "intLabel"
@@ -233,126 +142,35 @@ in
           "intLabel"
           "noLabel"
         ];
+        labels = [
+          "intTarget"
+          "noTarget"
+          "setTarget"
+        ];
       };
     };
 
     # CONTROL: the well-formed graph's answers, unchanged by the guard
-    test-the-well-formed-graph-answers-in-every-mode = {
-      expr = valuesUnder (graphOf control);
+    test-the-well-formed-graph-answers-at-every-surface = {
+      expr = builtins.mapAttrs (_: run: run (graphOf control)) surfaces;
       expected = {
-        all = [
-          "a"
-          "b"
-        ];
-        anyAll = [
-          "a"
-          "b"
-        ];
-        arrivals = [
+        transpose = [
           {
-            admission = regex.stateKey x;
-            distance = 0;
-            node = "a";
-            via = null;
-          }
-          {
-            admission = regex.stateKey x;
-            distance = 1;
-            node = "b";
-            via = {
-              from = "a";
-              label = "x";
-            };
+            label = "x";
+            target = "a";
           }
         ];
-        fixpoint = [
-          "a"
-          "b"
-        ];
-        layers = [
-          [
-            {
-              node = "a";
-              path = [ ];
-            }
-          ]
-          [
-            {
-              node = "b";
-              path = [
-                {
-                  from = "a";
-                  label = "x";
-                  to = "b";
-                }
-              ];
-            }
-          ]
-        ];
-        paths = [
-          {
-            node = "a";
-            path = [ ];
-          }
-          {
-            node = "b";
-            path = [
-              {
-                from = "a";
-                label = "x";
-                to = "b";
-              }
-            ];
-          }
-        ];
-        series = [
-          "a"
-          "b"
-        ];
-        visible = {
-          shadowed = [ ];
-          visible = [
-            {
-              node = "a";
-              path = [ ];
-            }
-            {
-              node = "b";
-              path = [
-                {
-                  from = "a";
-                  label = "x";
-                  to = "b";
-                }
-              ];
-            }
-          ];
-        };
+        forget = [ "b" ];
+        cyclic = [ ];
+        labels = [ ];
       };
     };
 
-    # ★ THE NO-EARLIER CELL. The `r` edge is pruned on its label, so its datum target is never
-    # read, and the walk answers as it did before the guard existed.
-    test-an-unfollowed-datum-target-is-not-refused = {
-      expr = {
-        all = walk "all" x (graphOf datum);
-        series = walk "series" x (graphOf datum);
-        paths = map (a: a.node) (walk "paths" x (graphOf datum));
-      };
-      expected = {
-        all = [
-          "a"
-          "b"
-        ];
-        series = [
-          "a"
-          "b"
-        ];
-        paths = [
-          "a"
-          "b"
-        ];
-      };
+    # ★ THE NO-EARLIER CELL. The `r` edge's datum target is never read by a surface that reads
+    # only labels, and it answers as it did before the guard existed.
+    test-an-unread-datum-target-is-not-refused = {
+      expr = surfaces.labels (graphOf datum);
+      expected = [ ];
     };
     # …and a surface that DOES read every target at a node refuses the same edge
     test-a-surface-reading-every-target-refuses-the-datum = {

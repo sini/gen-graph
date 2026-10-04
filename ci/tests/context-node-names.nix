@@ -43,13 +43,8 @@ let
     condensationOf
     condensation
     fbWork
-    labeledFrom
     labeledTranspose
-    boundedBy
     cyclicEdgesWhere
-    query
-    rankOf
-    regex
     foldPreorder
     foldReach
     labeledFixtures
@@ -181,22 +176,28 @@ let
         ]
         [ ];
   };
+  # A labeled record written as data (den-hoag-gayc U3), labels in name order.
   labOf =
     nodes: t: perLabelIncludeB:
-    labeledFrom {
-      parent = at [ (kv "a" [ t ]) ] [ ];
-      include = at ([ (kv "x" [ "b" ]) ] ++ perLabelIncludeB) [ ];
-    } nodes;
+    let
+      perLabel = {
+        include = at ([ (kv "x" [ "b" ]) ] ++ perLabelIncludeB) [ ];
+        parent = at [ (kv "a" [ t ]) ] [ ];
+      };
+    in
+    {
+      inherit nodes;
+      labeledEdges =
+        id:
+        builtins.concatMap (
+          label:
+          map (target: {
+            inherit label target;
+          }) (perLabel.${label} id)
+        ) (builtins.attrNames perLabel);
+    };
   lab = labOf [ "a" x "b" ] x [ ];
-  labPlainNodes = labOf [ "a" "x" "b" ] x [ ];
   labCyc = labOf [ "a" x "b" ] x [ (kv "b" [ x ]) ];
-  labTwin = labOf [ "a" "x" "b" ] "x" [ ];
-  follow = regex.star (
-    regex.alt [
-      (regex.lit "parent")
-      (regex.lit "include")
-    ]
-  );
 in
 {
   flake.tests.context-node-names = {
@@ -634,26 +635,6 @@ in
       expr = map (e: e.target) ((labeledTranspose lab).labeledEdges x);
       expected = [ "a" ];
     };
-    # Q2
-    test-bounded-over-a-context-carrying-node-set = {
-      expr = (boundedBy (_: [ ]) lab).labeledEdges "a";
-      expected = [
-        {
-          label = "parent";
-          target = "x";
-        }
-      ];
-    };
-    # Q2
-    test-bounded-looked-up-by-a-context-carrying-id = {
-      expr = (boundedBy (_: [ ]) labPlainNodes).labeledEdges x;
-      expected = [
-        {
-          label = "include";
-          target = "b";
-        }
-      ];
-    };
     # Q3
     test-cyclic-edges-where-through-a-context-carrying-node = {
       expr = cyclicEdgesWhere (_: true) labCyc;
@@ -669,118 +650,6 @@ in
           to = "b";
         }
       ];
-    };
-    # Q4
-    test-query-all-reaches-a-context-carrying-node = {
-      expr =
-        query
-          {
-            mode = "all";
-          }
-          {
-            graph = lab;
-            from = "a";
-            inherit follow;
-          };
-      expected = [
-        "a"
-        "b"
-        "x"
-      ];
-    };
-    # Q5
-    test-query-paths-through-a-context-carrying-node = {
-      expr = map (a: a.node) (
-        query
-          {
-            mode = "paths";
-          }
-          {
-            graph = lab;
-            from = "a";
-            inherit follow;
-          }
-      );
-      expected = [
-        "a"
-        "x"
-        "b"
-      ];
-    };
-    # Q5
-    test-query-paths-from-a-context-carrying-node = {
-      expr = map (a: a.node) (
-        query
-          {
-            mode = "paths";
-          }
-          {
-            graph = labPlainNodes;
-            from = x;
-            inherit follow;
-          }
-      );
-      expected = [
-        "x"
-        "b"
-      ];
-    };
-    # Q6
-    test-query-visible-grouped-by-a-context-carrying-node = {
-      expr =
-        map (a: a.node)
-          (query
-            {
-              mode = "visible";
-              groupBy = ans: ans.node;
-            }
-            {
-              graph = lab;
-              from = "a";
-              inherit follow;
-            }
-          ).visible;
-      expected = [
-        "a"
-        "b"
-        "x"
-      ];
-    };
-    # L1
-    test-rank-of-a-context-carrying-label = {
-      expr = rankOf {
-        labels = [
-          (ctx "parent")
-          "include"
-        ];
-      } (ctx "parent");
-      expected = 0;
-    };
-    # L1
-    test-rank-of-beside-a-context-carrying-label = {
-      expr = rankOf {
-        labels = [
-          (ctx "parent")
-          "include"
-        ];
-      } "include";
-      expected = 1;
-    };
-    # L2
-    test-regex-alternation-of-a-context-carrying-label = {
-      expr = regex.stateKey (
-        regex.alt [
-          (regex.lit (ctx "parent"))
-          (regex.lit "include")
-        ]
-      );
-      # keyed exactly as its context-free twin: context is not part of a label's key
-      expected = regex.stateKey (
-        regex.alt [
-          (regex.lit "parent")
-          (regex.lit "include")
-        ]
-      );
     };
     # Pr1
     test-fold-preorder-keyed-by-a-context-carrying-node = {
@@ -1033,38 +902,6 @@ in
       expr = labeledFixtures.poisoned.labeledEdges (ctx "b");
       expected = [ ];
     };
-    # Q4 value
-    test-an-answered-node-keeps-its-context = {
-      expr = builtins.any builtins.hasContext (
-        query
-          {
-            mode = "all";
-          }
-          {
-            graph = lab;
-            from = "a";
-            inherit follow;
-          }
-      );
-      expected = true;
-    };
-    # Q5 value
-    test-a-walked-node-keeps-its-context = {
-      expr = builtins.any builtins.hasContext (
-        map (a: a.node) (
-          query
-            {
-              mode = "paths";
-            }
-            {
-              graph = lab;
-              from = "a";
-              inherit follow;
-            }
-        )
-      );
-      expected = true;
-    };
     # R2 value
     test-a-registered-node-keeps-its-context = {
       expr =
@@ -1174,24 +1011,9 @@ in
     # control
     test-control-the-context-free-twin-answers-the-same = {
       expr = {
-        q =
-          query
-            {
-              mode = "all";
-            }
-            {
-              graph = labTwin;
-              from = "a";
-              inherit follow;
-            };
         t = topoOrder { } gTwin;
       };
       expected = {
-        q = [
-          "a"
-          "b"
-          "x"
-        ];
         t = {
           ok = true;
           order = [

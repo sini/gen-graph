@@ -6,16 +6,10 @@
 # options, or only read them behind the subject, reds (2) (spec K3; a same-term equality alone is
 # vacuous by referential transparency). `ancestorsOf`'s one option is retired, so it has no
 # observable option and G4 (`doors.nix`) alone stands for it.
-#
-# den-hoag-nvrl1 — the query family's options are ONE closed set in every mode: an unknown option
-# is refused catchably at `query opts`'s WHNF whatever the mode, and a missing record field is
-# refused catchably at the record's own application, in every mode. The messages are pinned on
-# `testsError` (`p2-query-closure`).
 { genGraph, ... }:
 let
   G = genGraph;
   ok = v: (builtins.tryEval (builtins.deepSeq v true)).success;
-  formed = v: (builtins.tryEval (builtins.seq v true)).success;
   chain = {
     nodes = [
       "a"
@@ -41,14 +35,6 @@ let
         b = [ "c" ];
       }
       .${id} or [ ];
-  };
-  labeled = G.labeledFrom {
-    x = chain.edges;
-  } chain.nodes;
-  q = {
-    graph = labeled;
-    from = "a";
-    follow = G.regex.parse "x*";
   };
 
   # Each row: `partial` is the options step applied and BOUND before any operand, `full` the same
@@ -138,17 +124,6 @@ let
         partial = partial (G.field "deps") reg;
         full = G.fromRegistry o (G.field "deps") reg;
         zero = G.fromRegistry { } (G.field "deps") reg;
-      };
-    regex-parseWith =
-      let
-        o.maxLength = 1;
-        partial = G.regex.parseWith o;
-      in
-      {
-        obs = ok;
-        partial = partial "x*";
-        full = G.regex.parseWith o "x*";
-        zero = G.regex.parseWith { } "x*";
       };
     transitiveClosure =
       let
@@ -291,57 +266,8 @@ let
         full = G.fromScan o r;
         zero = G.fromScan { } r;
       };
-    queryArrivals =
-      let
-        o.where = id: id != "a";
-        r = q // {
-          advance = s: s.distance + 1;
-        };
-        partial = G.queryArrivals o;
-      in
-      {
-        obs = map (a: a.node);
-        partial = partial r;
-        full = G.queryArrivals o r;
-        zero = G.queryArrivals { } r;
-      };
-    queryFold =
-      let
-        o.valueOf = id: "<${id}>";
-        partial = G.queryFold o;
-      in
-      {
-        obs = s: s;
-        partial = partial (a: v: a + v) "" q;
-        full = G.queryFold o (a: v: a + v) "" q;
-        zero = G.queryFold { } (a: v: a + v) "" q;
-      };
-    query =
-      let
-        o.mode = "paths";
-        partial = G.query o;
-      in
-      {
-        obs = builtins.toJSON;
-        partial = partial q;
-        full = G.query o q;
-        zero = G.query { } q;
-      };
   };
 
-  modes = {
-    all = { };
-    series = { };
-    paths = { };
-    visible.groupBy = a: a.node;
-    layers = { };
-    fixpoint = {
-      empty = 0;
-      combine = n: _: n + 1;
-    };
-  };
-  unknown = "notAFieldOfThisDoor";
-  withMode = m: modes.${m} // { mode = m; };
 in
 {
   flake.tests.p2-doors = {
@@ -356,51 +282,5 @@ in
       expected = builtins.mapAttrs (_: _: true) rows;
     };
 
-    # den-hoag-nvrl1: the same closed options set in every mode.
-    test-nvrl1-an-unknown-option-is-refused-in-every-mode = {
-      expr = builtins.mapAttrs (m: _: formed (G.query (withMode m // { ${unknown} = 1; }))) modes;
-      expected = builtins.mapAttrs (_: _: false) modes;
-    };
-    test-nvrl1-a-missing-record-field-is-refused-in-every-mode = {
-      expr = builtins.mapAttrs (
-        m: _: formed (G.query (withMode m) (builtins.removeAttrs q [ "follow" ]))
-      ) modes;
-      expected = builtins.mapAttrs (_: _: false) modes;
-    };
-    test-nvrl1-an-option-on-the-record-is-refused-in-every-mode = {
-      expr = builtins.mapAttrs (m: _: formed (G.query (withMode m) (q // { where = _: true; }))) modes;
-      expected = builtins.mapAttrs (_: _: false) modes;
-    };
-    # The control: every mode answers the well-formed call, so the three cells above are not a
-    # door that refuses everything.
-    test-nvrl1-every-mode-answers-the-well-formed-call = {
-      expr = builtins.mapAttrs (m: _: ok (G.query (withMode m) q)) modes;
-      expected = builtins.mapAttrs (_: _: true) modes;
-    };
-    test-nvrl1-queryFold-refuses-an-unknown-option-and-a-missing-field = {
-      expr = {
-        unknown = formed (G.queryFold { ${unknown} = 1; });
-        missing = formed (G.queryFold { } (a: _: a) 0 (builtins.removeAttrs q [ "graph" ]));
-        control = ok (G.queryFold { } (a: _: a + 1) 0 q);
-      };
-      expected = {
-        unknown = false;
-        missing = false;
-        control = true;
-      };
-    };
-    # A mode's own required option, and an unknown mode, are refused when `query opts` is formed.
-    test-nvrl1-a-mode-requirement-is-refused-at-the-options = {
-      expr = {
-        visible = formed (G.query { mode = "visible"; });
-        fixpoint = formed (G.query { mode = "fixpoint"; });
-        bogus = formed (G.query { mode = "bogus"; });
-      };
-      expected = {
-        visible = false;
-        fixpoint = false;
-        bogus = false;
-      };
-    };
   };
 }

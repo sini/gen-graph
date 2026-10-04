@@ -18,22 +18,28 @@ let
     edges = id: { a = [ "b" ]; }.${id} or [ ];
   };
   isRegistered = id: builtins.elem id g.nodes;
-  labeled = G.labeledFrom {
-    x = g.edges;
-  } g.nodes;
+  # A labeled record is written as data (den-hoag-gayc U3): `g`'s edges, each labelled `x`.
+  labeled = {
+    inherit (g) nodes;
+    labeledEdges =
+      id:
+      map (target: {
+        label = "x";
+        inherit target;
+      }) (g.edges id);
+  };
 in
 {
   unknown = "notAFieldOfThisDoor";
 
   # The options steps whose next step is NOT a record door, so there is no record for G10 to guard:
-  # a positional operand (`fixpoint`, `fromRegistry`, `regex.parseWith`) or a value (`mkGraph`).
+  # a positional operand (`fixpoint`, `fromRegistry`) or a value (`mkGraph`).
   # `ci/tests/doors.nix` enumerates every options door on the published surface and requires each
   # to be here or to have a `records` row, so a new chained door cannot go unguarded unseen (P6).
   notChained = [
     "mkGraph"
     "fixpoint"
     "fromRegistry"
-    "regex.parseWith"
   ];
 
   # ── EVERY OPTIONS STEP (P2 rule 2) ──
@@ -62,10 +68,6 @@ in
         "keyOf"
         "lessThan"
       ];
-    };
-    "regex.parseWith" = {
-      door = G.regex.parseWith;
-      optional = [ "maxLength" ];
     };
     fixpoint = {
       door = G.fixpoint;
@@ -145,29 +147,6 @@ in
         "parents"
       ];
     };
-    queryArrivals = {
-      door = G.queryArrivals;
-      optional = [ "where" ];
-    };
-    queryFold = {
-      door = G.queryFold;
-      optional = [
-        "valueOf"
-        "where"
-      ];
-    };
-    query = {
-      door = G.query;
-      optional = [
-        "mode"
-        "where"
-        "order"
-        "groupBy"
-        "combine"
-        "empty"
-        "valueOf"
-      ];
-    };
   };
 
   # ── EVERY RECORD STEP (P2 rules 3 and 5, R7 (b)) ──
@@ -212,16 +191,6 @@ in
           "nodes"
         ];
       };
-      q = {
-        graph = labeled;
-        from = "a";
-        follow = G.regex.parse "x*";
-      };
-      qRequired = [
-        "graph"
-        "from"
-        "follow"
-      ];
     in
     {
       reachableFrom = edgesOnly G.reachableFrom;
@@ -424,29 +393,6 @@ in
           "project"
         ];
         misplaced = "nodeData";
-      };
-      queryArrivals = {
-        step = G.queryArrivals { };
-        good = q // {
-          advance = _: 1;
-        };
-        drop = "advance";
-        required = qRequired ++ [ "advance" ];
-        misplaced = "where";
-      };
-      query = {
-        step = G.query { };
-        good = q;
-        drop = "follow";
-        required = qRequired;
-        misplaced = "mode";
-      };
-      queryFold = {
-        step = G.queryFold { } (a: _: a) 0;
-        good = q;
-        drop = "graph";
-        required = qRequired;
-        misplaced = "valueOf";
       };
     };
 
