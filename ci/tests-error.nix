@@ -1582,6 +1582,21 @@ in
         test-nf-ancestorsOf =
           cell "ancestorsOf" "parent is a int, not a function returning a node id (a string) or null"
             (nf "ancestorsOf");
+        # ONE SOURCE (den-hoag-7jltk): `callableAt` throws exactly the published `notA` text;
+        # the literal cell above pins its wording.
+        test-nf-ancestorsOf-throws-the-published-refusal = {
+          expr = builtins.deepSeq (nf "ancestorsOf") null;
+          expectedError = {
+            type = "ThrownError";
+            msg =
+              "^"
+              + esc (
+                (G.key "gen-graph").notA "ancestorsOf" "parent" "a function returning a node id (a string) or null"
+                  1
+              )
+              + "$";
+          };
+        };
         test-nf-dependentsFrontier =
           cell "dependentsFrontier" "prune is a int, not a function returning a bool"
             (nf "dependentsFrontier");

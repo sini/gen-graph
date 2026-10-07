@@ -1159,7 +1159,7 @@ The bindings, each taking the calling door's name `who` first:
 | `notAnIdentifier who v`                        | the refusal text for a non-string id: names the type, never the value                                                                      |
 | `renderId id`                                  | an id for a message: JSON for a string, `<a type>` otherwise, so a refusal cannot abort while rendering                                    |
 | `say who text`, `within door prim`             | render `<prefix>.<door>: text`; through `within`, a shared primitive reached from another door refuses as `<prefix>.<door>: … (in <prim>)` |
-| `callable v`, `callableAt surface name want f` | a function or a functor; the door that returns it or refuses it by name                                                                    |
+| `callable v`, `callableAt surface name want f` | a function or a functor; the door that returns it or refuses it by name, throwing `notA surface name "a function returning ${want}" f`     |
 | `badResult`, `notA`, `notEdgeList`             | refusal texts for a caller function's result, a caller field, and an `edges` result of the wrong type                                      |
 | `edgesAccessor who f`                          | the `edges` accessor, or its refusal                                                                                                       |
 | `retiredMaxDepth who`                          | the refusal text for the retired `maxDepth` argument                                                                                       |

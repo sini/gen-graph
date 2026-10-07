@@ -118,10 +118,7 @@ let
   # `builtins.isFunction h || callable h`, before the second application.
   callableAt =
     surface: name: want: f:
-    if callable f then
-      f
-    else
-      throw (say surface "${name} is a ${builtins.typeOf f}, not a function returning ${want}");
+    if callable f then f else throw (notA surface name "a function returning ${want}" f);
   badResult =
     surface: name: subject: want: v:
     throw (say surface "${name} ${subject} returned a ${builtins.typeOf v}, not ${want}");
