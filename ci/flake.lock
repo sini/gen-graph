@@ -191,11 +191,11 @@
         "treefmt-nix": "treefmt-nix_2"
       },
       "locked": {
-        "lastModified": 1791297316,
-        "narHash": "sha256-hhtNTEOnDK8mAu5KRJ3cLLPzmhQjjK5hcHoc/ZH5pYo=",
+        "lastModified": 1791337664,
+        "narHash": "sha256-ogVtmKINFRuiJ6K+jKD6VQqLaUGpRLZ8nbAAzQIDdXA=",
         "owner": "sini",
         "repo": "gen-harness",
-        "rev": "c0ea2734feb04ac64802270a4ba481029e4f5e2b",
+        "rev": "79e1194de545446cad4802264c744b4f196114e4",
         "type": "github"
       },
       "original": {
@@ -206,11 +206,11 @@
     },
     "gen-prelude": {
       "locked": {
-        "lastModified": 1791297378,
-        "narHash": "sha256-B0VQf9nrqUVbBLePwr8QD6X7/hd0Ey+/eO9eXI+vef8=",
+        "lastModified": 1791339742,
+        "narHash": "sha256-kdkEjOcOLu+ZiLAnfkZWSv6CJIS2Uud80RIXfGxePJo=",
         "owner": "sini",
         "repo": "gen-prelude",
-        "rev": "da7dcf4e7969c1dd4cab129eb94432c80d32e9aa",
+        "rev": "7f80026464d2b6a2837784022517c6ec2ab5ea57",
         "type": "github"
       },
       "original": {
@@ -335,16 +335,16 @@
         "nixpkgs-regression": "nixpkgs-regression"
       },
       "locked": {
-        "lastModified": 1790875667,
-        "narHash": "sha256-ldqXsv3UaPHCvvH0nlDvjNF7zM4wJmMjuyRy91/pVFM=",
+        "lastModified": 1791243198,
+        "narHash": "sha256-fuoqgE/DZMDByEYZyoOBNUxbf/JUMy2VLT8mFcYe0Fc=",
         "owner": "DeterminateSystems",
         "repo": "nix-src",
-        "rev": "8bb6b35147841a45b6dead93fc98339798d586f5",
+        "rev": "1ef903401b3426fbca74a692e158cca82d7c98ab",
         "type": "github"
       },
       "original": {
         "owner": "DeterminateSystems",
-        "ref": "v3.23.0",
+        "ref": "v3.23.1",
         "repo": "nix-src",
         "type": "github"
       }
