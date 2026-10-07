@@ -32,9 +32,14 @@
 # `ci/bench/cone-consultation.sh`.
 {
   genGraph,
+  genPrelude,
   ...
 }:
 let
+  # gen-prelude's refusal text, composed with this library's own literal door, field and accepted
+  # set (den-hoag-7jltk): every assertion kept, none of gen-prelude's wording copied.
+  inherit (genPrelude) refusals;
+  exactly = m: "^" + genPrelude.escapeRegex m + "$";
   inherit (genGraph) mkGraph coneRank;
 
   # a -> b -> c -> a, read as dependencies: a cone with no producers-first rank at all.
@@ -1472,7 +1477,7 @@ in
           expr = genGraph.reachableFrom { inherit nodes; } "a";
           expectedError = {
             type = "ThrownError";
-            msg = "^gen-graph\\.reachableFrom: required field 'edges' is missing \\(required: 'edges'\\) \\(in prelude\\.checkRequired\\)$";
+            msg = exactly (refusals.missingField "gen-graph.reachableFrom" [ "edges" ] "edges");
           };
         };
         test-a-pattern-formal-edges-aborts-in-the-callers-destructuring = {
@@ -1873,7 +1878,14 @@ in
         # The graph record is a door (P2): a non-attrset is refused by `checkRequired`, naming the door.
         notAGraph =
           door:
-          "^gen-graph\\.${door}: the argument must be an attrset, not a list \\(required: 'nodes', 'edges'\\) \\(in prelude\\.checkRequired\\)$";
+          exactly (
+            refusals.recordNotASet "gen-graph.${door}"
+              [
+                "nodes"
+                "edges"
+              ]
+              [ ]
+          );
       in
       {
         test-kahn-refusal-names-topoOrderKahn = cell (keyMsg "topoOrderKahn") (
@@ -1988,10 +2000,8 @@ in
     flake.testsError.door-refusals =
       let
         F = import ./tests/_fixtures/doors.nix { inherit genGraph; };
-        quoted = fs: builtins.concatStringsSep ", " (map (f: "'${f}'") fs);
-        # the message is the door's text, not prelude's: an anchored literal, so a grown or reordered
-        # accepted set turns the cell red
-        exactly = m: "^" + builtins.replaceStrings [ "." "(" ")" ] [ "\\." "\\(" "\\)" ] m + "$";
+        # the door, field and accepted set are this library's literals, the frame is gen-prelude's
+        # published text: an anchored match, so a grown or reordered accepted set turns the cell red
         cell = step: r: m: {
           expr = builtins.seq (step r) true;
           expectedError = {
@@ -2002,19 +2012,19 @@ in
         nameOf = n: d: "gen-graph.${d.name or n}";
         missing =
           n: d:
-          cell d.step (builtins.removeAttrs d.good [ d.drop ])
-            "${nameOf n d}: required field '${d.drop}' is missing (required: ${quoted d.required}) (in prelude.checkRequired)";
+          cell d.step (builtins.removeAttrs d.good [ d.drop ]) (
+            refusals.missingField (nameOf n d) d.required d.drop
+          );
         unknown =
           n: d:
-          cell d.door
-            {
-              ${F.unknown} = 1;
-            }
-            "${nameOf n d}: '${F.unknown}' is not an option of this door; the options are closed (accepted: ${quoted d.optional}) (in prelude.checkOptions)";
+          cell d.door {
+            ${F.unknown} = 1;
+          } (refusals.unknownOption (nameOf n d) d.optional F.unknown);
         misplaced =
           n: d:
-          cell d.step (d.good // { ${d.misplaced} = 1; })
-            "${nameOf n d}: '${d.misplaced}' is an option of ${nameOf n d}, not a field of this record (in prelude.checkGuarded)";
+          cell d.step (d.good // { ${d.misplaced} = 1; }) (
+            refusals.guardedField (nameOf n d) (nameOf n d) d.misplaced
+          );
         family =
           suffix: f: doors:
           builtins.listToAttrs (
