@@ -1034,14 +1034,24 @@ in
           expr = (forgetLabels { nodes = [ "a" ]; }).nodes;
           expectedError = {
             type = "ThrownError";
-            msg = "^gen-graph\\.forgetLabels: required field 'labeledEdges' is missing .*";
+            msg = exactly (
+              refusals.missingField "gen-graph.forgetLabels" [
+                "labeledEdges"
+                "nodes"
+              ] "labeledEdges"
+            );
           };
         };
         test-labeledTranspose-keeps-labeledEdges-required = {
           expr = (labeledTranspose { nodes = [ "a" ]; }).nodes;
           expectedError = {
             type = "ThrownError";
-            msg = "^gen-graph\\.labeledTranspose: required field 'labeledEdges' is missing .*";
+            msg = exactly (
+              refusals.missingField "gen-graph.labeledTranspose" [
+                "labeledEdges"
+                "nodes"
+              ] "labeledEdges"
+            );
           };
         };
       };
