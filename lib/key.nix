@@ -118,10 +118,11 @@ let
   # `builtins.isFunction h || callable h`, before the second application.
   callableAt =
     surface: name: want: f:
-    if callable f then
-      f
-    else
-      throw (say surface "${name} is a ${builtins.typeOf f}, not a function returning ${want}");
+    if callable f then f else throw (notCallable surface name want f);
+  # The text `callableAt` throws, as a value (den-hoag-7jltk), as `notAnIdentifier` is `identifier`'s.
+  notCallable =
+    surface: name: want: f:
+    say surface "${name} is a ${builtins.typeOf f}, not a function returning ${want}";
   badResult =
     surface: name: subject: want: v:
     throw (say surface "${name} ${subject} returned a ${builtins.typeOf v}, not ${want}");
@@ -172,6 +173,7 @@ in
     attrKey
     callable
     callableAt
+    notCallable
     badResult
     notA
     renderId
