@@ -1,37 +1,102 @@
-{ prelude }:
+{ prelude }@args:
 let
-  traverse = import ./traverse.nix { inherit prelude; };
-  global = import ./global.nix { inherit prelude; };
-  enumerate = import ./enumerate.nix { inherit prelude; };
-  edgeMaps = import ./edge-maps.nix { inherit prelude; };
-  fixpoint = import ./fixpoint.nix { inherit prelude; };
-  registry = import ./registry.nix { inherit prelude; };
-  declaredEdges = import ./declared-edges.nix { inherit prelude; };
-  endpoints = import ./endpoints.nix { inherit prelude; };
-  order = import ./order.nix { inherit prelude; };
-  partition = import ./partition.nix { inherit prelude; };
-  preorder = import ./preorder.nix { inherit prelude; };
-  # `threaded` is each file's R6 primitives by `who` (`key.nix`), and `cores` its doors' unchecked
-  # cores (P2 §p2.3.2), both for the doors of another file; neither is published.
-  published =
-    m:
-    builtins.removeAttrs m [
-      "threaded"
-      "cores"
-    ];
+  modules = import ./modules.nix args;
 in
-published traverse
-// published global
-// published enumerate
-// published edgeMaps
-// published fixpoint
-// published registry
-// published declaredEdges
-// published endpoints
-// published order
-// published partition
-// published preorder
-// {
+{
+  inherit (modules.declaredEdges)
+    declaredEdgesFindings
+    isDeclaredEdges
+    isNodeRef
+    mkDeclaredEdges
+    mkNodeRef
+    mkSpawnedNodeRef
+    nodeRefFindings
+    refName
+    ;
+  inherit (modules.edgeMaps)
+    differenceEdges
+    forgetLabels
+    intersectEdges
+    labeledTranspose
+    materialize
+    materializeParents
+    selectEdges
+    unionEdges
+    ;
+  inherit (modules.endpoints)
+    mkEndpointProjection
+    mkProjectionFindings
+    ;
+  inherit (modules.enumerate)
+    leaves
+    roots
+    select
+    ;
+  inherit (modules.fixpoint)
+    closureClass
+    closureOf
+    compose
+    fixpoint
+    seededFixpoint
+    transitiveClosure
+    transitiveReduction
+    ;
+  inherit (modules.global)
+    coScc
+    condensationClosure
+    dependents
+    dependentsFrontier
+    dependentsOf
+    directDependents
+    directDependentsOf
+    impactOf
+    transpose
+    ;
+  inherit (modules.order)
+    coneRank
+    entryAfter
+    entryAnywhere
+    entryBefore
+    entryBetween
+    phaseOrder
+    topoOrder
+    topoOrderKahn
+    ;
+  inherit (modules.partition)
+    condensation
+    condensationOf
+    cyclePaths
+    cycles
+    cyclicEdgesWhere
+    fbNode
+    fbWork
+    lowlink
+    ;
+  inherit (modules.preorder)
+    expandPreorder
+    foldPreorder
+    foldReach
+    ;
+  inherit (modules.registry)
+    field
+    fields
+    fixtures
+    fromRegistry
+    fromScan
+    labeledFixtures
+    mkGraph
+    ;
+  inherit (modules.traverse)
+    ancestorsOf
+    canReach
+    hoistEdges
+    pathsBetween
+    reachableFrom
+    reachableVia
+    reachableWhere
+    selfReachable
+    selfReachableVia
+    ;
   # The refusal machinery every door above applies with `"gen-graph"` (den-hoag-gayc U1a): a plain
   # function of `prefix`, so another library reaches the SAME module applied to its own name
   # (`key "gen-scope"`) rather than a second key former. Unapplied here — a caller supplies its own
