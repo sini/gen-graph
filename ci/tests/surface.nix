@@ -20,9 +20,52 @@
 # ★ SORTED WITH NIX'S OWN `<`, NEVER A SHELL `sort`. Nix orders strings bytewise and a locale
 # collation puts `coScc` and `compose` in a different order, so a pin generated through a shell
 # `sort` reads FALSE on a correct tree — a false red indistinguishable from a missing export.
-{ genGraph, ... }:
+{ genGraph, genPrelude, ... }:
 let
   v = genGraph;
+
+  # THE LITERAL AGAINST ITS MODULE RECORD (den-hoag-9lg69). `lib/default.nix` publishes one
+  # `inherit (modules.<m>)` clause per module, so a name a module gains and no clause lists is
+  # unpublished silently, and a name listed under a module that lacks it fails only when demanded.
+  # This is the check a `//` chain over the modules would have made by construction, run here
+  # rather than at every load. A name listed twice in the literal is the evaluator's own parse
+  # error; a name two modules export is refused below, where the old chain resolved it last-wins.
+  # `key` and the four tombstones are the literal's own and no module's.
+  nonModule = [
+    "key"
+    "query"
+    "regex"
+    "labeledFrom"
+    "boundedBy"
+  ];
+  modules = import ../../lib/modules.nix { prelude = genPrelude; };
+  namesOf = builtins.mapAttrs (_: builtins.attrNames);
+  owners = builtins.concatLists (
+    builtins.attrValues (
+      builtins.mapAttrs (
+        m:
+        map (n: {
+          inherit m n;
+        })
+      ) (namesOf modules)
+    )
+  );
+  owed = map (o: o.n) owners;
+  # Each name two modules export, once per exporting module, so the refusal names both.
+  duplicated = builtins.filter (o: builtins.length (builtins.filter (n: n == o.n) owed) > 1) owners;
+  published = builtins.filter (n: !(builtins.elem n nonModule)) (builtins.attrNames v);
+  missing = builtins.filter (n: !(v ? ${n})) owed;
+  extra = builtins.filter (n: !(builtins.elem n owed)) published;
+  # Every published name forced: a name listed under a module that lacks it aborts here, naming it.
+  forced = builtins.foldl' (a: n: builtins.seq (builtins.tryEval v.${n}).success a) null published;
+  completeness = builtins.seq forced (
+    if duplicated != [ ] then
+      throw "gen-graph surface: exported by two modules: ${builtins.toJSON duplicated}"
+    else if missing != [ ] || extra != [ ] then
+      throw "gen-graph surface: the literal surface and the module record disagree: missing ${builtins.toJSON missing}, extra ${builtins.toJSON extra}"
+    else
+      "complete: ${toString (builtins.length published)} names"
+  );
 
   pinned = [
     "ancestorsOf"
@@ -116,6 +159,22 @@ in
     test-control-the-surface-pin-discriminates = {
       expr = builtins.sort (a: b: a < b) (builtins.attrNames v) == builtins.tail pinned;
       expected = false;
+    };
+
+    test-the-literal-surface-is-the-module-record = {
+      expr = completeness;
+      expected = "complete: 72 names";
+    };
+
+    # The check above runs in the suite and not at load because no caller can move a module's name
+    # set: every name set is the same with `prelude`, the only formal, bound to a throw. A module
+    # that computed its names from the formal would red this cell.
+    test-module-name-sets-read-no-formal = {
+      expr =
+        namesOf (
+          import ../../lib/modules.nix { prelude = throw "gen-graph surface: a name set read `prelude`"; }
+        ) == namesOf modules;
+      expected = true;
     };
   };
 }
