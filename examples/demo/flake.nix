@@ -205,7 +205,7 @@
             parent = _id: entry: entry.parent or null;
           } (graph.field "imports") registry;
         in
-        graph.ancestorsOf { } regG "svc:db";
+        graph.ancestorsOf regG "svc:db";
       # → [ "svc:api" "svc:web" ]
     };
 }

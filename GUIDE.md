@@ -96,7 +96,7 @@ Here's something subtle about gen-graph's design: traversal functions **never lo
 # These only use `edges`:
 graph.reachableFrom g "web"        # follows edges from "web" outward
 graph.pathsBetween { } g "web" "db"    # DFS from "web" toward "db"
-graph.ancestorsOf { } g "grandchild"   # follows parent links upward
+graph.ancestorsOf g "grandchild"   # follows parent links upward
 ```
 
 If your graph has 10,000 nodes but only 5 are reachable from `"web"`, gen-graph only evaluates those 5. The other 9,995 are never touched.
@@ -270,7 +270,7 @@ g = graph.mkGraph {
 };
 
 graph.reachableFrom g "a"    # [ "b" "c" ]
-graph.ancestorsOf { } g "child"  # [ "parent" ]
+graph.ancestorsOf g "child"  # [ "parent" ]
 ```
 
 If you have data in a node-map format (an attrset keyed by id, each entry carrying its
@@ -287,7 +287,7 @@ g = graph.fromRegistry {
   parent = _id: entry: entry.parent or null;
 } (graph.field "imports") legacy;
 graph.reachableFrom g "svc:web"   # [ "svc:api" "svc:db" ]
-graph.ancestorsOf { } g "svc:db"      # [ "svc:api" "svc:web" ]
+graph.ancestorsOf g "svc:db"      # [ "svc:api" "svc:web" ]
 ```
 
 Malformed data is refused by name and catchably, where it is read:

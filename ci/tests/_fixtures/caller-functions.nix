@@ -35,7 +35,7 @@ let
     reachableWhere = f: G.reachableWhere g "a" f;
     selectEdges = f: G.selectEdges f E;
     dependentsFrontier = f: G.dependentsFrontier g "c" f;
-    ancestorsOf = f: G.ancestorsOf { } (g // { parent = f; }) "c";
+    ancestorsOf = f: G.ancestorsOf (g // { parent = f; }) "c";
     materializeParents = f: G.materializeParents (g // { parent = f; });
     reachableVia = f: G.reachableVia f "a";
     selfReachableVia = f: G.selfReachableVia f "a";
@@ -102,7 +102,7 @@ let
     mkProjectionFindings-structuralAttributesOf = f: projection G.mkProjectionFindings { } f;
     fromRegistry-parent =
       f:
-      G.ancestorsOf { } (G.fromRegistry
+      G.ancestorsOf (G.fromRegistry
         {
           parent = f;
         }

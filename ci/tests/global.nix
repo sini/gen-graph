@@ -384,7 +384,7 @@ in
       ];
     };
     test-transpose-composes-with-ancestorsOf = {
-      expr = ancestorsOf { } (transpose fixtures.tree) "grandchild";
+      expr = ancestorsOf (transpose fixtures.tree) "grandchild";
       expected = [
         "child1"
         "root"

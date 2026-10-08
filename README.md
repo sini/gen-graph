@@ -120,7 +120,7 @@ reachableFrom  : { edges, ... } → id → [id]
 reachableWhere : { edges, ... } → id → (id → bool) → [id]
 canReach       : { edges, ... } → id → id → bool
 selfReachable  : { edges, ... } → id → bool
-ancestorsOf    : { maxDepth? } → { parent, ... } → id → [id]   # maxDepth is retired: refused by name
+ancestorsOf    : { parent, ... } → id → [id]
 pathsBetween   : { maxDepth ? 2000 } → { edges, ... } → id → id → [[id]]
 ```
 
@@ -163,10 +163,10 @@ graph.selfReachable cyclicGraph "a"   # → true
 graph.selfReachable dagGraph "a"      # → false
 ```
 
-**`ancestorsOf { } g startId`** — walks `parent` links upward. Returns the chain from immediate parent to root. Cycle-safe: stops if a visited id is seen again. A `genericClosure` over the parent chain, so it has no depth ceiling (the ceiling row below); a retired `maxDepth` option is refused by name when `ancestorsOf opts` is formed, and one given on the accessor record is refused as misplaced.
+**`ancestorsOf g startId`** — walks `parent` links upward. Returns the chain from immediate parent to root. Cycle-safe: stops if a visited id is seen again. A `genericClosure` over the parent chain, so it has no depth ceiling (the ceiling row below) and takes no depth option. A bound on path depth is `pathsBetween { maxDepth = …; }`.
 
 ```nix
-graph.ancestorsOf { } g "grandchild"
+graph.ancestorsOf g "grandchild"
 # → [ "child1" "root" ]
 ```
 
@@ -213,10 +213,10 @@ forcing it). `expandPreorder` and `foldReach` are thin specializations of it.
 DFS stack, with every carried field forced each step, and its visited set is Bentley &
 Saxe's logarithmic method over native attrsets, so it copies Θ(n log(n/32)) values rather than
 Θ(n²) (`lib/preorder.nix`'s header has the construction and the measured cost, and
-`./ci/bench/walks-cost.sh` is its oracle). `maxDepth` is **retired**: all four walks
-(`ancestorsOf` too) still accept it and **refuse it by name**, on every output field; `surface`
-is the name that refusal and every caller-function refusal carry — a specialization written
-outside this library names itself the same way.
+`./ci/bench/walks-cost.sh` is its oracle). The walks (`ancestorsOf` too) take no depth option;
+a bounded walk over paths is `pathsBetween { maxDepth; }`. `surface` is the name every
+caller-function refusal carries — a specialization written outside this library names itself
+the same way.
 
 **Contract — strictness.** `acc` is forced to WHNF **at every frame, whether or not you read it**
 (and for `foldReach`, so are `project` and `itemKey`, which build its accumulator). `visited` is
@@ -441,8 +441,8 @@ Read the two extremes together, because either alone is misleading. **On one lar
 | `phaseOrder`                                    | none found to 16,000                                                                                                                                                                                                                                                                                                                                                                                        | states no ceiling and its bound                                                                                                                                                                                                                                          |
 | `coneRank`                                      | none found to 32,000 on `chain` and `deepwide`                                                                                                                                                                                                                                                                                                                                                              | states no ceiling                                                                                                                                                                                                                                                        |
 | `pathsBetween`                                  | **real** — ≈2,498 on `chain` as an UPPER BOUND in a bare expression: uncatchable, depth-driven, and **strictly lower under any open call stack** (three measuring expressions give 2,498 / 2,499 / 2,500 on one fixture, and eight extra evaluator frames above the call move it below 2,497; re-derived at `374b0ad`, 2,497 returns / 2,498 aborts bare and 2,447 / 2,448 under 200 added caller frames)   | refuses **by name** past a STATED cap (`maxDepth`, 2,000 as shipped), which is what makes the refusal catchable at all: the evaluator's own abort is not. The cap is a parameter because the boundary belongs to the whole evaluation — a consumer nested deep lowers it |
-| `foldPreorder` / `expandPreorder` / `foldReach` | none found to 200,000 on `chain` and `star` and to 402,000 on `deepwide` (a 2,000-node spine with 200 leaves per node). The walk contains no recursion: one `genericClosure` step per DFS action over an explicit stack, every carried field forced per step. The self-recursive core it replaced aborted at 4,994 on `chain` and, because its accumulator was never forced, with CSTACK on a 34,000 `star` | states no ceiling. `maxDepth` is retired and refused by name. An infinite demand-generated graph DIVERGES rather than refusing, a recorded price (the pre-order section)                                                                                                 |
-| `ancestorsOf`                                   | none found to 200,000 on a `parent`-chain. A `genericClosure` over the chain, with no recursion; the recursive walk it replaced aborted at 9,989                                                                                                                                                                                                                                                            | states no ceiling. `maxDepth` is retired and refused by name. An infinite parent chain of distinct ids diverges                                                                                                                                                          |
+| `foldPreorder` / `expandPreorder` / `foldReach` | none found to 200,000 on `chain` and `star` and to 402,000 on `deepwide` (a 2,000-node spine with 200 leaves per node). The walk contains no recursion: one `genericClosure` step per DFS action over an explicit stack, every carried field forced per step. The self-recursive core it replaced aborted at 4,994 on `chain` and, because its accumulator was never forced, with CSTACK on a 34,000 `star` | states no ceiling. An infinite demand-generated graph DIVERGES rather than refusing, a recorded price (the pre-order section)                                                                                                                                            |
+| `ancestorsOf`                                   | none found to 200,000 on a `parent`-chain. A `genericClosure` over the chain, with no recursion; the recursive walk it replaced aborted at 9,989                                                                                                                                                                                                                                                            | states no ceiling. An infinite parent chain of distinct ids diverges                                                                                                                                                                                                     |
 
 Two axes are excluded from every "none found" row above and are named once rather than per row. **Shape**: the readings are on `chain`, `fleet`, `cycle`, `star`, `bush` and `deepwide`; dense and complete shapes are not measured for ceilings. **Evaluation context**: a surface that spends an evaluator frame per link has a boundary belonging to the whole evaluation rather than to the surface, so a consumer's real ceiling is strictly lower than a bare-expression reading. One surface above is frame-per-link, `pathsBetween`, so that axis qualifies its row and leaves the others untouched. It is also why its cap is a parameter rather than a constant: a stated cap that a consumer cannot lower is a bare-expression figure sold as a consumer's ceiling.
 
@@ -1162,7 +1162,6 @@ The bindings, each taking the calling door's name `who` first:
 | `callable v`, `callableAt surface name want f` | a function or a functor; the door that returns it or refuses it by name, throwing `notA surface name "a function returning ${want}" f`     |
 | `badResult`, `notA`, `notEdgeList`             | refusal texts for a caller function's result, a caller field, and an `edges` result of the wrong type                                      |
 | `edgesAccessor who f`                          | the `edges` accessor, or its refusal                                                                                                       |
-| `retiredMaxDepth who`                          | the refusal text for the retired `maxDepth` argument                                                                                       |
 
 ## Usage Example
 

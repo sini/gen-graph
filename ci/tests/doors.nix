@@ -143,7 +143,6 @@ in
         unclassified = [ ];
         chainedWithoutRow = [ ];
         chainedAtOnce = [
-          "ancestorsOf"
           "condensationClosure"
           "dependents"
           "expandPreorder"
@@ -157,8 +156,8 @@ in
           "transitiveClosure"
           "transitiveReduction"
         ];
-        # the thirteen and `closureOf`
-        chained = 14;
+        # the twelve and `closureOf`
+        chained = 13;
       };
     };
     # PARITY (den-hoag-ak8va, gate C1; gating): every chained door publishes its record step AS

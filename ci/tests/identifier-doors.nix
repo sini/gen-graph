@@ -38,7 +38,7 @@ in
         (G.canReach g X "b")
         (G.canReach g "a" X)
         (G.selfReachable g X)
-        (G.ancestorsOf { } g X)
+        (G.ancestorsOf g X)
         (G.pathsBetween { } g X "b")
         (G.dependents { } g X)
         (G.dependentsOf g X)
@@ -57,7 +57,7 @@ in
         (G.reachableWhere g "a" (_: true))
         (G.canReach g "a" "b")
         (G.selfReachable g "a")
-        (G.ancestorsOf { } g "b")
+        (G.ancestorsOf g "b")
         (G.pathsBetween { } g "a" "b")
         (G.dependents { } g "b")
         (G.dependentsOf g "b")
@@ -106,7 +106,7 @@ in
     # The guards live in the door bodies, so the published formals survive: a guard at an export
     # wrapper would read `{ }` here (measured on the rejected prototype, `roots`). Each door is a
     # `prelude.door` functor now (P2), so the formals are read through the functor-aware reader
-    # (OQ15), and a curried door publishes its FIRST step: `ancestorsOf`'s options.
+    # (OQ15), and a curried door publishes its FIRST step: `ancestorsOf`'s accessor record.
     test-the-published-argument-lists-survive = {
       expr = map genPrelude.functionArgs [
         G.roots
@@ -121,7 +121,7 @@ in
           nodes = false;
         }
         { edges = false; }
-        { maxDepth = true; }
+        { parent = false; }
         {
           edges = false;
           nodes = false;

@@ -4,8 +4,7 @@
 # observable in its own result, the partially applied `f = door opts` (1) AGREES with the direct
 # full call, and (2) DIFFERS from the same door under `{ }`: an options step that ignored its
 # options, or only read them behind the subject, reds (2) (spec K3; a same-term equality alone is
-# vacuous by referential transparency). `ancestorsOf`'s one option is retired, so it has no
-# observable option and G4 (`doors.nix`) alone stands for it.
+# vacuous by referential transparency). `ancestorsOf` takes no options, so it has no options step.
 { genGraph, ... }:
 let
   G = genGraph;

@@ -35,7 +35,6 @@ let
     callableAt
     edgesAccessor
     notEdgeList
-    retiredMaxDepth
     ;
   inherit (prelude) door;
 
@@ -49,10 +48,8 @@ let
   # evaluator ceiling is reached by DFS depth, by fan-out, or by the length of an accumulator
   # chain — measured to 200,000 on a chain and a star and 402,000 on a 2,000-deep spine of
   # 200-leaf nodes (den-hoag-2t0sj). With no ceiling there is no refusal to state (ADR-0032:
-  # "owed where a real ceiling exists, and only there"), so `maxDepth` is RETIRED: each surface
-  # still accepts it, and refuses it by name (`retiredMaxDepth`) rather than ignoring it
-  # silently or meeting it with an uncatchable `unexpected argument` (ADR-0025 item 1). The
-  # refusal gates the whole result, so reading any one field of it refuses. `null` is absence.
+  # "owed where a real ceiling exists, and only there"), so the walks take no depth option: a
+  # bounded walk over paths is `pathsBetween { maxDepth; }`.
   #
   # ★ THE PRICE, RECORDED (ADR-0033's form). An INFINITE demand-generated graph — an unbounded
   # stream of distinct keys, or `null`-keyed frames that generate forever — now DIVERGES rather
@@ -210,33 +207,22 @@ let
   #    All three named traversals below are five-line specializations of this fold
   #    (the audit's "one combinator parameterized by projection + seen").
   #
-  #    `maxDepth` is retired (the header) and refused by name; `surface` is the name that
-  #    refusal and every caller-function refusal carry, so a specialization written outside
-  #    this library (a framework's `forwardExpand`) names itself.
-  # `foldPreorder { visited ? { }; maxDepth ? null; surface ? "foldPreorder"; } { roots; key; expand;
+  #    `surface` is the name every caller-function refusal carries, so a specialization
+  #    written outside this library (a framework's `forwardExpand`) names itself.
+  # `foldPreorder { visited ? { }; surface ? "foldPreorder"; } { roots; key; expand;
   # acc; }` (P2, R7): the options first, closed, then the four operands as ONE open record — rule 5's
   # record, read at the unit: `roots` is the subject rule 4 could name, but `key`, `expand` and `acc`
   # (a key function, an expansion function and the accumulator's seed) have no natural order among
-  # them, so the doubt is recorded here and the record kept. `maxDepth` is refused as retired when
-  # `foldPreorder opts` is formed; given on the record it is refused as misplaced (`optionsStep`).
-  foldPreorder =
-    door
-      {
-        name = "gen-graph.foldPreorder";
-        next = foldPreorderRecordSpec;
-        optional = [
-          "visited"
-          "maxDepth"
-          "surface"
-        ];
-      }
-      (
-        o:
-        if (o.maxDepth or null) != null then
-          throw (retiredMaxDepth (o.surface or "foldPreorder"))
-        else
-          foldPreorderRecord (foldPreorderCore o)
-      );
+  # them, so the doubt is recorded here and the record kept. An option given on the record is
+  # refused as misplaced (`optionsStep`).
+  foldPreorder = door {
+    name = "gen-graph.foldPreorder";
+    next = foldPreorderRecordSpec;
+    optional = [
+      "visited"
+      "surface"
+    ];
+  } (o: foldPreorderRecord (foldPreorderCore o));
   foldPreorderRecordSpec = {
     name = "gen-graph.foldPreorder";
     required = [
@@ -356,32 +342,21 @@ let
   #    ONE key set: `key frame` both cycle-guards and dedups (each frame is one
   #    witness). `seen0` seeds that set (drop-pruning), `nodes0` seeds the witness list.
   #    `emit` defaults to the payload itself. Returns `{ nodes; seen }`.
-  # `expandPreorder { resolve ?; emit ?; seen0 ?; nodes0 ?; maxDepth ? null; } { roots; key; edges; }`
+  # `expandPreorder { resolve ?; emit ?; seen0 ?; nodes0 ?; } { roots; key; edges; }`
   # (P2, R7): the options first, closed, then the three operands as ONE open record — rule 5's
   # record, read at the unit: `roots` is the subject rule 4 could name, but `key` and `edges` are
   # two functions of a frame with no natural order between them, so the doubt is recorded here and
-  # the record kept. `maxDepth` is refused as retired when `expandPreorder opts` is formed; given
-  # on the record it is refused as misplaced (`optionsStep`).
-  expandPreorder =
-    door
-      {
-        name = "gen-graph.expandPreorder";
-        next = expandPreorderRecordSpec;
-        optional = [
-          "resolve"
-          "emit"
-          "seen0"
-          "nodes0"
-          "maxDepth"
-        ];
-      }
-      (
-        o:
-        if (o.maxDepth or null) != null then
-          throw (retiredMaxDepth "expandPreorder")
-        else
-          expandPreorderRecord (expandPreorderCore o)
-      );
+  # the record kept. An option given on the record is refused as misplaced (`optionsStep`).
+  expandPreorder = door {
+    name = "gen-graph.expandPreorder";
+    next = expandPreorderRecordSpec;
+    optional = [
+      "resolve"
+      "emit"
+      "seen0"
+      "nodes0"
+    ];
+  } (o: expandPreorderRecord (expandPreorderCore o));
   expandPreorderRecordSpec = {
     name = "gen-graph.expandPreorder";
     required = [
@@ -464,31 +439,21 @@ let
   #    first-occurrence-dedups the witness list ACROSS vertices (`seen0`; a `null` item
   #    key is never deduped — always kept, the conservative NULL-KEEP direction).
   #    `nodes0` seeds the witness list. Returns `{ nodes; seen; visited }`.
-  # `foldReach { visited0 ?; seen0 ?; nodes0 ?; maxDepth ? null; } { roots; edges; target; project;
+  # `foldReach { visited0 ?; seen0 ?; nodes0 ?; } { roots; edges; target; project;
   # itemKey; }` (P2, R7): the options first, closed, then the five operands as ONE open record —
   # rule 5's record, read at the unit: `roots` is the subject rule 4 could name, but `edges`,
   # `target`, `project` and `itemKey` are four functions with no natural order among them, so the
-  # doubt is recorded here and the record kept. `maxDepth` is refused as retired when
-  # `foldReach opts` is formed; given on the record it is refused as misplaced (`optionsStep`).
-  foldReach =
-    door
-      {
-        name = "gen-graph.foldReach";
-        next = foldReachRecordSpec;
-        optional = [
-          "visited0"
-          "seen0"
-          "nodes0"
-          "maxDepth"
-        ];
-      }
-      (
-        o:
-        if (o.maxDepth or null) != null then
-          throw (retiredMaxDepth "foldReach")
-        else
-          foldReachRecord (foldReachCore o)
-      );
+  # doubt is recorded here and the record kept. An option given on the record is refused as
+  # misplaced (`optionsStep`).
+  foldReach = door {
+    name = "gen-graph.foldReach";
+    next = foldReachRecordSpec;
+    optional = [
+      "visited0"
+      "seen0"
+      "nodes0"
+    ];
+  } (o: foldReachRecord (foldReachCore o));
   foldReachRecordSpec = {
     name = "gen-graph.foldReach";
     required = [

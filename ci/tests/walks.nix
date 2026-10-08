@@ -163,7 +163,7 @@ let
           };
       anc = builtins.genList (
         i:
-        G.ancestorsOf { } {
+        G.ancestorsOf {
           inherit (g) parent;
         } (nm i)
       ) 20;
@@ -185,7 +185,7 @@ in
         fr = len (fr (chainOf 20000));
         fp = fp (chainOf 20000);
         anc = len (
-          G.ancestorsOf { } {
+          G.ancestorsOf {
             parent = id: if idx id == 0 then null else nm (idx id - 1);
           } (nm 19999)
         );

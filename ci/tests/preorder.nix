@@ -4,7 +4,7 @@
 # order); cycle-break; per-edge classFilter projection + negative-edge suppression
 # (foldReach); lazy/demand-generated edges + seedable seen0 (expandPreorder);
 # dual-bucket classify + null-key unguarded (foldPreorder); empty/degenerate seeds;
-# the retired `maxDepth`'s named, CATCHABLE refusal on every output field.
+# every output field of the three walks returns.
 { genGraph, ... }:
 let
   inherit (genGraph) foldPreorder expandPreorder foldReach;
@@ -693,106 +693,13 @@ in
         ];
       };
 
-    # ── A RETIRED `maxDepth` IS REFUSED BY NAME, AND THE REFUSAL GATES EVERY FIELD ─────────
+    # ── EVERY OUTPUT FIELD OF THE THREE WALKS RETURNS ──────────────────────────────────────
     #
     # The walks are `genericClosure` loops with no depth ceiling (`lib/preorder.nix`'s header),
-    # so the cap and its refusal are retired and `maxDepth` itself is refused by name (ADR-0025
-    # item 1: a value or a named refusal, never an inert door or an uncatchable `unexpected
-    # argument`). The claim is CATCHABILITY on EVERY output field — a refusal that guarded
-    # `nodes` alone would let a caller reading `seen` or `visited` meet a door that describes
-    # nothing. The message's own text is asserted in `ci/tests-error.nix`. A chain of ONE node
-    # is the fixture on purpose: no depth reaches anything, so only the argument can refuse.
-    #
-    # The cells that pinned the depth refusal (`test-{expandpreorder,foldpreorder,foldreach}-
-    # refuses-past-maxdepth-catchably`, the `returns-at-exactly-maxdepth` control and the
-    # default-cap pair) are retired: under this refusal a `returns … maxDepth = 8 … == false`
-    # cell is green on every input, so it would pin a ceiling that no longer exists.
-    test-expandpreorder-refuses-a-retired-maxdepth-on-every-field =
-      let
-        c = chain 1;
-        r =
-          expandPreorder
-            {
-              maxDepth = 8;
-            }
-            {
-              roots = [ c.top ];
-              key = f: f;
-              inherit (c) edges;
-            };
-      in
-      {
-        expr = {
-          nodes = returns r.nodes;
-          seen = returns r.seen;
-        };
-        expected = {
-          nodes = false;
-          seen = false;
-        };
-      };
-
-    test-foldreach-refuses-a-retired-maxdepth-on-every-field =
-      let
-        c = chain 1;
-        r =
-          foldReach
-            {
-              maxDepth = 8;
-            }
-            {
-              roots = [ c.top ];
-              edges = t: c.edges t;
-              target = e: e;
-              project = e: [ e ];
-              itemKey = i: i;
-            };
-      in
-      {
-        expr = {
-          nodes = returns r.nodes;
-          seen = returns r.seen;
-          visited = returns r.visited;
-        };
-        expected = {
-          nodes = false;
-          seen = false;
-          visited = false;
-        };
-      };
-
-    test-foldpreorder-refuses-a-retired-maxdepth-on-every-field =
-      let
-        c = chain 1;
-        r =
-          foldPreorder
-            {
-              maxDepth = 8;
-            }
-            {
-              roots = [ c.top ];
-              key = f: f;
-              acc = 0;
-              expand = acc: frame: {
-                acc = acc + 1;
-                children = c.edges frame;
-              };
-            };
-      in
-      {
-        expr = {
-          acc = returns r.acc;
-          visited = returns r.visited;
-        };
-        expected = {
-          acc = false;
-          visited = false;
-        };
-      };
-
-    # LIVE CONTROL, same run, same fixture: without `maxDepth` every field of all three
-    # returns. Without it the cells above are consistent with a surface that refuses every call.
-    test-control-the-walks-return-without-maxdepth =
+    # and they take no depth option. LIVE CONTROL for the option refusals `ci/tests-error.nix`
+    # pins (`door-refusals`, `former-depth-option`): every field of all three returns under the
+    # empty options, so those refusals are not a surface that refuses every call.
+    test-control-the-walks-return-on-every-field =
       let
         c = chain 1;
         ep = expandPreorder { } {

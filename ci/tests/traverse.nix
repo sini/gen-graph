@@ -115,18 +115,18 @@ in
       ];
     };
     test-ancestors-tree = {
-      expr = ancestorsOf { } fixtures.tree "grandchild";
+      expr = ancestorsOf fixtures.tree "grandchild";
       expected = [
         "child1"
         "root"
       ];
     };
     test-ancestors-root = {
-      expr = ancestorsOf { } fixtures.tree "root";
+      expr = ancestorsOf fixtures.tree "root";
       expected = [ ];
     };
     test-ancestors-child = {
-      expr = ancestorsOf { } fixtures.tree "child2";
+      expr = ancestorsOf fixtures.tree "child2";
       expected = [ "root" ];
     };
     test-paths-diamond = {
@@ -162,7 +162,7 @@ in
             ];
           };
         in
-        ancestorsOf { } g "a";
+        ancestorsOf g "a";
       expected = [ "b" ];
     };
     test-reachable-disconnected = {
@@ -417,45 +417,48 @@ in
         expected = 2001;
       };
 
-    # ── ancestorsOf's RETIRED `maxDepth` IS REFUSED BY NAME ──
+    # ── `ancestorsOf` HAS NO OPTIONS STEP (P2, R7) ──
     #
-    # `ancestorsOf` is a `genericClosure` over the parent chain with no depth ceiling, so its
-    # cap and refusal are retired and `maxDepth` itself is refused by name (`lib/preorder.nix`'s
-    # header). A chain with ONE ancestor is the fixture on purpose: no depth reaches anything,
-    # so only the argument can refuse. The message's own text is asserted in
-    # `ci/tests-error.nix`.
-    #
-    # Retired with the cap: `test-ancestorsof-refuses-past-maxdepth-catchably` (green on every
-    # input under this refusal, so it would pin a ceiling that no longer exists), its control
-    # `test-control-ancestorsof-returns-at-the-cap-boundary` (it passed `maxDepth = 8` on a
-    # returning path, which is exactly what is refused now; the boundary it controlled for is
-    # gone, and the control below takes its place), and the default-cap pair at 8,001 / 8,002.
-    test-ancestorsof-refuses-a-retired-maxdepth-catchably =
+    # `ancestorsOf` is a `genericClosure` over the parent chain with no depth ceiling, so it takes
+    # no option and R7 leaves it no options step: the accessor record comes first, open, like
+    # every other accessor door. A former `ancestorsOf { maxDepth; }` call meets the record step
+    # and is refused for its missing `parent` (`ci/tests-error.nix`, `former-depth-option`).
+    test-ancestorsof-publishes-its-accessor-record-first = {
+      expr = {
+        inherit (ancestorsOf.__contract) required open;
+      };
+      expected = {
+        required = [ "parent" ];
+        open = true;
+      };
+    };
+
+    # R5's stated price at an accessor record: an extra field beside `parent` is admitted and
+    # never read, so the answer equals the clean run. Pinned as a SUCCESS so that a later
+    # closure of the record is a visible change, not a silent one.
+    test-ancestorsof-admits-an-extra-field-on-its-accessor-record =
       let
-        c = ancestorsChain 2;
+        c = ancestorsChain 3;
       in
       {
-        expr = returns (
-          ancestorsOf
-            {
-              maxDepth = 8;
-            }
-            {
-              inherit (c) parent;
-            }
-            c.top
-        );
-        expected = false;
+        expr = ancestorsOf {
+          inherit (c) parent;
+          maxDepth = 3;
+        } c.top;
+        expected = [
+          "n000001"
+          "n000000"
+        ];
       };
 
-    # LIVE CONTROL, same run, same fixture: without `maxDepth` the walk returns its ancestor.
-    test-control-ancestorsof-returns-without-maxdepth =
+    # LIVE CONTROL, same run, same fixture: the walk returns its ancestor.
+    test-control-ancestorsof-returns =
       let
         c = ancestorsChain 2;
       in
       {
         expr = builtins.length (
-          ancestorsOf { } {
+          ancestorsOf {
             inherit (c) parent;
           } c.top
         );

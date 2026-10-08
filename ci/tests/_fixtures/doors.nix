@@ -80,10 +80,6 @@ in
       door = G.fromRegistry;
       optional = [ "parent" ];
     };
-    ancestorsOf = {
-      door = G.ancestorsOf;
-      optional = [ "maxDepth" ];
-    };
     pathsBetween = {
       door = G.pathsBetween;
       optional = [ "maxDepth" ];
@@ -117,7 +113,6 @@ in
       door = G.foldPreorder;
       optional = [
         "visited"
-        "maxDepth"
         "surface"
       ];
     };
@@ -128,7 +123,6 @@ in
         "emit"
         "seen0"
         "nodes0"
-        "maxDepth"
       ];
     };
     foldReach = {
@@ -137,7 +131,6 @@ in
         "visited0"
         "seen0"
         "nodes0"
-        "maxDepth"
       ];
     };
     fromScan = {
@@ -264,13 +257,12 @@ in
         ];
       };
       ancestorsOf = {
-        step = G.ancestorsOf { };
+        step = G.ancestorsOf;
         good = {
           parent = _: null;
         };
         drop = "parent";
         required = [ "parent" ];
-        misplaced = "maxDepth";
       };
       pathsBetween = edgesOnly (G.pathsBetween { }) // {
         misplaced = "maxDepth";

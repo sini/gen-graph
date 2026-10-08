@@ -203,7 +203,7 @@ in
   flake.tests.context-node-names = {
     # T1
     test-ancestors-through-a-context-carrying-parent = {
-      expr = ancestorsOf { } {
+      expr = ancestorsOf {
         parent = at [ (kv "a" x) (kv "x" "b") ] null;
       } "a";
       expected = [
@@ -213,7 +213,7 @@ in
     };
     # T1
     test-ancestors-from-a-context-carrying-start = {
-      expr = ancestorsOf { } {
+      expr = ancestorsOf {
         parent = at [ (kv "x" "b") ] null;
       } x;
       expected = [ "b" ];

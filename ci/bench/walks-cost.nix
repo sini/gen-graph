@@ -65,7 +65,7 @@ let
             children = edges f;
           };
         }).visited;
-    ancestorsOf = g.ancestorsOf { } {
+    ancestorsOf = g.ancestorsOf {
       inherit parent;
     } (nm (n - 1));
     materializeParents = builtins.attrNames (

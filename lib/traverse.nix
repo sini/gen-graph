@@ -49,7 +49,6 @@ let
     identifier
     notAnIdentifier
     notEdgeList
-    retiredMaxDepth
     within
     ;
   # A variable, not `builtins.isString`: as an argument a select is a thunk, and `closureVia` passes
@@ -225,31 +224,13 @@ let
   # IS the chain order, and its C-level done set is the cycle guard. It keys by `==`, which
   # ignores string context — the partition `attrKey` induces — so a context-carrying id comes
   # back with its context (the key IS the value). Θ(depth) calls, no per-step copy, and no
-  # evaluator ceiling: there is no recursion, so the old depth cap and its refusal are retired
-  # and `maxDepth` is refused by name (`preorder.nix`'s header, and its recorded price: an
-  # infinite demand-generated parent chain of distinct ids diverges).
+  # evaluator ceiling: there is no recursion, so the walk takes no depth option (`preorder.nix`'s
+  # header, and its recorded price: an infinite demand-generated parent chain of distinct ids
+  # diverges). A bounded walk over paths is `pathsBetween { maxDepth; }`.
   #
-  # `ancestorsOf { maxDepth ? null; } { parent; } startId` (P2, R7): the options first, closed, then
-  # the accessor record, open. `maxDepth` stays an accepted option only so that it is refused as
-  # retired, by name, when `ancestorsOf opts` is formed; given on the record instead it is refused as
-  # misplaced (`optionsStep`), never silently admitted.
-  ancestorsOf =
-    door
-      {
-        name = "gen-graph.ancestorsOf";
-        next = ancestorsRecordSpec;
-        optional = [ "maxDepth" ];
-      }
-      (
-        o: if (o.maxDepth or null) != null then throw (retiredMaxDepth "ancestorsOf") else ancestorsRecord
-      );
-  ancestorsRecordSpec = {
-    name = "gen-graph.ancestorsOf";
-    required = [ "parent" ];
-    open = true;
-    optionsStep = ancestorsOf;
-  };
-  ancestorsRecord = door ancestorsRecordSpec ancestorsCore;
+  # `ancestorsOf { parent; } startId` (P2, R7): it has no options, so it has no options step; the
+  # accessor record comes first, open, like every other accessor door here.
+  ancestorsOf = accessorDoor "ancestorsOf" [ "parent" ] ancestorsCore;
   ancestorsCore =
     { parent, ... }:
     startId:

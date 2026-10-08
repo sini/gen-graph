@@ -583,19 +583,15 @@ in
       };
     };
 
-    # ── THE DEPTH-CAP REFUSAL NAMES THE SURFACE THE CALLER CALLED; A RETIRED `maxDepth` TOO ──
+    # ── THE DEPTH-CAP REFUSAL NAMES THE SURFACE THE CALLER CALLED ──
     #
     # `pathsBetween`'s `dfs` is still self-recursive, so it keeps a stated cap and its refusal.
     # That the guard FIRES catchably is asserted in `ci/tests/traverse.nix`; what only this
     # output can assert is the ADR-0009 amendment's demand that the refusal names its surface.
     #
     # The four walks `foldPreorder`, `expandPreorder`, `foldReach` and `ancestorsOf` are
-    # `genericClosure` loops with no depth ceiling (`lib/preorder.nix`'s header), so their
-    # `maxDepth` is RETIRED and refused by name: each cell below reads the output field furthest
-    # from the accumulator, because the refusal must gate EVERY field, not only the one a
-    # caller of the old walk would have read. `foldPreorder` names its caller's `surface`, which
-    # is how a specialization written outside this library (den-hoag's `forwardExpand`) names
-    # itself.
+    # `genericClosure` loops with no depth ceiling (`lib/preorder.nix`'s header), so they take no
+    # depth option; what a former `maxDepth` meets is pinned in `former-depth-option` below.
     #
     # Anchored at the front, for the reason the closure refusals are: an unanchored pattern goes
     # green on a message that has grown a cause it cannot support.
@@ -643,82 +639,6 @@ in
         ac9 = ancestorsChain 9;
       in
       {
-        test-expandpreorder-refuses-a-retired-maxdepth-by-name = {
-          expr =
-            (genGraph.expandPreorder
-              {
-                maxDepth = 8;
-              }
-              {
-                roots = [ c.top ];
-                key = f: f;
-                inherit (c) edges;
-              }
-            ).seen;
-          expectedError = {
-            type = "ThrownError";
-            msg = "^gen-graph\\.expandPreorder: maxDepth is retired\\..*";
-          };
-        };
-        test-foldreach-refuses-a-retired-maxdepth-by-name = {
-          expr =
-            (genGraph.foldReach
-              {
-                maxDepth = 8;
-              }
-              {
-                roots = [ c.top ];
-                edges = t: c.edges t;
-                target = e: e;
-                project = e: [ e ];
-                itemKey = i: i;
-              }
-            ).visited;
-          expectedError = {
-            type = "ThrownError";
-            msg = "^gen-graph\\.foldReach: maxDepth is retired\\..*";
-          };
-        };
-        # ★ THE NAME IS READ OFF THE CALLER, not chosen from a fixed set: without this cell the
-        # two above are consistent with a `surface` the core ignores for anything but its own
-        # two callers.
-        test-foldpreorder-refuses-a-retired-maxdepth-naming-a-caller-outside-this-library = {
-          expr =
-            (genGraph.foldPreorder
-              {
-                maxDepth = 8;
-                surface = "forwardExpand";
-              }
-              {
-                roots = [ c.top ];
-                key = f: f;
-                acc = 0;
-                expand = acc: frame: {
-                  acc = acc + 1;
-                  children = c.edges frame;
-                };
-              }
-            ).visited;
-          expectedError = {
-            type = "ThrownError";
-            msg = "^gen-graph\\.forwardExpand: maxDepth is retired\\..*";
-          };
-        };
-        test-ancestorsof-refuses-a-retired-maxdepth-by-name = {
-          expr =
-            genGraph.ancestorsOf
-              {
-                maxDepth = 8;
-              }
-              {
-                inherit (ac9) parent;
-              }
-              ac9.top;
-          expectedError = {
-            type = "ThrownError";
-            msg = "^gen-graph\\.ancestorsOf: maxDepth is retired\\..*";
-          };
-        };
         test-pathsbetween-refusal-names-the-surface = {
           expr =
             genGraph.pathsBetween
@@ -736,8 +656,9 @@ in
           };
         };
         # LIVE CONTROL, same run, same accessors: `pathsBetween` under its cap returns, and the
-        # four walks WITHOUT `maxDepth` return. Without it every cell above is consistent with a
-        # surface that refuses every call, which a refusal-only output cannot otherwise see.
+        # four walks return. Without it every cell here and in `former-depth-option` is
+        # consistent with a surface that refuses every call, which a refusal-only output cannot
+        # otherwise see.
         test-depth-refusal-under-the-cap-control = {
           expr = {
             paths = builtins.length (
@@ -786,7 +707,7 @@ in
                 }
               ).acc;
             ancestors = builtins.length (
-              genGraph.ancestorsOf { } {
+              genGraph.ancestorsOf {
                 inherit (ac9) parent;
               } ac9.top
             );
@@ -800,6 +721,46 @@ in
           };
         };
       };
+
+    # ── A FORMER `maxDepth` MEETS THE ORDINARY DISPOSITION OF ITS POSITION ──
+    #
+    # The walks take no depth option, so `maxDepth` is nothing to them: at a walk's options step
+    # it is an unknown option, refused by name by the closed options check, which names the
+    # accepted set; at `ancestorsOf`, whose first step is its accessor record, the former options
+    # call `ancestorsOf { maxDepth; }` is refused for its missing `parent`. Each is catchable and
+    # raised when the step is applied. The control is `depth-refusal`'s
+    # `test-depth-refusal-under-the-cap-control`. Anchored at both ends, so that a refusal which
+    # grew a clause about the former option goes red.
+    flake.testsError.former-depth-option = {
+      test-foldpreorder-refuses-maxdepth-as-an-unknown-option = {
+        expr = genGraph.foldPreorder { maxDepth = 3; };
+        expectedError = {
+          type = "ThrownError";
+          msg = "^gen-graph\\.foldPreorder: 'maxDepth' is not an option of this door; the options are closed \\(accepted: 'visited', 'surface'\\) \\(in prelude\\.checkOptions\\)$";
+        };
+      };
+      test-expandpreorder-refuses-maxdepth-as-an-unknown-option = {
+        expr = genGraph.expandPreorder { maxDepth = 3; };
+        expectedError = {
+          type = "ThrownError";
+          msg = "^gen-graph\\.expandPreorder: 'maxDepth' is not an option of this door; the options are closed \\(accepted: 'resolve', 'emit', 'seen0', 'nodes0'\\) \\(in prelude\\.checkOptions\\)$";
+        };
+      };
+      test-foldreach-refuses-maxdepth-as-an-unknown-option = {
+        expr = genGraph.foldReach { maxDepth = 3; };
+        expectedError = {
+          type = "ThrownError";
+          msg = "^gen-graph\\.foldReach: 'maxDepth' is not an option of this door; the options are closed \\(accepted: 'visited0', 'seen0', 'nodes0'\\) \\(in prelude\\.checkOptions\\)$";
+        };
+      };
+      test-ancestorsof-former-options-call-is-refused-for-its-missing-parent = {
+        expr = genGraph.ancestorsOf { maxDepth = 3; };
+        expectedError = {
+          type = "ThrownError";
+          msg = "^gen-graph\\.ancestorsOf: required field 'parent' is missing \\(required: 'parent'\\) \\(in prelude\\.checkRequired\\)$";
+        };
+      };
+    };
     # den-hoag-u9k7j: the key projection is GUARDED. `unsafeDiscardStringContext` coerces, so an
     # unguarded key would admit a forged `outPath` set as the node "b" silently. It is refused, and
     # since den-hoag-ndte by name and catchably, where it met a TypeError before.
@@ -1143,7 +1104,7 @@ in
         test-canReach-from = cell (str "canReach") (genGraph.canReach g X "b");
         test-canReach-to = cell (str "canReach") (genGraph.canReach g "a" X);
         test-selfReachable = cell (str "selfReachable") (genGraph.selfReachable g X);
-        test-ancestorsOf = cell (str "ancestorsOf") (genGraph.ancestorsOf { } g X);
+        test-ancestorsOf = cell (str "ancestorsOf") (genGraph.ancestorsOf g X);
         test-pathsBetween = cell (str "pathsBetween") (genGraph.pathsBetween { } g X "b");
         test-dependents = cell (str "dependents") (genGraph.dependents { } g X);
         test-dependentsOf = cell (str "dependentsOf") (genGraph.dependentsOf g X);
