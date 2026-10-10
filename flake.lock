@@ -2,11 +2,11 @@
   "nodes": {
     "gen-prelude": {
       "locked": {
-        "lastModified": 1791499595,
-        "narHash": "sha256-NKkJ7aykCmZPCoQmsBqB+WfiOBiizK2U7ceKAWjQSeo=",
+        "lastModified": 1791642098,
+        "narHash": "sha256-QGB0WnUAPG2o/uabxPwHdzbD0qxBW6BoVCqSvirnXtE=",
         "owner": "sini",
         "repo": "gen-prelude",
-        "rev": "746b61b0aa0ef45eb07d2fbedd6e6c2b37c6ab9b",
+        "rev": "73460b70c762b4cb1f7da4e3ef2f1858369ae395",
         "type": "github"
       },
       "original": {
