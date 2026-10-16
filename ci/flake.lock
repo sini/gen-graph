@@ -3,11 +3,11 @@
     "bdwgc": {
       "flake": false,
       "locked": {
-        "lastModified": 1790015987,
-        "narHash": "sha256-bPVosUgucJR0hGSap3tJW84AR6eGYegVROV+O8VYX5A=",
+        "lastModified": 1791890853,
+        "narHash": "sha256-Wip2gE+2EJGC6trYxO9Pl36rkgA3BJJkAsiWTVGXFBc=",
         "owner": "DeterminateSystems",
         "repo": "bdwgc",
-        "rev": "373957929b9ca3b2ae69a3e16b830c44c15b42ca",
+        "rev": "d569c29c479acb44bcf4e992acfc776fb88fb857",
         "type": "github"
       },
       "original": {
@@ -206,11 +206,11 @@
         "treefmt-nix": "treefmt-nix_2"
       },
       "locked": {
-        "lastModified": 1792051148,
-        "narHash": "sha256-uxncuRSOEbks83FqyhSr5eZME5SjYGLMPziaRjogZ4c=",
+        "lastModified": 1792052493,
+        "narHash": "sha256-QmEpIBJMbcE7UiZsW5AevqfJLIWskVEacn6K8sMCsys=",
         "owner": "sini",
         "repo": "gen-harness",
-        "rev": "ab9f51e21076978361fa91ed67b6d4d80e007613",
+        "rev": "f6fe8e27aaa28766fd4bac1cc0eaa87c4f71b6a6",
         "type": "github"
       },
       "original": {
@@ -221,11 +221,11 @@
     },
     "gen-prelude": {
       "locked": {
-        "lastModified": 1792051164,
-        "narHash": "sha256-T9L7yY5ODttePWV1p1mtNoUXLrCQTfJ2aJTpvmjyy0o=",
+        "lastModified": 1792115281,
+        "narHash": "sha256-MD5V4HQ0T3vuo4qkp5xJpkr6F/cdHgGrn962EcY3q2k=",
         "owner": "sini",
         "repo": "gen-prelude",
-        "rev": "c9f349d1ee2fe66a2501033a287f899c3ade8043",
+        "rev": "887a885746ce6b5fc9cc5fbf76c2946e137d7ee5",
         "type": "github"
       },
       "original": {
@@ -350,16 +350,16 @@
         "nixpkgs-regression": "nixpkgs-regression"
       },
       "locked": {
-        "lastModified": 1791243198,
-        "narHash": "sha256-fuoqgE/DZMDByEYZyoOBNUxbf/JUMy2VLT8mFcYe0Fc=",
+        "lastModified": 1791922994,
+        "narHash": "sha256-Ir2Kf9gGrXqh48My/k5xMzKbWS9JSthDPjdBOmhnzrE=",
         "owner": "DeterminateSystems",
         "repo": "nix-src",
-        "rev": "1ef903401b3426fbca74a692e158cca82d7c98ab",
+        "rev": "b9ca37a0d89afc5a8cf4ee56c6702374aa9c9c87",
         "type": "github"
       },
       "original": {
         "owner": "DeterminateSystems",
-        "ref": "v3.23.1",
+        "ref": "v3.23.2",
         "repo": "nix-src",
         "type": "github"
       }
