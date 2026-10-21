@@ -224,6 +224,7 @@ in
       "lib/enumerate.nix"
       "lib/fixpoint.nix"
       "lib/global.nix"
+      "lib/key.nix"
       "lib/modules.nix"
       "lib/order.nix"
       "lib/partition.nix"

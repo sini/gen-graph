@@ -1050,7 +1050,7 @@ in
         };
       in
       {
-        # a set whose `__functor` is not a function is not callable (gen-view's `callable`)
+        # a set whose `__functor` is not a function is not applicable (gen-prelude `isApplicable`)
         test-a-non-function-functor-labeledEdges-is-refused-by-name = {
           expr = edgesOf (
             graph
@@ -1458,13 +1458,13 @@ in
             msg = "expected a set but found a string";
           };
         };
-        # FALSIFIER: a functor passes `callable` and aborts when its result is applied, at every door
-        # (den-hoag-hekcx F1); `callable` stays gen-view's twin rather than applying the functor
-        test-a-functor-returning-a-non-function-edges-aborts-on-application = {
+        # A functor whose `__functor` returns a non-function is not applicable (gen-prelude
+        # `isApplicable`, den-hoag-b6nyh): refused at the door, by name, where it aborted on application
+        test-a-functor-returning-a-non-function-edges-is-refused-by-name = {
           expr = genGraph.reachableFrom (acc { __functor = _self: 1; }) "a";
           expectedError = {
-            type = "TypeError";
-            msg = "attempt to call something which is not a function but an integer";
+            type = "ThrownError";
+            msg = "^gen-graph\\.reachableFrom: the accessor's edges is a set, not a function from a node id to a list of node ids$";
           };
         };
       };
@@ -1796,23 +1796,22 @@ in
             msg = "called without required argument 'x'";
           };
         };
-        # A functor passes `callable` (gen-view's twin) and returns a non-function when applied.
-        test-a-functor-returning-a-non-function-aborts-on-application = {
+        # A functor whose `__functor` returns a non-function is refused at the door (den-hoag-b6nyh).
+        test-a-functor-returning-a-non-function-is-refused-by-name = {
           expr = G.select F.g { __functor = _self: 1; };
           expectedError = {
-            type = "TypeError";
-            msg = "attempt to call something which is not a function but an integer";
+            type = "ThrownError";
+            msg = "^gen-graph\\.select: pred is a set, not a function returning a bool$";
           };
         };
-        # The same mechanism, at a BINARY caller-function's PARTIAL-RESULT position (den-hoag-hekcx
-        # P-D1): the first application returns a functor, `isFunction h || callable h` admits it
-        # (D1), and its own `__functor` returns a non-function, which the second application then
-        # tries to call. Unpinned until now: no cell drove a functor into a partial-result position.
-        test-a-functor-partial-returning-a-non-function-aborts-on-application = {
+        # The same at a BINARY caller-function's PARTIAL-RESULT position (den-hoag-hekcx P-D1): the
+        # first application returns a functor that reaches no function, so its head is null and it is
+        # refused by name before the second application (den-hoag-b6nyh).
+        test-a-functor-partial-returning-a-non-function-is-refused-by-name = {
           expr = G.selectEdges (_: { __functor = _s: 1; }) F.E;
           expectedError = {
-            type = "TypeError";
-            msg = "attempt to call something which is not a function but an integer";
+            type = "ThrownError";
+            msg = "^gen-graph\\.selectEdges: pred on the source \"a\" returned a set, not a function from a target to a bool$";
           };
         };
         # `succ`'s element is checked for `{ key; }`, and a key that is never a node id is refused
@@ -2047,5 +2046,116 @@ in
         )
       );
 
+    # den-hoag-b6nyh: a caller function is admitted by what Nix can apply (gen-prelude
+    # `isApplicable`, the fuelled `__functor` walk), at a `callableAt` door and at a per-application
+    # partial result, whose reached head is what is applied. A functor Nix cannot apply is refused
+    # by the door's name, catchably; one whose walk exhausts the bound is refused naming it; what Nix
+    # applies is served as its lambda twin.
+    flake.testsError.applicable-doors =
+      let
+        G = genGraph;
+        chain = n: leaf: if n == 0 then leaf else { __functor = _: chain (n - 1) leaf; };
+        self =
+          let
+            s = {
+              __functor = self: self;
+            };
+          in
+          s;
+        five = {
+          __functor = _: 5;
+        };
+        # what Nix applies as `leaf`: nested, a functor-valued `__functor`, 32 steps, stacked
+        # `setFunctionArgs` (nixpkgs' encoding, written out)
+        applicable = leaf: [
+          { __functor = _: { __functor = _: leaf; }; }
+          {
+            __functor = {
+              __functor = _: _: leaf;
+            };
+          }
+          (chain 32 leaf)
+          {
+            __functor = _: {
+              __functor = _: leaf;
+              __functionArgs = { };
+            };
+            __functionArgs = { };
+          }
+        ];
+        bound = "a functor that reaches no function within 32 `__functor` steps";
+        refused = expr: msg: {
+          expr = builtins.deepSeq expr true;
+          expectedError = {
+            type = "ThrownError";
+            msg = exactly msg;
+          };
+        };
+        caught = expr: {
+          expr = (builtins.tryEval (builtins.deepSeq expr true)).success;
+          expected = false;
+        };
+        pred = G.reachableWhere { edges = id: if id == "a" then [ "b" ] else [ ]; } "a";
+        order =
+          lt:
+          G.topoOrder { lessThan = lt; } {
+            nodes = [
+              "a"
+              "b"
+              "c"
+            ];
+            edges = _: [ ];
+          };
+        registry =
+          e:
+          G.reachableFrom (G.fromRegistry { } e {
+            a = { };
+            b = { };
+          }) "a";
+      in
+      {
+        test-a-pred-functor-returning-a-non-function-is-refused-by-name = refused (pred five) "gen-graph.reachableWhere: pred is a set, not a function returning a bool";
+        test-a-pred-functor-returning-a-non-function-is-catchable = caught (pred five);
+        test-a-self-returning-pred-is-refused-naming-the-bound = refused (pred self) "gen-graph.reachableWhere: pred is ${bound}, not a function returning a bool";
+        test-a-33-level-pred-is-refused-naming-the-bound = refused (pred (
+          chain 33 (_: true)
+        )) "gen-graph.reachableWhere: pred is ${bound}, not a function returning a bool";
+        test-applicable-preds-are-served-as-their-lambda = {
+          expr = map pred (applicable (_: true));
+          expected = builtins.genList (_: pred (_: true)) 4;
+        };
+
+        test-a-comparator-partial-functor-returning-a-non-function-is-refused-by-name =
+          refused (order (_: five))
+            "gen-graph.topoOrder: lessThan on the key \"b\" returned a set, not a function from a key to a bool";
+        test-a-comparator-partial-functor-returning-a-non-function-is-catchable = caught (order (_: five));
+        test-a-self-returning-comparator-partial-is-refused-naming-the-bound =
+          refused (order (_: self))
+            "gen-graph.topoOrder: lessThan on the key \"b\" returned ${bound}, not a function from a key to a bool";
+        test-a-33-level-comparator-partial-is-refused-naming-the-bound =
+          refused (order (a: chain 33 (b: a < b)))
+            "gen-graph.topoOrder: lessThan on the key \"b\" returned ${bound}, not a function from a key to a bool";
+        test-applicable-comparator-partials-are-served-as-their-lambda = {
+          expr = builtins.genList (i: order (a: builtins.elemAt (applicable (b: a < b)) i)) 4;
+          expected = builtins.genList (_: order (a: b: a < b)) 4;
+        };
+
+        test-a-registry-edges-partial-functor-returning-a-non-function-is-refused-by-name =
+          refused (registry (_: five))
+            "gen-graph.fromRegistry: edges \"a\" returned a set, not a function from a registry entry to a list of node ids";
+        test-a-registry-edges-partial-functor-returning-a-non-function-is-catchable = caught (
+          registry (_: five)
+        );
+        test-a-self-returning-registry-edges-partial-is-refused-naming-the-bound =
+          refused (registry (_: self))
+            "gen-graph.fromRegistry: edges \"a\" returned ${bound}, not a function from a registry entry to a list of node ids";
+        test-a-33-level-registry-edges-partial-is-refused-naming-the-bound =
+          refused (registry (_: chain 33 (_: [ ])))
+            "gen-graph.fromRegistry: edges \"a\" returned ${bound}, not a function from a registry entry to a list of node ids";
+        test-applicable-registry-edges-partials-are-served-as-their-lambda = {
+          expr = map (v: registry (_: v)) (applicable (_: [ "b" ]));
+          expected = builtins.genList (_: registry (_: _: [ "b" ])) 4;
+        };
+      };
   };
 }

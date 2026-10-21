@@ -1,6 +1,6 @@
 { prelude }:
 let
-  inherit (import ./key.nix "gen-graph")
+  inherit (import ./key.nix { inherit prelude; } "gen-graph")
     attrKey
     badResult
     callableAt

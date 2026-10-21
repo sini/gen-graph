@@ -1541,7 +1541,7 @@ in
             import
               (builtins.toFile "order-heap.nix" (
                 # the region reads the door-checked comparator `lt` and its refusals (den-hoag-hekcx)
-                "{ lessThan }:\nlet\nlt = lessThan;\ncallable = _: false;\nnotLessFn = _: _: throw \"not a function\";\nnotLessBool = _: _: _: throw \"not a bool\";\n"
+                "{ lessThan }:\nlet\nlt = lessThan;\nprelude.applicability = _: { verdict = false; head = null; };\nnotLessFn = _: _: throw \"not a function\";\nnotLessBool = _: _: _: throw \"not a bool\";\n"
                 + region
                 + "\nin\n{ inherit rankOf mergeH singleton insertAll; }\n"
               ))

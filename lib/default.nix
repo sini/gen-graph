@@ -101,7 +101,7 @@ in
   # function of `prefix`, so another library reaches the SAME module applied to its own name
   # (`key "gen-scope"`) rather than a second key former. Unapplied here — a caller supplies its own
   # prefix; `published`'s `threaded`/`cores` strip does not apply to a function.
-  key = import ./key.nix;
+  key = import ./key.nix { inherit prelude; };
   # RETIRED BY THE ONE CALCULUS (den-hoag-gayc D16; ADR-0008): resolution is gen-scope's `resolve`
   # over an evaluated scope, and this library keeps the classical half. Each name is a tombstone
   # naming its replacement, so an un-migrated call is refused where it is written rather than

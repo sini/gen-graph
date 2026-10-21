@@ -28,10 +28,9 @@
 #   visited key prunes that frame's whole subtree WITHOUT forcing it.
 { prelude }:
 let
-  inherit (import ./key.nix "gen-graph")
+  inherit (import ./key.nix { inherit prelude; } "gen-graph")
     attrKey
     badResult
-    callable
     callableAt
     edgesAccessor
     notEdgeList
@@ -297,13 +296,14 @@ let
               let
                 r =
                   let
-                    h = ex s.acc;
+                    h0 = ex s.acc;
+                    h = if builtins.isFunction h0 then h0 else (prelude.applicability h0).head;
                     r0 = h frame;
                   in
-                  if !(builtins.isFunction h || callable h) then
+                  if h == null then
                     badResult surface "expand" "on the accumulator"
                       "a function from a frame to { acc; children ? [ ]; }"
-                      h
+                      h0
                   else if builtins.isAttrs r0 && r0 ? acc then
                     r0
                   else
@@ -403,12 +403,13 @@ let
                 acc = {
                   h = (
                     let
-                      h = em frame;
+                      h0 = em frame;
+                      h = if builtins.isFunction h0 then h0 else (prelude.applicability h0).head;
                     in
-                    if builtins.isFunction h || callable h then
+                    if h != null then
                       h payload
                     else
-                      badResult "expandPreorder" "emit" "on a frame" "a function from a payload to a witness" h
+                      badResult "expandPreorder" "emit" "on a frame" "a function from a payload to a witness" h0
                   );
                   t = nodes;
                 };

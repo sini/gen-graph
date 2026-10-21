@@ -1,10 +1,11 @@
 { prelude }:
 let
-  inherit (import ./key.nix "gen-graph")
+  inherit (import ./key.nix { inherit prelude; } "gen-graph")
     attrKey
     badResult
     callable
     callableAt
+    kindOf
     notA
     renderId
     ;
@@ -173,7 +174,7 @@ let
           if builtins.isFunction edges || callable edges then
             edges
           else
-            throw "gen-graph.fromRegistry: edges is a ${builtins.typeOf edges}, not a function from a node id and its registry entry to a list of node ids";
+            throw "gen-graph.fromRegistry: edges is ${kindOf edges}, not a function from a node id and its registry entry to a list of node ids";
       in
       {
         inherit nodes;
@@ -182,28 +183,30 @@ let
         edges =
           id:
           let
-            h = e id;
+            h0 = e id;
+            h = if builtins.isFunction h0 then h0 else (prelude.applicability h0).head;
           in
-          if builtins.isFunction h || callable h then
+          if h != null then
             h (registry'.${toKey id} or { })
           else
             badResult "fromRegistry" "edges" (renderId id)
               "a function from a registry entry to a list of node ids"
-              h;
+              h0;
         parent =
           let
             pa = callableAt "fromRegistry" "parent" "a node id or null" parent;
           in
           id:
           let
-            h = pa id;
+            h0 = pa id;
+            h = if builtins.isFunction h0 then h0 else (prelude.applicability h0).head;
           in
-          if builtins.isFunction h || callable h then
+          if h != null then
             h (registry'.${toKey id} or { })
           else
             badResult "fromRegistry" "parent" (renderId id)
               "a function from a registry entry to a node id or null"
-              h;
+              h0;
         nodeData = id: registry'.${toKey id} or { };
       };
 

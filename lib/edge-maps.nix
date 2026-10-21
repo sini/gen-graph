@@ -1,10 +1,11 @@
 { prelude }:
 let
-  inherit (import ./key.nix "gen-graph")
+  inherit (import ./key.nix { inherit prelude; } "gen-graph")
     attrKey
     badResult
     callable
     callableAt
+    kindOf
     renderId
     edgesAccessor
     keyedAttrs
@@ -141,12 +142,13 @@ let
         builtins.filter (
           to:
           let
-            h = p from;
+            h0 = p from;
+            h = if builtins.isFunction h0 then h0 else (prelude.applicability h0).head;
             b = h to;
           in
-          if !(builtins.isFunction h || callable h) then
+          if h == null then
             badResult "selectEdges" "pred" "on the source ${renderId from}" "a function from a target to a bool"
-              h
+              h0
           else if builtins.isBool b then
             b
           else
@@ -199,7 +201,7 @@ let
     in
     if !(builtins.isFunction f || callable f) then
       throw "gen-graph.${surface}: the graph's labeledEdges is ${
-        if graph ? labeledEdges then "a ${builtins.typeOf f}" else "absent"
+        if graph ? labeledEdges then kindOf f else "absent"
       }, not a function from a node id to a list of { label; target; }"
     else if builtins.isList es then
       es

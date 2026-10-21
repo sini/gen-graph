@@ -78,10 +78,9 @@
 # analysis is on the way out either way.
 { prelude }:
 let
-  inherit (import ./key.nix "gen-graph")
+  inherit (import ./key.nix { inherit prelude; } "gen-graph")
     attrKey
     badResult
-    callable
     callableAt
     renderId
     edgesAccessor
@@ -307,11 +306,12 @@ let
         if degRaw.${toKey a} == degRaw.${toKey b} then
           (
             let
-              h = lt a;
+              h0 = lt a;
+              h = if builtins.isFunction h0 then h0 else (prelude.applicability h0).head;
               r = h b;
             in
-            if !(builtins.isFunction h || callable h) then
-              notLessFn a h
+            if h == null then
+              notLessFn a h0
             else if builtins.isBool r then
               r
             else
@@ -418,11 +418,12 @@ let
         else if
           (
             let
-              h = lt b.k;
+              h0 = lt b.k;
+              h = if builtins.isFunction h0 then h0 else (prelude.applicability h0).head;
               r = h a.k;
             in
-            if !(builtins.isFunction h || callable h) then
-              notLessFn b.k h
+            if h == null then
+              notLessFn b.k h0
             else if builtins.isBool r then
               r
             else

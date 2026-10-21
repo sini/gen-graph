@@ -48,6 +48,7 @@
 # own callers apply this file with `"gen-graph"`; a published copy of this same module, reached over
 # `published.key`, lets another library (gen-scope, den-hoag-gayc U1b) apply it with its own name. It
 # is one shared module bound differently at each call, not a second key former.
+{ prelude }:
 prefix:
 let
   within =
@@ -98,12 +99,12 @@ let
   # guard: den-hoag-7gp66 OQ13 ruled (arm a, 2026-09-26) that a node id is a string, so their target
   # checks route through `identifier` above instead, and a scalar other than a string is refused
   # there by name (den-hoag-3w9e7).
-  # Callable is a function, or a set whose `__functor` is one: `f ? __functor` alone admits
-  # `{ __functor = 1; }`, which aborts when applied. gen-view's `callable` (`lib/relation.nix`).
-  # A per-application site tests `builtins.isFunction` inline first, so a plain function costs no call.
-  callable =
-    v:
-    builtins.isFunction v || (builtins.isAttrs v && v ? __functor && builtins.isFunction v.__functor);
+  # Callable is what Nix can apply: gen-prelude `isApplicable`, the fuelled `__functor` walk, the one
+  # definition every apply-only door in the roster asks (den-hoag-b6nyh). Carrying `__functor` is not
+  # it: `{ __functor = _: 5; }` aborts when applied, and a self-returning one never answers.
+  callable = prelude.isApplicable;
+  # A refused value's kind, naming the bound where the walk exhausted it (gen-prelude).
+  kindOf = prelude.applicableKindOf;
 
   # The id is rendered only when it is a string: a refusal that coerced a caller value into its own
   # message would abort in the act of refusing.
@@ -114,20 +115,22 @@ let
   # binds its result in a `let`, so the door is forced by the first application and never again.
   # `badResult` is the refusal a site throws when an applied result is not the type it reads; the
   # test itself is written out at the site. Both name the type and never the value. A function the
-  # library applies one argument at a time has its first result tested at the site too, with
-  # `builtins.isFunction h || callable h`, before the second application.
+  # library applies one argument at a time applies the function its first result REACHES, written
+  # out at the site as `if builtins.isFunction h0 then h0 else (prelude.applicability h0).head`
+  # (null when it reaches none, refused by name): a plain function costs no call, and a functor's
+  # `__functor` body runs once, in the walk, never again at the application.
   callableAt =
     surface: name: want: f:
     if callable f then f else throw (notA surface name "a function returning ${want}" f);
   badResult =
     surface: name: subject: want: v:
-    throw (say surface "${name} ${subject} returned a ${builtins.typeOf v}, not ${want}");
+    throw (say surface "${name} ${subject} returned ${kindOf v}, not ${want}");
 
   # The same text for caller DATA a constructor reads (den-hoag-ndte): a field, or an element
   # named by its position, that is not the shape the read needs.
   notA =
     surface: what: want: v:
-    say surface "${what} is a ${builtins.typeOf v}, not ${want}";
+    say surface "${what} is ${kindOf v}, not ${want}";
 
   # ── THE PLAIN ACCESSOR'S RESULT IS A CLAIM TOO (den-hoag-0mqv1) ──
   # A surface taking `{ edges, ... }` applies `edges` and reads its result as a list. Callability is
@@ -141,7 +144,7 @@ let
       f
     else
       throw (
-        say who "the accessor's edges is a ${builtins.typeOf f}, not a function from a node id to a list of node ids"
+        say who "the accessor's edges is ${kindOf f}, not a function from a node id to a list of node ids"
       );
   notEdgeList =
     who: id: v:
@@ -160,6 +163,7 @@ in
     say
     attrKey
     callable
+    kindOf
     callableAt
     badResult
     notA

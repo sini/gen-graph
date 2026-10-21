@@ -1,9 +1,8 @@
 { prelude }:
 let
-  inherit (import ./key.nix "gen-graph")
+  inherit (import ./key.nix { inherit prelude; } "gen-graph")
     attrKey
     badResult
-    callable
     callableAt
     keyedAttrs
     within
@@ -270,14 +269,15 @@ let
             edgeMaps.unionEdges base (
               edgeMapOr "seededFixpoint" "on the converged accumulator" (
                 let
-                  h = st acc;
+                  h0 = st acc;
+                  h = if builtins.isFunction h0 then h0 else (prelude.applicability h0).head;
                 in
-                if builtins.isFunction h || callable h then
+                if h != null then
                   h acc
                 else
                   badResult "seededFixpoint" "step" "on the converged accumulator"
                     "a function from the accumulator to an edge map"
-                    h
+                    h0
               )
             )
           );
@@ -300,14 +300,15 @@ let
           let
             produced = edgeMapOr "seededFixpoint" "at iteration ${toString iter}" (
               let
-                h = st dF;
+                h0 = st dF;
+                h = if builtins.isFunction h0 then h0 else (prelude.applicability h0).head;
               in
-              if builtins.isFunction h || callable h then
+              if h != null then
                 h acc
               else
                 badResult "seededFixpoint" "step" "at iteration ${toString iter}"
                   "a function from the accumulator to an edge map"
-                  h
+                  h0
             );
             acc' = edgeMaps.unionEdges acc produced;
             dF' = differenceEdges produced acc;

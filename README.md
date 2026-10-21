@@ -50,7 +50,7 @@ The four accessor fields:
 
 Functions that only need traversal destructure `{ edges, ... }`. Functions that need global analysis also take `nodes`. Functions that need parent walks take `parent`. No function requires all four.
 
-Every caller-supplied function is checked where the library applies it. A value that is not callable, a result of a type the surface does not read, and a curried function whose first application does not return a function are each a refusal by name (`gen-graph.<surface>: …`) that `tryEval` catches, never an interpreter abort or a plausible wrong answer. The check is lazy: a function a call never applies is never refused. Two shapes are recorded rather than refused: a pattern-formal function (`{ x }: …`) aborts in the caller's own destructuring, and a `__functor` that returns a non-function aborts when applied.
+Every caller-supplied function is checked where the library applies it. A value that is not callable, a result of a type the surface does not read, and a curried function whose first application does not return a function are each a refusal by name (`gen-graph.<surface>: …`) that `tryEval` catches, never an interpreter abort or a plausible wrong answer. The check is lazy: a function a call never applies is never refused. Callable is what Nix can apply (gen-prelude `isApplicable`, the fuelled `__functor` walk): a functor whose `__functor` returns a non-function is refused by name, one whose walk exhausts 32 `__functor` steps is refused naming that bound, and a curried function's first result is applied through the head it reaches. One shape is recorded rather than refused: a pattern-formal function (`{ x }: …`) aborts in the caller's own destructuring.
 
 ## Gen Ecosystem
 
@@ -1150,18 +1150,19 @@ rather than coerced (`unsafeDiscardStringContext` would turn an `outPath` set in
 
 The bindings, each taking the calling door's name `who` first:
 
-| binding                                        | what it is                                                                                                                                 |
-| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `attrKey who k`                                | the key of a node identifier (a string), context discarded; a non-string is refused                                                        |
-| `keyedAttrs who names f`                       | `genAttrs` keyed by text; `f` receives the original name                                                                                   |
-| `identifier who v`                             | `v` if it is a string, else the named refusal (a door that keys its id)                                                                    |
-| `nodeKey who v`                                | `v` if it is a scalar, else refused (a door whose closure keys on `toJSON`, not the raw id)                                                |
-| `notAnIdentifier who v`                        | the refusal text for a non-string id: names the type, never the value                                                                      |
-| `renderId id`                                  | an id for a message: JSON for a string, `<a type>` otherwise, so a refusal cannot abort while rendering                                    |
-| `say who text`, `within door prim`             | render `<prefix>.<door>: text`; through `within`, a shared primitive reached from another door refuses as `<prefix>.<door>: … (in <prim>)` |
-| `callable v`, `callableAt surface name want f` | a function or a functor; the door that returns it or refuses it by name, throwing `notA surface name "a function returning ${want}" f`     |
-| `badResult`, `notA`, `notEdgeList`             | refusal texts for a caller function's result, a caller field, and an `edges` result of the wrong type                                      |
-| `edgesAccessor who f`                          | the `edges` accessor, or its refusal                                                                                                       |
+| binding                                        | what it is                                                                                                                                                     |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `attrKey who k`                                | the key of a node identifier (a string), context discarded; a non-string is refused                                                                            |
+| `keyedAttrs who names f`                       | `genAttrs` keyed by text; `f` receives the original name                                                                                                       |
+| `identifier who v`                             | `v` if it is a string, else the named refusal (a door that keys its id)                                                                                        |
+| `nodeKey who v`                                | `v` if it is a scalar, else refused (a door whose closure keys on `toJSON`, not the raw id)                                                                    |
+| `notAnIdentifier who v`                        | the refusal text for a non-string id: names the type, never the value                                                                                          |
+| `renderId id`                                  | an id for a message: JSON for a string, `<a type>` otherwise, so a refusal cannot abort while rendering                                                        |
+| `say who text`, `within door prim`             | render `<prefix>.<door>: text`; through `within`, a shared primitive reached from another door refuses as `<prefix>.<door>: … (in <prim>)`                     |
+| `callable v`, `callableAt surface name want f` | what Nix can apply (gen-prelude `isApplicable`); the door that returns it or refuses it by name, throwing `notA surface name "a function returning ${want}" f` |
+| `kindOf v`                                     | a refused value's kind (gen-prelude `applicableKindOf`, naming the bound where the walk exhausted it)                                                          |
+| `badResult`, `notA`, `notEdgeList`             | refusal texts for a caller function's result, a caller field, and an `edges` result of the wrong type                                                          |
+| `edgesAccessor who f`                          | the `edges` accessor, or its refusal                                                                                                                           |
 
 ## Usage Example
 
