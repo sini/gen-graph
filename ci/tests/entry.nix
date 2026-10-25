@@ -225,6 +225,9 @@ let
           throw "gen-graph: a locked node of type `''${toString (locked.type or null)}` with attributes ''${toString (builtins.attrNames locked)} has no fixed-output form here; refusing rather than falling back to fetchTree";
     };
   '';
+  # The comment marker, spelled as a JSON escape so that no `#` stands inside a string literal on any
+  # line here: a line-wise comment strip cuts at the first `#` and would truncate live code there.
+  commentMarker = builtins.fromJSON ''"\u0023"'';
   fetchSrcLine = "src ? segs: fetch.locked lock.nodes.\${fetch.node segs}.locked,";
   countFetch =
     text:
@@ -233,7 +236,7 @@ let
         s:
         builtins.replaceStrings [ " " "\n" "\t" ] [ "" "" "" ] (
           builtins.concatStringsSep "\n" (
-            map (l: builtins.head (builtins.split "#" l)) (
+            map (l: builtins.head (builtins.split commentMarker l)) (
               builtins.filter builtins.isString (builtins.split "\n" s)
             )
           )
@@ -250,8 +253,9 @@ let
       src = occurrences (dense fetchSrcLine) d;
     };
 
-  # ★ ONE REAL SIX-KEY `github` NODE, so that in C3's `host` arm the added key is the ONLY difference
-  # from an admitted node: a fixture missing `lastModified` lets a rule that ignores `host` pass.
+  # ★ ONE REAL SIX-KEY `github` NODE, so that in C3's `extraKey` arm the added `host` key is the ONLY
+  # difference from an admitted node: a fixture missing `lastModified` lets a rule that ignores `host`
+  # pass. The arm is not named for the key, which is no word of this library's vocabulary (ADR-0035).
   githubNode = {
     lastModified = 0;
     narHash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
@@ -617,7 +621,7 @@ in
       planted = countFetch ''src ? segs: "''${builtins.fetchTree lock.nodes.''${fetch segs}.locked}",'';
       commented = countFetch (
         builtins.concatStringsSep "\n" (
-          map (l: "# " + l) (
+          map (l: commentMarker + " " + l) (
             builtins.filter builtins.isString (builtins.split "\n" (fetchRule + fetchSrcLine))
           )
         )
@@ -673,12 +677,12 @@ in
           url = "https://example.invalid/x.tar.gz";
         }
       );
-      host = refusesFetch (githubNode // { host = "ghe.example.invalid"; });
+      extraKey = refusesFetch (githubNode // { host = "ghe.example.invalid"; });
     };
     expected = {
       git = true;
       tarball = true;
-      host = true;
+      extraKey = true;
     };
   };
 
@@ -687,13 +691,21 @@ in
   # domain is the lock's node set minus its root, total by construction: `src` is a function over
   # paths in this lock, and the record's `deps` cannot enumerate what it reaches. A rule that always
   # throws passes C3 and reds here; one that names its store path differently reds every node.
+  #
+  # ★★ `fetchTree`'s side is COPIED by `builtins.path` under the fixed-output name, never compared as
+  # its string: under Determinate's lazy trees that string is a virtual path, and `==` reads it
+  # unequal to the very store path it denotes, while the copy is that store path on every evaluator.
   flake.tests.entry.test-fetch-locked-is-fetchTree-on-every-lock-node =
     let
       nodes = builtins.removeAttrs lock.nodes [ lock.root ];
     in
     {
       expr = builtins.mapAttrs (
-        _: n: seam.fetch.locked n.locked == "${builtins.fetchTree n.locked}"
+        _: n:
+        seam.fetch.locked n.locked == builtins.path {
+          path = builtins.fetchTree n.locked;
+          name = "source";
+        }
       ) nodes;
       expected = builtins.mapAttrs (_: _: true) nodes;
     };
