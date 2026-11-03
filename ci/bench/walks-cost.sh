@@ -3,7 +3,7 @@
 # `ancestorsOf` over a chain, read under NIX_SHOW_STATS on three meters —
 # `nrFunctionCalls`, `nrOpUpdateValuesCopied` and `list.elements`.
 #
-#   ./ci/bench/walks-cost.sh     -> one row per (arm, n), then LINEARITHMIC | QUADRATIC | INVALID
+#   nix develop ./ci --command ./ci/bench/walks-cost.sh     -> one row per (arm, n), then LINEARITHMIC | QUADRATIC | INVALID
 #
 # THE BOUND IS OVER A SPAN, NOT PER DOUBLING. The copies are Θ(n log(n/32)) (`lib/preorder.nix`'s
 # header), whose per-doubling ratio is not constant — it falls toward 2 as n grows — and whose
@@ -19,6 +19,16 @@
 # run must never be read as a cell that allocated nothing.
 set -u
 cd "$(dirname "$0")/../.." || exit 99
+# The counted evaluations are serial (gen-harness `lib.serialEval`, which the ci devshell exports): a thunk
+# count is defined only for a serial run. Outside the devshell this refuses, rather than read unpinned.
+[ -n "${GEN_SERIAL_EVAL:-}" ] || {
+  echo "walks-cost: CONTROL FAILED: GEN_SERIAL_EVAL is unset; run under nix develop ./ci" >&2
+  exit 2
+}
+# shellcheck disable=SC1090
+source "$GEN_SERIAL_EVAL"
+serialEvalOptions "$(command -v nix-instantiate)" || exit 2
+echo "walks-cost: serial options: ${SERIAL_EVAL[*]:-(none)}"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
@@ -32,7 +42,7 @@ over=0
 declare -A reading
 cell() { # cell <arm> <n> -> sets reading[arm,n] to "calls copies listel", or returns 1
   local f="$tmp/$1-$2.json" out want
-  out=$(NIX_SHOW_STATS=1 NIX_SHOW_STATS_PATH="$f" nix-instantiate --eval --strict \
+  out=$(NIX_SHOW_STATS=1 NIX_SHOW_STATS_PATH="$f" nix-instantiate "${SERIAL_EVAL[@]}" --eval --strict \
     --argstr arm "$1" --arg n "$2" ./ci/bench/walks-cost.nix 2>"$tmp/err") || {
     echo "  FAILED: $(grep -o 'error: .*' "$tmp/err" | tail -1)"
     return 1

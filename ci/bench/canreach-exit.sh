@@ -7,12 +7,22 @@
 # an answer is a wrong answer, and that judgement belongs to the reader of the table, not to
 # a transport script that could silently drop a row.
 #
-#   ./ci/bench/canreach-exit.sh [n]        -> arm shape cell answer list sets nrLookups
+#   nix develop ./ci --command ./ci/bench/canreach-exit.sh [n]        -> arm shape cell answer list sets nrLookups
 #
 # A cell that fails to produce stats prints FAILED and does not print zeros: a cell that did
 # not run must never be reported as a cell that allocated nothing.
 set -u
 cd "$(dirname "$0")/../.." || exit 99
+# The counted evaluations are serial (gen-harness `lib.serialEval`, which the ci devshell exports): a thunk
+# count is defined only for a serial run. Outside the devshell this refuses, rather than read unpinned.
+[ -n "${GEN_SERIAL_EVAL:-}" ] || {
+  echo "canreach-exit: CONTROL FAILED: GEN_SERIAL_EVAL is unset; run under nix develop ./ci" >&2
+  exit 2
+}
+# shellcheck disable=SC1090
+source "$GEN_SERIAL_EVAL"
+serialEvalOptions "$(command -v nix-instantiate)" || exit 2
+echo "canreach-exit: serial options: ${SERIAL_EVAL[*]:-(none)}"
 n=${1:-1000}
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
@@ -23,7 +33,7 @@ for shape in chain dense; do
     for cell in near far miss; do
       [ "$arm" = floor ] && [ "$cell" != near ] && continue
       f="$tmp/$shape-$arm-$cell.json"
-      out=$(NIX_SHOW_STATS=1 NIX_SHOW_STATS_PATH="$f" nix-instantiate --eval --strict \
+      out=$(NIX_SHOW_STATS=1 NIX_SHOW_STATS_PATH="$f" nix-instantiate "${SERIAL_EVAL[@]}" --eval --strict \
         --arg n "$n" --argstr arm "$arm" --argstr shape "$shape" --argstr cell "$cell" \
         ./ci/bench/canreach-exit.nix 2>"$tmp/err") || {
         printf '%-8s %-6s %-5s %-6s %12s %10s %12s\n' "$arm" "$shape" "$cell" FAILED - - -
