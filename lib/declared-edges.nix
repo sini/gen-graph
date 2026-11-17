@@ -294,8 +294,12 @@ in
   #
   # COST: an eager traversal of the whole declared relation at construction, O(|E|) in the number of
   # declared edges, paid once, before any attribute is demanded. It is unconditional; there is no
-  # setting that disables it. What is forced is declaration-sized inert data, and that is a property
-  # of the subject above rather than a hope.
+  # setting that disables it. What is forced is the relation's whole transitive value, and the
+  # subject above bounds it to that value and nothing beside it. The relation is not thereby inert:
+  # an element's extra fields are admitted, and a relation may be computed from a caller's
+  # configuration, so the force reaches whatever those retain or read. The traversal is O(|E|) while
+  # the relation retains its endpoints and nothing more; an id projected out of a configuration
+  # retains only the id.
   #
   # EXTRA FIELDS ON AN ELEMENT ARE ADMITTED AND IGNORED — `{ from; to; extra = 42; }` passes and the
   # normalization reads only the pair. `fromScan` builds its edge records with four fields, so a

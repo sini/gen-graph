@@ -182,6 +182,39 @@ let
     dependencies = _id: [ ];
   };
 
+  # ── THE CONFIG-READING RELATION (door (b)) AND THE RETENTION PAIR ──
+  # Door (b) is open BY RULING: a relation may be computed from a caller's
+  # configuration, and the constructor's force then reaches what that computation reads. These
+  # fixtures pin that behaviour; they do not refuse it.
+  userConfig = enable: {
+    name = "parent";
+    inherit enable;
+    secret.deep = throw "gen-graph: the configuration's secret was forced";
+  };
+  configReading = cfg: { child = if cfg.enable then [ (ref "parent") ] else [ ]; };
+  throwingEnable = userConfig (throw "gen-graph: the configuration's enable was forced");
+
+  # The retention pair. A relation that PROJECTS an id out of the configuration closes over it and
+  # retains nothing of it, so the force reaches the id and never the sibling `secret`. One that
+  # RETAINS the configuration in an extra field hands the force the whole value. The discriminator
+  # is retention, not closure.
+  projectingList = [
+    {
+      from = ref "child";
+      to = ref (userConfig true).name;
+    }
+  ];
+  projectingAttrset = {
+    child = [ (ref (userConfig true).name) ];
+  };
+  retainingList = [
+    {
+      from = ref "child";
+      to = ref "parent";
+      config = userConfig true;
+    }
+  ];
+
   declared = mkDeclaredEdges attrsetForm;
 in
 {
@@ -468,6 +501,44 @@ in
         true
         true
       ];
+    };
+
+    # ── DOOR (b) · A CONFIG-READING RELATION IS ADMITTED, AND ITS READ IS FORCED ──
+    # Open by ruling: the relation computed from a configuration constructs and answers.
+    test-door-b-a-config-reading-relation-is-admitted = {
+      expr = (mkDeclaredEdges (configReading (userConfig true))).dependencies "child";
+      expected = [ "parent" ];
+    };
+    # What the computation reads is forced at construction, not at first read. The accept-list
+    # reaches it, since deciding that a key holds a list evaluates the key's value …
+    test-door-b-the-config-read-is-forced-at-construction = {
+      expr = refusedAtConstruction (mkDeclaredEdges (configReading throwingEnable));
+      expected = true;
+    };
+    # … and the relation alone at WHNF does not read it, so the read above is the constructor's force.
+    test-control-door-b-the-relation-at-whnf-does-not-read-the-config = {
+      expr = refusedAtConstruction (configReading throwingEnable);
+      expected = false;
+    };
+
+    # ── THE RETENTION PAIR · AN ID-PROJECTING CLOSURE LEAKS NOTHING ──
+    test-an-id-projecting-closure-leaks-nothing-list-form = {
+      expr = (mkDeclaredEdges projectingList).dependencies "child";
+      expected = [ "parent" ];
+    };
+    test-an-id-projecting-closure-leaks-nothing-attrset-form = {
+      expr = (mkDeclaredEdges projectingAttrset).dependencies "child";
+      expected = [ "parent" ];
+    };
+    # The pair's other arm, over the same configuration: retaining it hands the force its secret.
+    test-control-a-relation-retaining-the-config-forces-its-secret = {
+      expr = refusedAtConstruction (mkDeclaredEdges retainingList);
+      expected = true;
+    };
+    # The secret is live: deep-forcing the configuration itself meets it.
+    test-control-the-config-s-secret-throws-when-forced = {
+      expr = didThrow (userConfig true);
+      expected = true;
     };
 
     # ── THE SHARED TYPE · THE BYPASS IS CLOSED NOMINALLY ──
