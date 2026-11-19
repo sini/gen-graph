@@ -136,8 +136,10 @@ let
   # built K: gen-memo's multi-seed sites and gen-merge's warm verdict, `concatMap (dependentsOf acc)
   # seeds`, were quadratic in the seeds for that reason alone. A single application costs what it
   # did, the identifier is still checked before the index is read, and the index stays an unforced
-  # thunk until the first walk. RETENTION: the index now lives as long as the partial application
-  # `dependentsOf acc` is held, not for one target's walk. Pinned by `ci/tests-process.nix`.
+  # thunk until the first walk. The sharing is per APPLICATION, not per accessor: re-applying the
+  # door per target, `map (t: dependentsOf acc t) targets`, still builds one index per target.
+  # RETENTION: holding the closure `dependentsOf acc` can retain its index for as long as the
+  # closure is held, not only for one target's walk.
   #
   # ★ AND IT DELIBERATELY DOES NOT HOIST THE ACCESSOR, which is the same decision `cycles` and
   # the partition arms make in the other direction. Hoisting (`traverse.hoistEdges`) builds a Θ(n)
@@ -185,7 +187,8 @@ let
   # that limit: Θ(n + E) for the reverse index, then Θ( Σ_{u ∈ expanded} (1 + indeg u) ) over
   # what `prune` admits — a pruned node is reached without paying its in-degree — and NO
   # accumulator term, because there is no accumulator to copy. The index binds at the accessor
-  # application, as `dependentsOf`'s does (held across targets: one index; retained while held).
+  # application, as `dependentsOf`'s does: a held `dependentsFrontier acc` shares one index across
+  # targets, a per-target re-application rebuilds it, and the held closure can retain it.
   dependentsFrontier = accessorDoor "dependentsFrontier" [ "edges" "nodes" ] (
     { edges, nodes, ... }:
     let
@@ -372,8 +375,9 @@ let
   directDependents = accessorDoor "directDependents" [ "edges" "nodes" ] (
     { edges, nodes, ... }: _reverseIndex "directDependents" { inherit edges nodes; }
   );
-  # The index binds at the accessor application, as `dependentsOf`'s does: `directDependentsOf acc`
-  # held across targets reads one index, retained while the partial application is held.
+  # The index binds at the accessor application, as `dependentsOf`'s does: a held
+  # `directDependentsOf acc` reads one index across targets, a per-target re-application rebuilds
+  # it, and the held closure can retain it.
   directDependentsOf = accessorDoor "directDependentsOf" [ "edges" "nodes" ] (
     accessor:
     let
