@@ -341,7 +341,7 @@ graph.cyclePaths g   # → [ [ "b" "d" "c" ] ]   the traversal — b→d, d→c,
 graph.dependents { } g "database"   # → [ "api" "web" "worker" ]
 ```
 
-**`dependentsOf g targetId`** — same result as `dependents`, but uses reverse traversal: builds the reverse edge index over every edge (`Θ(n + E)`), then runs the same C-level BFS from the target over that index, costing `Θ(Σ_{u ∈ reach⁻ target} (1 + indeg u))` — the operator re-reads the index at every visit, and in the reversed graph a node's out-degree is its forward **in**-degree. O(reachable) only where in-degree is bounded; Θ(n²) on a complete DAG. **Preferred for single-target queries on large graphs.**
+**`dependentsOf g targetId`** — same result as `dependents`, but uses reverse traversal: builds the reverse edge index over every edge (`Θ(n + E)`) once per application to `g`, so a held `dependentsOf g` answers any number of targets over one index, then runs the same C-level BFS from the target over that index, costing `Θ(Σ_{u ∈ reach⁻ target} (1 + indeg u))` — the operator re-reads the index at every visit, and in the reversed graph a node's out-degree is its forward **in**-degree. O(reachable) only where in-degree is bounded; Θ(n²) on a complete DAG. **Preferred for single-target queries on large graphs, and for several targets when the partial application is held** (`map (graph.dependentsOf g) targets`); re-applying it per target (`map (t: graph.dependentsOf g t) targets`) builds one index per target. The held index lives as long as the partial application does. `impactOf`, `dependentsFrontier g` and `directDependentsOf g` bind their index the same way.
 
 ```nix
 graph.dependentsOf g "database"   # → [ "api" "cache" "web" "worker" ]
@@ -1278,16 +1278,16 @@ genGraph.reachableFrom { edges = id: result.get id "imports"; } "host:igloo"
 
 ### Choosing the Right Operation
 
-| Need                                      | Use                                                                                                                      | Don't use                                                                 |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------- |
-| "Can A reach B?"                          | `canReach` (stops expanding at the target; O(reachable) at bounded out-degree, Θ(n²) on a dense graph — see Performance) | `dependents` (closure class)                                              |
-| "What depends on X?" (one target)         | `dependentsOf` (reverse index, then O(reachable) at bounded in-degree, Θ(n²) on a dense graph — see Performance)         | `dependents` (closure class)                                              |
-| "What depends on X, Y, Z?" (multi-target) | `dependents` (closure class, amortized over targets)                                                                     | `dependentsOf` × 3 (rebuilds index 3×)                                    |
-| "Is there a cycle?"                       | `cycles` (C-level; O(n × reachable) at bounded out-degree, Θ(n²) on a dense graph — see Performance)                     | `transitiveClosure` (closure class)                                       |
-| "Which loop, in order, for a message?"    | `cyclePaths` (Θ((n + m) · log₈ n))                                                                                       | hand-rolled DFS per node (enumerates every simple path even when acyclic) |
-| "All paths between A and B"               | `pathsBetween` (DFS)                                                                                                     | Only for small subgraphs                                                  |
-| "Full closure for analysis"               | `transitiveClosure`                                                                                                      | — (use when you genuinely need it)                                        |
-| "Minimal graph for diagrams"              | `transitiveReduction`                                                                                                    | — (closure class unless every node has out-degree ≤ 1)                    |
+| Need                                      | Use                                                                                                                      | Don't use                                                                                   |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
+| "Can A reach B?"                          | `canReach` (stops expanding at the target; O(reachable) at bounded out-degree, Θ(n²) on a dense graph — see Performance) | `dependents` (closure class)                                                                |
+| "What depends on X?" (one target)         | `dependentsOf` (reverse index, then O(reachable) at bounded in-degree, Θ(n²) on a dense graph — see Performance)         | `dependents` (closure class)                                                                |
+| "What depends on X, Y, Z?" (multi-target) | `map (dependentsOf g) [ X Y Z ]` (one reverse index for every target, then the walks)                                    | `map (t: dependentsOf g t) …` (rebuilds the index per target); `dependents` (closure class) |
+| "Is there a cycle?"                       | `cycles` (C-level; O(n × reachable) at bounded out-degree, Θ(n²) on a dense graph — see Performance)                     | `transitiveClosure` (closure class)                                                         |
+| "Which loop, in order, for a message?"    | `cyclePaths` (Θ((n + m) · log₈ n))                                                                                       | hand-rolled DFS per node (enumerates every simple path even when acyclic)                   |
+| "All paths between A and B"               | `pathsBetween` (DFS)                                                                                                     | Only for small subgraphs                                                                    |
+| "Full closure for analysis"               | `transitiveClosure`                                                                                                      | — (use when you genuinely need it)                                                          |
+| "Minimal graph for diagrams"              | `transitiveReduction`                                                                                                    | — (closure class unless every node has out-degree ≤ 1)                                      |
 
 ### Partitioning for Fleet Scale
 

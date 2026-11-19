@@ -122,13 +122,22 @@ let
 
   # Single-target reverse reachability via reverse traversal (this library's own; the
   # Arntzenius 2016 attribution that stood here is withdrawn — see the file header).
-  # Θ(n + E) to build the reverse index — it reads every node's out-edges — then a C-level BFS
+  # Θ(n + E) to build the reverse index — it reads every node's out-edges — once per ACCESSOR
+  # application, then per target a C-level BFS
   # over that index costing
   #   Θ( Σ_{u ∈ reach⁻ targetId} (1 + indeg u) )
   # because `traverse.reachableFrom`'s operator re-reads the index at every visit, and in the
   # reversed graph a node's out-degree IS its forward in-degree. So this is O(reachable) only
   # where in-degree is bounded, and Θ(n²) on a complete DAG.
   # Much faster than `dependents` for single-target queries on large graphs.
+  #
+  # ★ THE INDEX BINDS ABOVE `targetId` (den-hoag-occ66). It is a function of the accessor alone,
+  # so `dependentsOf acc` held across K targets builds one index, where a binding under the target
+  # built K: gen-memo's multi-seed sites and gen-merge's warm verdict, `concatMap (dependentsOf acc)
+  # seeds`, were quadratic in the seeds for that reason alone. A single application costs what it
+  # did, the identifier is still checked before the index is read, and the index stays an unforced
+  # thunk until the first walk. RETENTION: the index now lives as long as the partial application
+  # `dependentsOf acc` is held, not for one target's walk. Pinned by `ci/tests-process.nix`.
   #
   # ★ AND IT DELIBERATELY DOES NOT HOIST THE ACCESSOR, which is the same decision `cycles` and
   # the partition arms make in the other direction. Hoisting (`traverse.hoistEdges`) builds a Θ(n)
@@ -146,12 +155,12 @@ let
   _dependentsOfAs =
     who:
     { edges, nodes, ... }:
-    targetId:
     let
       reverseIndex = _reverseIndex who { inherit edges nodes; };
       toKey = attrKey who;
       revEdges = id: reverseIndex.${toKey id} or [ ];
     in
+    targetId:
     builtins.seq (identifier who targetId) (
       builtins.sort builtins.lessThan (
         traverse.threaded.reachableFrom "reachableFrom" { edges = revEdges; } targetId
@@ -175,14 +184,17 @@ let
   # Reduces to `dependentsOf` when `prune = _: true`, and inherits the operator's cost law in
   # that limit: Θ(n + E) for the reverse index, then Θ( Σ_{u ∈ expanded} (1 + indeg u) ) over
   # what `prune` admits — a pruned node is reached without paying its in-degree — and NO
-  # accumulator term, because there is no accumulator to copy.
+  # accumulator term, because there is no accumulator to copy. The index binds at the accessor
+  # application, as `dependentsOf`'s does (held across targets: one index; retained while held).
   dependentsFrontier = accessorDoor "dependentsFrontier" [ "edges" "nodes" ] (
     { edges, nodes, ... }:
-    targetId: prune:
     let
       reverseIndex = _reverseIndex "dependentsFrontier" { inherit edges nodes; };
       toKey = attrKey "dependentsFrontier";
       revOf = id: reverseIndex.${toKey id} or [ ];
+    in
+    targetId: prune:
+    let
       keyed = map (k: {
         key = k;
       });
@@ -360,11 +372,16 @@ let
   directDependents = accessorDoor "directDependents" [ "edges" "nodes" ] (
     { edges, nodes, ... }: _reverseIndex "directDependents" { inherit edges nodes; }
   );
+  # The index binds at the accessor application, as `dependentsOf`'s does: `directDependentsOf acc`
+  # held across targets reads one index, retained while the partial application is held.
   directDependentsOf = accessorDoor "directDependentsOf" [ "edges" "nodes" ] (
-    accessor: id:
+    accessor:
+    let
+      reverseIndex = _reverseIndex (within "directDependentsOf" "directDependents") accessor;
+    in
+    id:
     builtins.seq (identifier "directDependentsOf" id) (
-      (_reverseIndex (within "directDependentsOf" "directDependents") accessor)
-      .${attrKey "directDependentsOf" id} or [ ]
+      reverseIndex.${attrKey "directDependentsOf" id} or [ ]
     )
   );
 in

@@ -209,6 +209,12 @@ in
         keyed = 0;
         plain = 0;
       }
+      {
+        file = "tests-process.nix";
+        counted = 0;
+        keyed = 1;
+        plain = 0;
+      }
     ];
   };
 
@@ -231,9 +237,20 @@ in
         )).violations;
     expected = [ "bench/sentinel.sh" ];
   };
-  # The keyed rule, which no site of this member's exercises: an unconditional pin in a file exporting the stats.
+  # The keyed rule on a synthetic file: an unconditional pin in a file exporting the stats.
   flake.tests.counted-runs.test-plant-unconditional-pin-in-exporting-plane-reds = {
     expr = synthetic "plant.sh" "export NIX_SHOW_STATS=1\nnix-instantiate \"\${SERIAL_EVAL[@]}\" --eval x.nix\n";
     expected = [ "plant.sh" ];
+  };
+  # The keyed rule on the process plane, the one site of this member's that exports the stats: its
+  # `evalArm` pinned unconditionally.
+  flake.tests.counted-runs.test-plant-unconditional-pin-in-process-plane-reds = {
+    expr =
+      map (v: lib.head (lib.splitString ": " v))
+        (census (
+          plant "tests-process.nix" "''\${NIX_SHOW_STATS:+\"''\${SERIAL_EVAL[@]}\"}"
+            "\"''\${SERIAL_EVAL[@]}\""
+        )).violations;
+    expected = [ "tests-process.nix" ];
   };
 }

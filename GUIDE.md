@@ -137,7 +137,7 @@ graph.dependentsOf g "db"     # [ "api" "web" "worker" ]
 graph.dependents { } g "db"       # same result, different algorithm
 ```
 
-**`dependentsOf`** builds a reverse edge index once (`Θ(n + E)` — it reads every node's out-edges), then does C-level BFS from the target in the reversed graph. That walk re-reads the index at every visit, so it costs `Θ(Σ_{u ∈ reach⁻ target} (1 + indeg u))`: O(reachable) only where in-degree is bounded. Fast for one-off queries.
+**`dependentsOf`** builds a reverse edge index once per application to `g` (`Θ(n + E)` — it reads every node's out-edges), so `map (graph.dependentsOf g) targets` builds it once for every target, while `map (t: graph.dependentsOf g t) targets` builds it per target. It then does C-level BFS from the target in the reversed graph. That walk re-reads the index at every visit, so it costs `Θ(Σ_{u ∈ reach⁻ target} (1 + indeg u))`: O(reachable) only where in-degree is bounded. Fast for one-off queries.
 
 **`dependents`** computes the full transitive closure, transposes it, then looks up the target. Expensive upfront (closure class — super-quadratic, see README's Performance section), but if you're querying multiple targets, the closure is computed once and each lookup is O(1).
 
@@ -407,17 +407,17 @@ g = {
 
 ### Performance summary by operation
 
-| If you need...                   | Use                           | Cost                                                                                                                                                        |
-| -------------------------------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| "Can A reach B?"                 | `canReach`                    | C-level; stops expanding at B, so O(reachable from A) **less what B dominates** — only at bounded out-degree, Θ(n²) on a dense graph                        |
-| "What depends on X?" (one X)     | `dependentsOf`                | reverse index Θ(n + E), then O(reachable) only at bounded in-degree, Θ(n²) on a dense graph                                                                 |
-| "What depends on X, Y, Z?"       | `dependents` × 1              | closure class, amortized over targets                                                                                                                       |
-| "Is this node in a cycle?"       | `selfReachable`               | C-level; O(reachable from node) only at bounded out-degree, Θ(n²) on a dense graph                                                                          |
-| "List all cycles"                | `cycles`                      | C-level; Θ(n + E) to read the accessor once, then O(n × reachable) — Θ(n²) on a dense graph, the out-degree factor being charged once rather than per visit |
-| "Many traversals over one graph" | `hoistEdges` + `reachableVia` | Θ(n + E) once, then Θ(reachable) per traversal — a loss for a single traversal                                                                              |
-| "Entry points"                   | `roots`                       | O(n × degree)                                                                                                                                               |
-| "Minimal diagram"                | `transitiveReduction`         | closure class unless every node has out-degree ≤ 1 — needs closure                                                                                          |
-| "All paths A→B"                  | `pathsBetween`                | O(paths) — small subgraphs only                                                                                                                             |
+| If you need...                   | Use                              | Cost                                                                                                                                                        |
+| -------------------------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "Can A reach B?"                 | `canReach`                       | C-level; stops expanding at B, so O(reachable from A) **less what B dominates** — only at bounded out-degree, Θ(n²) on a dense graph                        |
+| "What depends on X?" (one X)     | `dependentsOf`                   | reverse index Θ(n + E), then O(reachable) only at bounded in-degree, Θ(n²) on a dense graph                                                                 |
+| "What depends on X, Y, Z?"       | `map (dependentsOf g) [ X Y Z ]` | one reverse index Θ(n + E) held across the targets, then each walk; `dependents` is the closure class                                                       |
+| "Is this node in a cycle?"       | `selfReachable`                  | C-level; O(reachable from node) only at bounded out-degree, Θ(n²) on a dense graph                                                                          |
+| "List all cycles"                | `cycles`                         | C-level; Θ(n + E) to read the accessor once, then O(n × reachable) — Θ(n²) on a dense graph, the out-degree factor being charged once rather than per visit |
+| "Many traversals over one graph" | `hoistEdges` + `reachableVia`    | Θ(n + E) once, then Θ(reachable) per traversal — a loss for a single traversal                                                                              |
+| "Entry points"                   | `roots`                          | O(n × degree)                                                                                                                                               |
+| "Minimal diagram"                | `transitiveReduction`            | closure class unless every node has out-degree ≤ 1 — needs closure                                                                                          |
+| "All paths A→B"                  | `pathsBetween`                   | O(paths) — small subgraphs only                                                                                                                             |
 
 Everything labeled "C-level" uses `builtins.genericClosure` — Nix's native C implementation of BFS with built-in dedup. This is ~4-5x faster than equivalent Nix-level traversal on 5000+ node graphs.
 

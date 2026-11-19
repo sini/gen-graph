@@ -153,7 +153,7 @@ A labeled record `{ labeledEdges; nodes; }` is written by hand, as data. Resolut
 | ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | What can this node reach?                                              | `reachableFrom acc id` (lazy — never enumerates `nodes`)                                                             |
 | Can A reach B?                                                         | `canReach acc a b` (stops expanding at B; materializes A's closure less what B dominates)                            |
-| What breaks if I change this node?                                     | `dependentsOf acc id` (or `impactOf`); `dependents` only when querying many targets                                  |
+| What breaks if I change this node?                                     | `dependentsOf acc id` (or `impactOf`); many targets: hold `dependentsOf acc` once (one reverse index)                |
 | Immediate reverse neighbours only                                      | `directDependentsOf acc id` / `directDependents acc`                                                                 |
 | Reverse cone with an early cutoff                                      | `dependentsFrontier acc id prune`                                                                                    |
 | Detect cycles                                                          | `cycles acc`, or `selfReachable acc id` for one node                                                                 |

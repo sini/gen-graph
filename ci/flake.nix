@@ -38,6 +38,10 @@
       };
       extraModules = [
         ./tests-error.nix
+        # The per-process cells: COUNTED verdicts (thunks and bytes) that are a whole evaluator
+        # process's own, one fixture per process. Exposed as `apps.<system>.tests-process` and run by
+        # `ci --tests-process` under the column's evaluator, never as a sandboxed check.
+        ./tests-process.nix
         # The resolution surfaces the one calculus retired (den-hoag-gayc D16): each is a TOMBSTONE
         # (`lib/default.nix`), so `checks.root-surface` excludes it from the walk, and the generated
         # `root-surface-retired.test-retired-<name>` cell pins this exact message at the root seam —
