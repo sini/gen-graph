@@ -440,8 +440,12 @@ let
   # family refuses a dangling target (`topoOrderCore`): an edge to x ∉ V means (V, E) is not a
   # graph, so it has no SCC partition. A `nodes` entry that is not a string is refused by name
   # too; it cannot be keyed.
-  lowlinkTags =
-    who:
+  lowlinkTags = who: accessor: (lowlinkRun who null accessor).tags;
+  # The run itself, from an optional first ROOT: the depth-first search starts at `root` (a member of
+  # `nodes`), then at each unvisited node in key order. The partition, and so every tag, is the same
+  # from any root; only the order in which components finish moves with it.
+  lowlinkRun =
+    who: root:
     { edges, nodes, ... }:
     let
       e = edgesAccessor who edges;
@@ -573,7 +577,19 @@ let
             ) s.ss s.r (if f.low == get s.map f.v then popping f.v n null else null) s.out;
 
       run = builtins.genericClosure {
-        startSet = [ (state 0 empty 1 null null 0 null null) ];
+        startSet = [
+          (
+            if root == null then
+              state 0 empty 1 null null 0 null null
+            else
+              push (state 0 empty 1 null null 0 null null) null 0 (
+                if builtins.isString root && ordOf ? ${toKey root} then
+                  ordOf.${toKey root}
+                else
+                  throw (say who "root ${renderId root} is not a member of `nodes`")
+              )
+          )
+        ];
         operator =
           s:
           let
@@ -582,16 +598,32 @@ let
           if s' == null then [ ] else [ s' ];
       };
       last = builtins.elemAt run (builtins.length run - 1);
+      comps = conses last.out;
+      nc = builtins.length comps;
     in
-    builtins.listToAttrs (
-      builtins.concatMap (
-        x:
-        map (y: {
-          name = builtins.elemAt names y.c.h;
-          value = builtins.elemAt verts x.c.h.tag;
-        }) (conses x.c.h.ms)
-      ) (conses last.out)
-    );
+    {
+      tags = builtins.listToAttrs (
+        builtins.concatMap (
+          x:
+          map (y: {
+            name = builtins.elemAt names y.c.h;
+            value = builtins.elemAt verts x.c.h.tag;
+          }) (conses x.c.h.ms)
+        ) comps
+      );
+      # Every node once, in the order its component finished: each component after every component
+      # it reaches, its members together. A one-member component (every one, on a DAG) is read
+      # without walking its member list.
+      postorder = builtins.concatLists (
+        builtins.genList (
+          i:
+          let
+            ms = (builtins.elemAt comps (nc - 1 - i)).c.h.ms;
+          in
+          if ms.t == null then [ (builtins.elemAt verts ms.h) ] else map (y: builtins.elemAt verts y.c.h) (conses ms)
+        ) nc
+      );
+    };
 
   # ── THE ARMS, PUBLISHED BY NAME ──
   # Each is the finisher over one arm's tag map, so on a closed accessor the three differ in HOW
@@ -618,10 +650,14 @@ let
   # they are partition consumers now, as `coneRank` moved to the ordering family; the export set
   # is unchanged. Their DOMAIN is the arm's: a closed accessor, refused by name otherwise.
   cyclicOf =
+    door: accessor:
+    cyclicFrom door accessor (lowlinkAs (within door "lowlink") accessor).sccOf;
+  # The cyclic set read off a partition's `sccOf`: the one derivation `cycles` and `cycleOrder` share.
+  cyclicFrom =
     door:
-    accessor@{ edges, nodes, ... }:
+    { edges, nodes, ... }:
+    sccOf:
     let
-      inherit (lowlinkAs (within door "lowlink") accessor) sccOf;
       e = edgesAccessor (within door "cycles") edges;
       toKey = attrKey (within door "cycles");
       size = builtins.mapAttrs (_: builtins.length) (
@@ -635,6 +671,37 @@ let
     };
   cyclesCore = accessor: (cyclicOf "cycles" accessor).cyclic;
   cycles = accessorDoor "cycles" cyclesCore;
+
+  # cycleOrder { nodes; edges; root; } => { cyclic; postorder; }
+  # ONE lowlink run read twice. `cyclic` is exactly `cycles` on the same accessor (the same
+  # derivation, `cyclicFrom`). `postorder` lists every node once: on an acyclic graph it is the
+  # depth-first FINISHING order of a search that starts at `root`, then at each unvisited node in key
+  # order, and expands each node's successors in its `edges` list order, skipping visited nodes; so
+  # every node stands after every node it reaches. On a graph with cycles each strongly connected
+  # component's members stand together, each component after every component it reaches; the order
+  # among one component's members is deterministic, but declared and pinned, not promised. A
+  # disconnected graph is covered by the key-order restarts. `root = null` starts in key order alone.
+  # Refusals are the arm's own (`nodes` not strings, an edge outside `nodes`, `edges` not a list), a
+  # missing `root` field is refused by the door, and a `root` outside `nodes` is refused by name.
+  cycleOrder = door {
+    name = "gen-graph.cycleOrder";
+    required = [
+      "edges"
+      "nodes"
+      "root"
+    ];
+    open = true;
+  } (
+    accessor:
+    let
+      who = within "cycleOrder" "lowlink";
+      r = lowlinkRun who accessor.root accessor;
+    in
+    {
+      inherit (cyclicFrom "cycleOrder" accessor (finish who accessor r.tags).sccOf) cyclic;
+      inherit (r) postorder;
+    }
+  );
 
   # One representative simple cycle per cyclic component, as an ORDERED node list rotated to
   # begin at the component's smallest key; every consecutive pair is an edge, closing back on the
@@ -855,6 +922,7 @@ in
     condensation
     condensationOf
     cycles
+    cycleOrder
     cyclePaths
     cyclicEdgesWhere
     fbNode
