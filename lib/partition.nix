@@ -597,8 +597,8 @@ let
           if s' == null then [ ] else [ s' ];
       };
       last = builtins.elemAt run (builtins.length run - 1);
-      comps = conses last.out;
-      nc = builtins.length comps;
+      out = conses last.out;
+      count = builtins.length out;
     in
     {
       tags = builtins.listToAttrs (
@@ -608,19 +608,19 @@ let
             name = builtins.elemAt names y.c.h;
             value = builtins.elemAt verts x.c.h.tag;
           }) (conses x.c.h.ms)
-        ) comps
+        ) out
       );
-      # Every node once, in the order its component finished: each component after every component
-      # it reaches, its members together. A one-member component (every one, on a DAG) is read
-      # without walking its member list.
-      postorder = builtins.concatLists (
+      # Every node once, in the order its component finished: each component after every component it
+      # reaches, its members together. A one-member component (every one, on a DAG) is read without
+      # walking its member list.
+      order = builtins.concatLists (
         builtins.genList (
           i:
           let
-            ms = (builtins.elemAt comps (nc - 1 - i)).c.h.ms;
+            ms = (builtins.elemAt out (count - 1 - i)).c.h.ms;
           in
           if ms.t == null then [ (builtins.elemAt verts ms.h) ] else map (y: builtins.elemAt verts y.c.h) (conses ms)
-        ) nc
+        ) count
       );
     };
 
@@ -636,33 +636,38 @@ let
   fbNode = accessorDoor "fbNode" (accessor: finish "fbNode" accessor (nodeTags accessor));
   fbWork = accessorDoor "fbWork" (accessor: finish "fbWork" accessor (workTags accessor));
   # The arm reached through another door (R6): `who` is `within <door> "lowlink"`.
-  lowlinkAs = who: accessor: finish who accessor (lowlinkTags who null accessor).tags;
-  # lowlink { nodes; edges; root? } — with a `root`, the record also carries `cyclic` (exactly `cycles`
-  # on the same accessor, by the same derivation, `cyclicOf`) and `postorder`, read off this one run.
-  # `postorder` lists every node once: on an acyclic graph it is the depth-first FINISHING order of a
-  # search that starts at `root`, then at each unvisited node in key order, expanding each node's
-  # successors in its `edges` list order and skipping visited nodes, so every node stands after every
-  # node it reaches. With cycles, each strongly connected component's members stand together, each
-  # component after every component it reaches; the order among one component's members is
-  # deterministic, declared and pinned, not promised. `root = null` starts in key order alone. A `root`
-  # outside `nodes` is refused by name; every other refusal is the arm's own. Without `root` the record
-  # is the partition record it always was. The order is this arm's, the DFS Tarjan's procedure runs, so
-  # it lives on the arm by name and not on `condensation`, whose default arm may move.
-  lowlink = accessorDoor "lowlink" (
-    accessor:
-    if accessor ? root then
+  # Only the arm reached by its own name with a `root` field gets the rooted record (the `lowlink` door,
+  # below); a caller through another door (a `within` name), or without `root`, gets the partition record.
+  lowlinkAs =
+    who: accessor:
+    if who == "lowlink" && accessor ? root then
       let
-        r = lowlinkTags "lowlink" accessor.root accessor;
-        p = finish "lowlink" accessor r.tags;
+        r = lowlinkTags who accessor.root accessor;
+        p = finish who accessor r.tags;
       in
       p
       // {
-        inherit (cyclicOf "lowlink" accessor p.sccOf) cyclic;
-        inherit (r) postorder;
+        inherit (cyclicOf who accessor p.sccOf) cyclic;
+        inherit (r) order;
       }
     else
-      lowlinkAs "lowlink" accessor
-  );
+      finish who accessor (lowlinkTags who null accessor).tags;
+  # lowlink { nodes; edges; root? }. With a `root` field the record also carries `cyclic` and `order`,
+  # read off the one run that finds the partition:
+  # - `cyclic` is exactly `cycles` on the same accessor (the same derivation, `cyclicOf`).
+  # - `order` lists every node once, each strongly connected component's members together and each
+  #   component after every component it reaches: on an acyclic graph a topological order with every
+  #   node after its successors, as `topoOrder`'s `order` is after its dependencies. It is the
+  #   depth-first FINISHING order of a search that starts at `root`, then at each unvisited node in key
+  #   order, expanding each node's successors in its `edges` list order and skipping visited nodes.
+  #   Within one component the members' order is deterministic, declared and pinned, not promised.
+  # - `root = null` starts the search in key order alone; a `root` outside `nodes` is refused by name;
+  #   every other refusal is the arm's own (a non-string node, an edge outside `nodes`, `edges` not a
+  #   list).
+  # Without `root` the record is the partition record it always was, and reading the order forces only
+  # the run, never `finish`. The order is this ARM's (Tarjan's procedure), so it is published on the arm
+  # by name and not on `condensation`, whose default arm may move.
+  lowlink = accessorDoor "lowlink" (lowlinkAs "lowlink");
 
   # ── THE PARTITION'S CONSUMERS: WHICH NODES LIE ON A CYCLE, AND ONE WALK PER CYCLIC COMPONENT ──
   # A node lies on a cycle iff its strongly connected component has two or more members, or it
