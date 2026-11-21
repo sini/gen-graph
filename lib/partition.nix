@@ -625,20 +625,23 @@ let
             let
               ms = (builtins.elemAt out (count - 1 - i)).c.h.ms;
             in
-            if ms.t == null then [ (builtins.elemAt verts ms.h) ] else map (y: builtins.elemAt verts y.c.h) (conses ms)
+            if ms.t == null then
+              [ (builtins.elemAt verts ms.h) ]
+            else
+              map (y: builtins.elemAt verts y.c.h) (conses ms)
           ) count
         );
       }
     else
-    builtins.listToAttrs (
-      builtins.concatMap (
-        x:
-        map (y: {
-          name = builtins.elemAt names y.c.h;
-          value = builtins.elemAt verts x.c.h.tag;
-        }) (conses x.c.h.ms)
-      ) (conses last.out)
-    );
+      builtins.listToAttrs (
+        builtins.concatMap (
+          x:
+          map (y: {
+            name = builtins.elemAt names y.c.h;
+            value = builtins.elemAt verts x.c.h.tag;
+          }) (conses x.c.h.ms)
+        ) (conses last.out)
+      );
 
   # ── THE ARMS, PUBLISHED BY NAME ──
   # Each is the finisher over one arm's tag map, so on a closed accessor the three differ in HOW
@@ -691,11 +694,20 @@ let
   # record door, built once.
   lowlink =
     let
-      options = door {
-        name = "gen-graph.lowlink";
-        next = graphSpec;
-        optional = [ "root" ];
-      } (o: if o ? root then graph (accessor: lowlinkAs "lowlink" (accessor // { inherit (o) root; })) else plain);
+      options =
+        door
+          {
+            name = "gen-graph.lowlink";
+            next = graphSpec;
+            optional = [ "root" ];
+          }
+          (
+            o:
+            if o ? root then
+              graph (accessor: lowlinkAs "lowlink" (accessor // { inherit (o) root; }))
+            else
+              plain
+          );
       graphSpec = {
         name = "gen-graph.lowlink";
         required = [
@@ -740,7 +752,8 @@ let
       cyclic = builtins.sort builtins.lessThan (builtins.filter onCycle nodes);
     };
   cyclesCore =
-    accessor: (cyclicOf "cycles" accessor (lowlinkAs (within "cycles" "lowlink") accessor).sccOf).cyclic;
+    accessor:
+    (cyclicOf "cycles" accessor (lowlinkAs (within "cycles" "lowlink") accessor).sccOf).cyclic;
   cycles = accessorDoor "cycles" cyclesCore;
 
   # One representative simple cycle per cyclic component, as an ORDERED node list rotated to

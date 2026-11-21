@@ -1215,21 +1215,28 @@ in
         test-nonmember-root-sccOf = cell (nonMember "\"zz\"") (rooted "zz" diamond).sccOf;
         test-int-root = cell (nonMember "<a int>") (rooted 1 diamond).order;
         test-list-root = cell (nonMember "<a list>") (rooted [ "a" ] diamond).order;
-        test-root-on-empty-nodes = cell (nonMember "\"a\"") (rooted "a" {
-          nodes = [ ];
-          edges = _: [ ];
-        }).order;
-        test-root-on-the-graph-record = cell "^gen-graph\\.lowlink: 'root' is an option of gen-graph\\.lowlink, not a field of this record \\(in prelude\\.checkGuarded\\)$" (
-          genGraph.lowlink { } (diamond // { root = "a"; })
-        ).sccOf;
-        test-bad-root-with-a-dangling-edge-reports-the-edge = cell "^gen-graph\\.lowlink: edges \"a\" names a target outside `nodes`$" (rooted "zz" {
-          nodes = [ "a" ];
-          edges = _: [ "zz" ];
-        }).order;
-        test-bad-root-with-a-non-string-node-reports-the-node = cell "^gen-graph\\.lowlink: got int, expected a node identifier \\(a string\\)$" (rooted "zz" {
-          nodes = [ 1 ];
-          edges = _: [ ];
-        }).order;
+        test-root-on-empty-nodes =
+          cell (nonMember "\"a\"")
+            (rooted "a" {
+              nodes = [ ];
+              edges = _: [ ];
+            }).order;
+        test-root-on-the-graph-record =
+          cell
+            "^gen-graph\\.lowlink: 'root' is an option of gen-graph\\.lowlink, not a field of this record \\(in prelude\\.checkGuarded\\)$"
+            (genGraph.lowlink { } (diamond // { root = "a"; })).sccOf;
+        test-bad-root-with-a-dangling-edge-reports-the-edge =
+          cell "^gen-graph\\.lowlink: edges \"a\" names a target outside `nodes`$"
+            (rooted "zz" {
+              nodes = [ "a" ];
+              edges = _: [ "zz" ];
+            }).order;
+        test-bad-root-with-a-non-string-node-reports-the-node =
+          cell "^gen-graph\\.lowlink: got int, expected a node identifier \\(a string\\)$"
+            (rooted "zz" {
+              nodes = [ 1 ];
+              edges = _: [ ];
+            }).order;
         test-root-refusals-are-catchable = {
           expr = map (v: (builtins.tryEval (builtins.deepSeq v true)).success) [
             (rooted "zz" diamond).order
