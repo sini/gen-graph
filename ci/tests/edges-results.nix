@@ -61,7 +61,7 @@ let
     condensation = G.condensation (acc e);
     fbNode = G.fbNode (acc e);
     fbWork = G.fbWork (acc e);
-    lowlink = G.lowlink (acc e);
+    lowlink = G.lowlink { } (acc e);
     condensationOf = G.condensationOf (acc e) {
       a = "a";
       b = "a";

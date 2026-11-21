@@ -440,12 +440,15 @@ let
   # family refuses a dangling target (`topoOrderCore`): an edge to x ∉ V means (V, E) is not a
   # graph, so it has no SCC partition. A `nodes` entry that is not a string is refused by name
   # too; it cannot be keyed.
-  # From an optional first ROOT (null: none): the depth-first search starts at `root` (a member of
-  # `nodes`), then at each unvisited node in key order. The partition, and so every tag, is the same
-  # from any root; only the order in which components finish moves with it.
+  # ROOTED (the `lowlink` door's `{ root; }` option, carried here as a `root` field that only that door's
+  # rooted step adds): the search starts at `root` (null: none), then at each unvisited node in key
+  # order, and the result is `{ tags; order; }`. The partition, and so every tag, is the same from any
+  # root; only the order in which components finish moves with it. Every other caller gets the bare tag
+  # map, with nothing built for the order: the cheap `?` test runs first so a `within` name is never
+  # forced, and the rooted bindings live inside the rooted branch.
   lowlinkTags =
-    who: root:
-    { edges, nodes, ... }:
+    who:
+    accessor@{ edges, nodes, ... }:
     let
       e = edgesAccessor who edges;
       toKey = attrKey who;
@@ -578,10 +581,13 @@ let
       run = builtins.genericClosure {
         startSet = [
           (
-            if root == null then
+            if !(accessor ? root && who == "lowlink") || accessor.root == null then
               state 0 empty 1 null null 0 null null
             else
               push (state 0 empty 1 null null 0 null null) null 0 (
+                let
+                  inherit (accessor) root;
+                in
                 if builtins.isString root && ordOf ? ${toKey root} then
                   ordOf.${toKey root}
                 else
@@ -597,32 +603,42 @@ let
           if s' == null then [ ] else [ s' ];
       };
       last = builtins.elemAt run (builtins.length run - 1);
-      out = conses last.out;
-      count = builtins.length out;
     in
-    {
-      tags = builtins.listToAttrs (
-        builtins.concatMap (
-          x:
-          map (y: {
-            name = builtins.elemAt names y.c.h;
-            value = builtins.elemAt verts x.c.h.tag;
-          }) (conses x.c.h.ms)
-        ) out
-      );
-      # Every node once, in the order its component finished: each component after every component it
-      # reaches, its members together. A one-member component (every one, on a DAG) is read without
-      # walking its member list.
-      order = builtins.concatLists (
-        builtins.genList (
-          i:
-          let
-            ms = (builtins.elemAt out (count - 1 - i)).c.h.ms;
-          in
-          if ms.t == null then [ (builtins.elemAt verts ms.h) ] else map (y: builtins.elemAt verts y.c.h) (conses ms)
-        ) count
-      );
-    };
+    if accessor ? root && who == "lowlink" then
+      let
+        out = conses last.out;
+        count = builtins.length out;
+      in
+      {
+        tags = builtins.listToAttrs (
+          builtins.concatMap (
+            x:
+            map (y: {
+              name = builtins.elemAt names y.c.h;
+              value = builtins.elemAt verts x.c.h.tag;
+            }) (conses x.c.h.ms)
+          ) out
+        );
+        order = builtins.concatLists (
+          builtins.genList (
+            i:
+            let
+              ms = (builtins.elemAt out (count - 1 - i)).c.h.ms;
+            in
+            if ms.t == null then [ (builtins.elemAt verts ms.h) ] else map (y: builtins.elemAt verts y.c.h) (conses ms)
+          ) count
+        );
+      }
+    else
+    builtins.listToAttrs (
+      builtins.concatMap (
+        x:
+        map (y: {
+          name = builtins.elemAt names y.c.h;
+          value = builtins.elemAt verts x.c.h.tag;
+        }) (conses x.c.h.ms)
+      ) (conses last.out)
+    );
 
   # ── THE ARMS, PUBLISHED BY NAME ──
   # Each is the finisher over one arm's tag map, so on a closed accessor the three differ in HOW
@@ -636,13 +652,13 @@ let
   fbNode = accessorDoor "fbNode" (accessor: finish "fbNode" accessor (nodeTags accessor));
   fbWork = accessorDoor "fbWork" (accessor: finish "fbWork" accessor (workTags accessor));
   # The arm reached through another door (R6): `who` is `within <door> "lowlink"`.
-  # Only the arm reached by its own name with a `root` field gets the rooted record (the `lowlink` door,
-  # below); a caller through another door (a `within` name), or without `root`, gets the partition record.
+  # Only the `lowlink` door's rooted step reaches the rooted record; a caller through another door (a
+  # `within` name) gets the partition record whatever fields its open record carries.
   lowlinkAs =
     who: accessor:
-    if who == "lowlink" && accessor ? root then
+    if accessor ? root && who == "lowlink" then
       let
-        r = lowlinkTags who accessor.root accessor;
+        r = lowlinkTags who accessor;
         p = finish who accessor r.tags;
       in
       p
@@ -651,8 +667,10 @@ let
         inherit (r) order;
       }
     else
-      finish who accessor (lowlinkTags who null accessor).tags;
-  # lowlink { nodes; edges; root? }. With a `root` field the record also carries `cyclic` and `order`,
+      finish who accessor (lowlinkTags who accessor);
+  # lowlink { root? } { nodes; edges; ... }: OPTIONS FIRST, then the open graph record, as `topoOrder`
+  # (a data record declares no optional field; `root` on the graph record is refused by name as an
+  # option). `lowlink { } g` is the partition record. With `root` it also carries `cyclic` and `order`,
   # read off the one run that finds the partition:
   # - `cyclic` is exactly `cycles` on the same accessor (the same derivation, `cyclicOf`).
   # - `order` lists every node once, each strongly connected component's members together and each
@@ -664,10 +682,35 @@ let
   # - `root = null` starts the search in key order alone; a `root` outside `nodes` is refused by name;
   #   every other refusal is the arm's own (a non-string node, an edge outside `nodes`, `edges` not a
   #   list).
-  # Without `root` the record is the partition record it always was, and reading the order forces only
-  # the run, never `finish`. The order is this ARM's (Tarjan's procedure), so it is published on the arm
-  # by name and not on `condensation`, whose default arm may move.
-  lowlink = accessorDoor "lowlink" (lowlinkAs "lowlink");
+  # The rooted record is the partition record extended, so its domain refusal is the record's: reading
+  # any field, `order` included, forces the finisher's closed check. The order is this ARM's (Tarjan's
+  # procedure), so it is published on the arm by name and not on `condensation`, whose default arm may
+  # move.
+  # The door is built when it is first used, not at import: `lowlink` is a record of the options door's
+  # three fields, so loading the library forces neither door. `lowlink { }` returns the one plain
+  # record door, built once.
+  lowlink =
+    let
+      options = door {
+        name = "gen-graph.lowlink";
+        next = graphSpec;
+        optional = [ "root" ];
+      } (o: if o ? root then graph (accessor: lowlinkAs "lowlink" (accessor // { inherit (o) root; })) else plain);
+      graphSpec = {
+        name = "gen-graph.lowlink";
+        required = [
+          "edges"
+          "nodes"
+        ];
+        open = true;
+        optionsStep = options;
+      };
+      graph = door graphSpec;
+      plain = graph (lowlinkAs "lowlink");
+    in
+    {
+      inherit (options) __contract __functionArgs __functor;
+    };
 
   # ── THE PARTITION'S CONSUMERS: WHICH NODES LIE ON A CYCLE, AND ONE WALK PER CYCLIC COMPONENT ──
   # A node lies on a cycle iff its strongly connected component has two or more members, or it

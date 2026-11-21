@@ -232,7 +232,7 @@ if arm == "fbNode" then
 else if arm == "fbWork" then
   doorReport (g.fbWork acc)
 else if arm == "lowlink" then
-  doorReport (g.lowlink acc)
+  doorReport (g.lowlink { } acc)
 else if arm == "closure" then
   doorReport (g.condensationClosure { } acc)
 else if arm == "unforced" then

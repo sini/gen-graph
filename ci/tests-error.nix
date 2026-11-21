@@ -1173,6 +1173,77 @@ in
     # A `nodes` entry that is not a string is refused as such, BEFORE any target is read: a
     # non-string node with an edge must not be reported as "a target outside `nodes`". The fixture
     # gives every node an edge, because a node with none passes whichever check runs first.
+    # THE ROOTED STEP'S OWN REFUSALS. A `root` outside `nodes` is refused by name, catchably, on every
+    # field of the rooted record; a non-string root names its type, never its value. `root` on the
+    # GRAPH record is an option left in the wrong place and is refused as such (G10). With two faults
+    # the graph's own domain refusal wins: the root is checked against a graph that already passed.
+    flake.testsError.lowlink-root =
+      let
+        diamond = {
+          nodes = [
+            "a"
+            "b"
+            "c"
+            "d"
+          ];
+          edges =
+            id:
+            {
+              a = [
+                "b"
+                "c"
+              ];
+              b = [ "d" ];
+              c = [ "d" ];
+              d = [ ];
+            }
+            .${id};
+        };
+        rooted = root: genGraph.lowlink { inherit root; };
+        cell = msg: expr: {
+          expr = builtins.deepSeq expr expr;
+          expectedError = {
+            type = "ThrownError";
+            inherit msg;
+          };
+        };
+        nonMember = r: "^gen-graph\\.lowlink: root ${r} is not a member of `nodes`$";
+      in
+      {
+        test-nonmember-root-order = cell (nonMember "\"zz\"") (rooted "zz" diamond).order;
+        test-nonmember-root-cyclic = cell (nonMember "\"zz\"") (rooted "zz" diamond).cyclic;
+        test-nonmember-root-sccOf = cell (nonMember "\"zz\"") (rooted "zz" diamond).sccOf;
+        test-int-root = cell (nonMember "<a int>") (rooted 1 diamond).order;
+        test-list-root = cell (nonMember "<a list>") (rooted [ "a" ] diamond).order;
+        test-root-on-empty-nodes = cell (nonMember "\"a\"") (rooted "a" {
+          nodes = [ ];
+          edges = _: [ ];
+        }).order;
+        test-root-on-the-graph-record = cell "^gen-graph\\.lowlink: 'root' is an option of gen-graph\\.lowlink, not a field of this record \\(in prelude\\.checkGuarded\\)$" (
+          genGraph.lowlink { } (diamond // { root = "a"; })
+        ).sccOf;
+        test-bad-root-with-a-dangling-edge-reports-the-edge = cell "^gen-graph\\.lowlink: edges \"a\" names a target outside `nodes`$" (rooted "zz" {
+          nodes = [ "a" ];
+          edges = _: [ "zz" ];
+        }).order;
+        test-bad-root-with-a-non-string-node-reports-the-node = cell "^gen-graph\\.lowlink: got int, expected a node identifier \\(a string\\)$" (rooted "zz" {
+          nodes = [ 1 ];
+          edges = _: [ ];
+        }).order;
+        test-root-refusals-are-catchable = {
+          expr = map (v: (builtins.tryEval (builtins.deepSeq v true)).success) [
+            (rooted "zz" diamond).order
+            (rooted 1 diamond).order
+            (genGraph.lowlink { } (diamond // { root = "a"; })).sccOf
+          ];
+          expected = [
+            false
+            false
+            false
+          ];
+        };
+      };
+
     flake.testsError.lowlink-domain =
       let
         # a -> x -> b -> a, x outside `nodes`: the off-node target is ON the cycle
@@ -1259,7 +1330,7 @@ in
           };
           lowlink = {
             who = "lowlink";
-            f = g: genGraph.lowlink g;
+            f = g: genGraph.lowlink { } g;
           };
           fbNode-sccOf = {
             who = "fbNode";
@@ -1271,7 +1342,16 @@ in
           };
           lowlink-sccOf = {
             who = "lowlink";
-            f = g: (genGraph.lowlink g).sccOf;
+            f = g: (genGraph.lowlink { } g).sccOf;
+          };
+          # the rooted step: its domain refusal is the record's, on every field, `order` included
+          lowlink-rooted-order = {
+            who = "lowlink";
+            f = g: (genGraph.lowlink { root = null; } g).order;
+          };
+          lowlink-rooted-cyclic = {
+            who = "lowlink";
+            f = g: (genGraph.lowlink { root = builtins.head g.nodes; } g).cyclic;
           };
           # the door names the arm it is bound to, so these cells are the binding's discriminator
           condensation = {
@@ -1406,7 +1486,7 @@ in
           directDependents = genGraph.directDependents (acc e);
           roots = genGraph.roots (acc e);
           leaves = genGraph.leaves (acc e);
-          lowlink = (genGraph.lowlink (acc e)).sccOf;
+          lowlink = (genGraph.lowlink { } (acc e)).sccOf;
           condensationOf = genGraph.condensationOf (acc e) {
             a = "a";
             b = "b";

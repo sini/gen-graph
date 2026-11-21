@@ -149,6 +149,7 @@ in
           "foldPreorder"
           "foldReach"
           "fromScan"
+          "lowlink"
           "pathsBetween"
           "seededFixpoint"
           "topoOrder"
@@ -156,8 +157,8 @@ in
           "transitiveClosure"
           "transitiveReduction"
         ];
-        # the twelve and `closureOf`
-        chained = 13;
+        # the thirteen and `closureOf`
+        chained = 14;
       };
     };
     # PARITY (den-hoag-ak8va, gate C1; gating): every chained door publishes its record step AS

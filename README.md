@@ -308,7 +308,7 @@ coScc              : { edges, ... } → id → id → bool
 condensation       : { edges, nodes, ... } → { reps, bottomUp, members, sccs, sccOf, condEdges, depth }
 fbNode             : { edges, nodes, ... } → <the same record>   # partition arm, by name
 fbWork             : { edges, nodes, ... } → <the same record>   # partition arm, by name
-lowlink            : { edges, nodes, ... } → <the same record>   # partition arm, by name; the door's default
+lowlink            : { root? } → { edges, nodes, ... } → <the same record> (+ cyclic, order with root)   # partition arm, by name; the door's default
 condensationClosure: { maxIter? } → { edges, nodes, ... } → <the same record>   # partition arm, by name
 condensationOf     : { edges, nodes, ... } → tagOf → <the same record>   # the finisher every arm calls
 directDependents   : { edges, nodes, ... } → { id → [id] }
