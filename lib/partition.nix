@@ -440,11 +440,10 @@ let
   # family refuses a dangling target (`topoOrderCore`): an edge to x ∉ V means (V, E) is not a
   # graph, so it has no SCC partition. A `nodes` entry that is not a string is refused by name
   # too; it cannot be keyed.
-  lowlinkTags = who: accessor: (lowlinkRun who null accessor).tags;
-  # The run itself, from an optional first ROOT: the depth-first search starts at `root` (a member of
+  # From an optional first ROOT (null: none): the depth-first search starts at `root` (a member of
   # `nodes`), then at each unvisited node in key order. The partition, and so every tag, is the same
   # from any root; only the order in which components finish moves with it.
-  lowlinkRun =
+  lowlinkTags =
     who: root:
     { edges, nodes, ... }:
     let
@@ -637,9 +636,9 @@ let
   fbNode = accessorDoor "fbNode" (accessor: finish "fbNode" accessor (nodeTags accessor));
   fbWork = accessorDoor "fbWork" (accessor: finish "fbWork" accessor (workTags accessor));
   # The arm reached through another door (R6): `who` is `within <door> "lowlink"`.
-  lowlinkAs = who: accessor: finish who accessor (lowlinkTags who accessor);
+  lowlinkAs = who: accessor: finish who accessor (lowlinkTags who null accessor).tags;
   # lowlink { nodes; edges; root? } — with a `root`, the record also carries `cyclic` (exactly `cycles`
-  # on the same accessor, by the same derivation, `cyclicFrom`) and `postorder`, read off this one run.
+  # on the same accessor, by the same derivation, `cyclicOf`) and `postorder`, read off this one run.
   # `postorder` lists every node once: on an acyclic graph it is the depth-first FINISHING order of a
   # search that starts at `root`, then at each unvisited node in key order, expanding each node's
   # successors in its `edges` list order and skipping visited nodes, so every node stands after every
@@ -650,19 +649,20 @@ let
   # is the partition record it always was. The order is this arm's, the DFS Tarjan's procedure runs, so
   # it lives on the arm by name and not on `condensation`, whose default arm may move.
   lowlink = accessorDoor "lowlink" (
-    accessor: if accessor ? root then lowlinkRooted "lowlink" accessor else lowlinkAs "lowlink" accessor
+    accessor:
+    if accessor ? root then
+      let
+        r = lowlinkTags "lowlink" accessor.root accessor;
+        p = finish "lowlink" accessor r.tags;
+      in
+      p
+      // {
+        inherit (cyclicOf "lowlink" accessor p.sccOf) cyclic;
+        inherit (r) postorder;
+      }
+    else
+      lowlinkAs "lowlink" accessor
   );
-  lowlinkRooted =
-    who: accessor:
-    let
-      r = lowlinkRun who accessor.root accessor;
-      p = finish who accessor r.tags;
-    in
-    p
-    // {
-      inherit (cyclicFrom who accessor p.sccOf) cyclic;
-      inherit (r) postorder;
-    };
 
   # ── THE PARTITION'S CONSUMERS: WHICH NODES LIE ON A CYCLE, AND ONE WALK PER CYCLIC COMPONENT ──
   # A node lies on a cycle iff its strongly connected component has two or more members, or it
@@ -673,11 +673,9 @@ let
   # accessor read per node for the self-loop test. They moved here from `lib/global.nix` because
   # they are partition consumers now, as `coneRank` moved to the ordering family; the export set
   # is unchanged. Their DOMAIN is the arm's: a closed accessor, refused by name otherwise.
+  # The cyclic set is read off a partition's `sccOf`, the one derivation `cycles`, `cyclePaths` and a
+  # rooted `lowlink` share.
   cyclicOf =
-    door: accessor:
-    cyclicFrom door accessor (lowlinkAs (within door "lowlink") accessor).sccOf;
-  # The cyclic set read off a partition's `sccOf`: the one derivation `cycles` and a rooted `lowlink` share.
-  cyclicFrom =
     door:
     { edges, nodes, ... }:
     sccOf:
@@ -693,7 +691,8 @@ let
       inherit sccOf;
       cyclic = builtins.sort builtins.lessThan (builtins.filter onCycle nodes);
     };
-  cyclesCore = accessor: (cyclicOf "cycles" accessor).cyclic;
+  cyclesCore =
+    accessor: (cyclicOf "cycles" accessor (lowlinkAs (within "cycles" "lowlink") accessor).sccOf).cyclic;
   cycles = accessorDoor "cycles" cyclesCore;
 
   # One representative simple cycle per cyclic component, as an ORDERED node list rotated to
@@ -719,7 +718,7 @@ let
   cyclePaths = accessorDoor "cyclePaths" (
     accessor@{ edges, nodes, ... }:
     let
-      c = cyclicOf "cyclePaths" accessor;
+      c = cyclicOf "cyclePaths" accessor (lowlinkAs (within "cyclePaths" "lowlink") accessor).sccOf;
       e = edgesAccessor "cyclePaths" edges;
       toKey = attrKey "cyclePaths";
       keyedAttrs' = keyedAttrs "cyclePaths";
