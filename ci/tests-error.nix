@@ -1205,9 +1205,13 @@ in
         test-condensation = cell "condensation" (genGraph.condensation bad).reps;
         test-cycles = cell "cycles" (genGraph.cycles bad);
         test-cyclePaths = cell "cyclePaths" (genGraph.cyclePaths bad);
-        test-condensationClosure =
-          cell "condensationClosure( \\(in condensationOf\\))?"
-            (genGraph.condensationClosure { } bad).reps;
+        test-condensationClosure = {
+          expr = builtins.deepSeq (genGraph.condensationClosure { } bad).reps null;
+          expectedError = {
+            type = "ThrownError";
+            msg = "^gen-graph\\.condensationClosure: the accessor's nodes is a string, not a list of node ids \\(in condensationOf\\)$";
+          };
+        };
         test-cyclicEdgesWhere = cell "cyclicEdgesWhere" (
           genGraph.cyclicEdgesWhere (_: true) {
             nodes = "a";
