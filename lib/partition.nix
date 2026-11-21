@@ -195,7 +195,13 @@ let
       e = edgesAccessor who edges;
       toKey = attrKey who;
       keyedAttrs' = keyedAttrs who;
-      memberSet = keyedAttrs' (map (identifier who) nodes) (_: true);
+      # `nodes` must be a list before it is mapped: `map` over anything else aborts uncatchably. The test
+      # heads a binding that exists anyway, so it adds no thunk.
+      memberSet =
+        if builtins.isList nodes then
+          keyedAttrs' (map (identifier who) nodes) (_: true)
+        else
+          throw (say who "the accessor's nodes is a ${builtins.typeOf nodes}, not a list of node ids");
       # `nodes` is validated BEFORE any target is read: the scan below short-circuits on a
       # non-string target without forcing `memberSet`, so a non-string NODE with an edge would
       # otherwise be reported as a target outside `nodes`.
@@ -452,7 +458,11 @@ let
     let
       e = edgesAccessor who edges;
       toKey = attrKey who;
-      byKey = keyedAttrs who (map (identifier who) nodes) (v: v);
+      byKey =
+        if builtins.isList nodes then
+          keyedAttrs who (map (identifier who) nodes) (v: v)
+        else
+          throw (say who "the accessor's nodes is a ${builtins.typeOf nodes}, not a list of node ids");
       names = builtins.attrNames byKey;
       verts = builtins.attrValues byKey;
       n = builtins.length names;
@@ -664,9 +674,20 @@ let
         r = lowlinkTags who accessor;
         p = finish who accessor r.tags;
       in
-      p
-      // {
-        inherit (cyclicOf who accessor p.sccOf) cyclic;
+      # The partition fields are the finisher's; `cyclic` and `order` are read off the run alone (`sccOf` is
+      # the run's tag map), so reading them does not force the finisher's closed scan: the run examines
+      # every edge of every node and refuses an edge outside `nodes` itself.
+      {
+        inherit (p)
+          reps
+          bottomUp
+          members
+          sccs
+          sccOf
+          condEdges
+          depth
+          ;
+        inherit (cyclicOf who accessor r.tags) cyclic;
         inherit (r) order;
       }
     else
@@ -685,8 +706,10 @@ let
   # - `root = null` starts the search in key order alone; a `root` outside `nodes` is refused by name;
   #   every other refusal is the arm's own (a non-string node, an edge outside `nodes`, `edges` not a
   #   list).
-  # The rooted record is the partition record extended, so its domain refusal is the record's: reading
-  # any field, `order` included, forces the finisher's closed check. The order is this ARM's (Tarjan's
+  # Every field of the rooted record refuses a graph outside its domain: the partition fields through the
+  # finisher's closed check, `cyclic` and `order` through the run, which examines every edge and so needs
+  # no second scan. With two faults each names the first it meets: the run checks the root first, then
+  # edges in search order; the finisher scans in `nodes` order. The order is this ARM's (Tarjan's
   # procedure), so it is published on the arm by name and not on `condensation`, whose default arm may
   # move.
   # The door is built when it is first used, not at import: `lowlink` is a record of the options door's
@@ -749,7 +772,11 @@ let
     in
     {
       inherit sccOf;
-      cyclic = builtins.sort builtins.lessThan (builtins.filter onCycle nodes);
+      cyclic =
+        if builtins.isList nodes then
+          builtins.sort builtins.lessThan (builtins.filter onCycle nodes)
+        else
+          throw (say door "the accessor's nodes is a ${builtins.typeOf nodes}, not a list of node ids");
     };
   cyclesCore =
     accessor:
@@ -934,31 +961,37 @@ let
       # The partition ARM by name, never the door: this consumer reads the tag map and
       # nothing else, so it has no stake in which algorithm the door defaults to.
       inherit (lowlinkAs (within "cyclicEdgesWhere" "lowlink") plain) sccOf;
-      hits = builtins.concatMap (
-        from:
-        map
-          (e: {
-            inherit from;
-            label = labelOf "cyclicEdgesWhere" from e;
-            to = targetOf "cyclicEdgesWhere" from e;
-          })
-          (
-            builtins.filter (
-              e:
-              (
-                let
-                  l = labelOf "cyclicEdgesWhere" from e;
-                  b = p l;
-                in
-                if builtins.isBool b then
-                  b
-                else
-                  badResult "cyclicEdgesWhere" "p" "on the label ${builtins.toJSON l}" "a bool" b
-              )
-              && sccOf.${toKey from} == sccOf.${toKey (targetOf "cyclicEdgesWhere" from e)}
-            ) (edgesAt "cyclicEdgesWhere" graph from)
+      hits =
+        if !builtins.isList plain.nodes then
+          throw (
+            say "cyclicEdgesWhere" "the accessor's nodes is a ${builtins.typeOf plain.nodes}, not a list of node ids"
           )
-      ) plain.nodes;
+        else
+          builtins.concatMap (
+            from:
+            map
+              (e: {
+                inherit from;
+                label = labelOf "cyclicEdgesWhere" from e;
+                to = targetOf "cyclicEdgesWhere" from e;
+              })
+              (
+                builtins.filter (
+                  e:
+                  (
+                    let
+                      l = labelOf "cyclicEdgesWhere" from e;
+                      b = p l;
+                    in
+                    if builtins.isBool b then
+                      b
+                    else
+                      badResult "cyclicEdgesWhere" "p" "on the label ${builtins.toJSON l}" "a bool" b
+                  )
+                  && sccOf.${toKey from} == sccOf.${toKey (targetOf "cyclicEdgesWhere" from e)}
+                ) (edgesAt "cyclicEdgesWhere" graph from)
+              )
+          ) plain.nodes;
       less =
         a: b:
         if a.from != b.from then
