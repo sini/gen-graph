@@ -62,6 +62,10 @@ in
         "lessThan"
       ];
     };
+    lowlink = {
+      door = G.lowlink;
+      optional = [ "root" ];
+    };
     topoOrderKahn = {
       door = G.topoOrderKahn;
       optional = [
@@ -204,7 +208,9 @@ in
       condensationOf = accessor G.condensationOf;
       fbNode = accessor G.fbNode;
       fbWork = accessor G.fbWork;
-      lowlink = accessor G.lowlink;
+      lowlink = accessor (G.lowlink { }) // {
+        misplaced = "root";
+      };
       cycles = accessor G.cycles;
       cyclePaths = accessor G.cyclePaths;
       condensation = accessor G.condensation;

@@ -42,9 +42,10 @@ let
     condensationClosure
     fbNode
     fbWork
-    lowlink
     reachableFrom
     ;
+  # The plain record step of the options-first door.
+  lowlink = genGraph.lowlink { };
   prelude = genPrelude;
 
   ix = m: builtins.genList (i: i) m;

@@ -1227,7 +1227,7 @@ let
     else if arm == "fbWork" then
       (g.fbWork acc).sccs
     else if arm == "lowlink" then
-      (g.lowlink acc).sccs
+      (g.lowlink { } acc).sccs
     # ── `cyclicEdgesWhere`, THROUGH THE ARM IT BINDS, AT THREE DENSITIES OF `p` ── `p` accepting
     # every edge forces every tag; one edge forces one tag, which on `lowlink` is the whole
     # partition; none forces no tag at all. The `len` control is the witness count: n on `cycle`
