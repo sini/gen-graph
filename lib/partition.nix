@@ -638,7 +638,31 @@ let
   fbWork = accessorDoor "fbWork" (accessor: finish "fbWork" accessor (workTags accessor));
   # The arm reached through another door (R6): `who` is `within <door> "lowlink"`.
   lowlinkAs = who: accessor: finish who accessor (lowlinkTags who accessor);
-  lowlink = accessorDoor "lowlink" (lowlinkAs "lowlink");
+  # lowlink { nodes; edges; root? } — with a `root`, the record also carries `cyclic` (exactly `cycles`
+  # on the same accessor, by the same derivation, `cyclicFrom`) and `postorder`, read off this one run.
+  # `postorder` lists every node once: on an acyclic graph it is the depth-first FINISHING order of a
+  # search that starts at `root`, then at each unvisited node in key order, expanding each node's
+  # successors in its `edges` list order and skipping visited nodes, so every node stands after every
+  # node it reaches. With cycles, each strongly connected component's members stand together, each
+  # component after every component it reaches; the order among one component's members is
+  # deterministic, declared and pinned, not promised. `root = null` starts in key order alone. A `root`
+  # outside `nodes` is refused by name; every other refusal is the arm's own. Without `root` the record
+  # is the partition record it always was. The order is this arm's, the DFS Tarjan's procedure runs, so
+  # it lives on the arm by name and not on `condensation`, whose default arm may move.
+  lowlink = accessorDoor "lowlink" (
+    accessor: if accessor ? root then lowlinkRooted "lowlink" accessor else lowlinkAs "lowlink" accessor
+  );
+  lowlinkRooted =
+    who: accessor:
+    let
+      r = lowlinkRun who accessor.root accessor;
+      p = finish who accessor r.tags;
+    in
+    p
+    // {
+      inherit (cyclicFrom who accessor p.sccOf) cyclic;
+      inherit (r) postorder;
+    };
 
   # ── THE PARTITION'S CONSUMERS: WHICH NODES LIE ON A CYCLE, AND ONE WALK PER CYCLIC COMPONENT ──
   # A node lies on a cycle iff its strongly connected component has two or more members, or it
@@ -652,7 +676,7 @@ let
   cyclicOf =
     door: accessor:
     cyclicFrom door accessor (lowlinkAs (within door "lowlink") accessor).sccOf;
-  # The cyclic set read off a partition's `sccOf`: the one derivation `cycles` and `cycleOrder` share.
+  # The cyclic set read off a partition's `sccOf`: the one derivation `cycles` and a rooted `lowlink` share.
   cyclicFrom =
     door:
     { edges, nodes, ... }:
@@ -671,37 +695,6 @@ let
     };
   cyclesCore = accessor: (cyclicOf "cycles" accessor).cyclic;
   cycles = accessorDoor "cycles" cyclesCore;
-
-  # cycleOrder { nodes; edges; root; } => { cyclic; postorder; }
-  # ONE lowlink run read twice. `cyclic` is exactly `cycles` on the same accessor (the same
-  # derivation, `cyclicFrom`). `postorder` lists every node once: on an acyclic graph it is the
-  # depth-first FINISHING order of a search that starts at `root`, then at each unvisited node in key
-  # order, and expands each node's successors in its `edges` list order, skipping visited nodes; so
-  # every node stands after every node it reaches. On a graph with cycles each strongly connected
-  # component's members stand together, each component after every component it reaches; the order
-  # among one component's members is deterministic, but declared and pinned, not promised. A
-  # disconnected graph is covered by the key-order restarts. `root = null` starts in key order alone.
-  # Refusals are the arm's own (`nodes` not strings, an edge outside `nodes`, `edges` not a list), a
-  # missing `root` field is refused by the door, and a `root` outside `nodes` is refused by name.
-  cycleOrder = door {
-    name = "gen-graph.cycleOrder";
-    required = [
-      "edges"
-      "nodes"
-      "root"
-    ];
-    open = true;
-  } (
-    accessor:
-    let
-      who = within "cycleOrder" "lowlink";
-      r = lowlinkRun who accessor.root accessor;
-    in
-    {
-      inherit (cyclicFrom "cycleOrder" accessor (finish who accessor r.tags).sccOf) cyclic;
-      inherit (r) postorder;
-    }
-  );
 
   # One representative simple cycle per cyclic component, as an ORDERED node list rotated to
   # begin at the component's smallest key; every consecutive pair is an edge, closing back on the
@@ -922,7 +915,6 @@ in
     condensation
     condensationOf
     cycles
-    cycleOrder
     cyclePaths
     cyclicEdgesWhere
     fbNode

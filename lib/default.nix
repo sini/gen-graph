@@ -65,7 +65,6 @@ in
   inherit (modules.partition)
     condensation
     condensationOf
-    cycleOrder
     cyclePaths
     cycles
     cyclicEdgesWhere
