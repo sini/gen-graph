@@ -85,11 +85,12 @@ let
     builtins.attrNames (
       builtins.listToAttrs (
         map (ns: {
-          name = builtins.toJSON
-            (G.lowlink { inherit root; } {
-              nodes = ns;
-              edges = k: es.${k};
-            }).order;
+          name =
+            builtins.toJSON
+              (G.lowlink { inherit root; } {
+                nodes = ns;
+                edges = k: es.${k};
+              }).order;
           value = null;
         }) (perms (builtins.attrNames es))
       )
@@ -110,23 +111,78 @@ in
         twoCycleP = orderOf "p" graphs.twoCycle;
         chainOfCyclesR = orderOf "r" graphs.chainOfCycles;
         selfY = orderOf "y" graphs.self;
-        empty = (rooted null {
-          nodes = [ ];
-          edges = _: [ ];
-        }).order;
+        empty =
+          (rooted null {
+            nodes = [ ];
+            edges = _: [ ];
+          }).order;
       };
       expected = {
-        diamondA = [ "d" "b" "c" "a" ];
-        diamondCBA = [ "d" "c" "b" "a" ];
-        diamondB = [ "d" "b" "c" "a" ];
-        diamondNull = [ "d" "b" "c" "a" ];
-        disconnectedU = [ "v" "u" "n" "m" ];
-        disconnectedNull = [ "n" "m" "v" "u" ];
-        lateKeyZ = [ "c" "b" "a" "z" ];
-        lateKeyNull = [ "a" "c" "b" "z" ];
-        twoCycleP = [ "r" "p" "q" ];
-        chainOfCyclesR = [ "x" "y" "a" "b" "c" "r" ];
-        selfY = [ "y" "x" ];
+        diamondA = [
+          "d"
+          "b"
+          "c"
+          "a"
+        ];
+        diamondCBA = [
+          "d"
+          "c"
+          "b"
+          "a"
+        ];
+        diamondB = [
+          "d"
+          "b"
+          "c"
+          "a"
+        ];
+        diamondNull = [
+          "d"
+          "b"
+          "c"
+          "a"
+        ];
+        disconnectedU = [
+          "v"
+          "u"
+          "n"
+          "m"
+        ];
+        disconnectedNull = [
+          "n"
+          "m"
+          "v"
+          "u"
+        ];
+        lateKeyZ = [
+          "c"
+          "b"
+          "a"
+          "z"
+        ];
+        lateKeyNull = [
+          "a"
+          "c"
+          "b"
+          "z"
+        ];
+        twoCycleP = [
+          "r"
+          "p"
+          "q"
+        ];
+        chainOfCyclesR = [
+          "x"
+          "y"
+          "a"
+          "b"
+          "c"
+          "r"
+        ];
+        selfY = [
+          "y"
+          "x"
+        ];
         empty = [ ];
       };
     };
@@ -134,16 +190,25 @@ in
     test-cyclic-is-cycles = {
       expr = builtins.mapAttrs (
         _: es:
-        builtins.all (r: (rooted r (acc es)).cyclic == G.cycles (acc es)) ([ null ] ++ builtins.attrNames es)
+        builtins.all (r: (rooted r (acc es)).cyclic == G.cycles (acc es)) (
+          [ null ] ++ builtins.attrNames es
+        )
       ) graphs;
       expected = builtins.mapAttrs (_: _: true) graphs;
     };
     # a function of the node SET: one order over every permutation of the `nodes` list
     test-order-is-independent-of-the-nodes-permutation = {
       expr = builtins.mapAttrs (
-        _: es: map builtins.length [ (distinctOrders null es) (distinctOrders (builtins.head (builtins.attrNames es)) es) ]
+        _: es:
+        map builtins.length [
+          (distinctOrders null es)
+          (distinctOrders (builtins.head (builtins.attrNames es)) es)
+        ]
       ) graphs;
-      expected = builtins.mapAttrs (_: _: [ 1 1 ]) graphs;
+      expected = builtins.mapAttrs (_: _: [
+        1
+        1
+      ]) graphs;
     };
     # the successor rule is real: the edge-list order moves the order
     test-order-follows-the-edge-list = {
@@ -155,10 +220,11 @@ in
       expr = {
         plain = builtins.attrNames (G.lowlink { } (acc graphs.diamond));
         rooted = builtins.attrNames (rooted "a" (acc graphs.diamond));
-        partitionUnchanged = builtins.removeAttrs (rooted "p" (acc graphs.twoCycle)) [
-          "cyclic"
-          "order"
-        ] == G.lowlink { } (acc graphs.twoCycle);
+        partitionUnchanged =
+          builtins.removeAttrs (rooted "p" (acc graphs.twoCycle)) [
+            "cyclic"
+            "order"
+          ] == G.lowlink { } (acc graphs.twoCycle);
       };
       expected = {
         plain = [
@@ -187,7 +253,8 @@ in
     # only the `lowlink` door roots: a `root` field on another partition surface's open record is ignored
     test-root-field-ignored-outside-lowlink = {
       expr = {
-        condensation = G.condensation ((acc graphs.diamond) // { root = "zz"; }) == G.condensation (acc graphs.diamond);
+        condensation =
+          G.condensation ((acc graphs.diamond) // { root = "zz"; }) == G.condensation (acc graphs.diamond);
         cycles = G.cycles ((acc graphs.twoCycle) // { root = "zz"; });
       };
       expected = {
