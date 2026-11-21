@@ -1177,6 +1177,49 @@ in
     # field of the rooted record; a non-string root names its type, never its value. `root` on the
     # GRAPH record is an option left in the wrong place and is refused as such (G10). With two faults
     # the graph's own domain refusal wins: the root is checked against a graph that already passed.
+    # A `nodes` that is not a list is refused by name, catchably, on every partition surface (den-hoag-n0euw):
+    # `map` over it used to abort uncatchably (`expected a list but found a string`).
+    flake.testsError.partition-nodes-not-a-list =
+      let
+        bad = {
+          nodes = "a";
+          edges = _: [ ];
+        };
+        msg =
+          who:
+          "^gen-graph\\.${who}: the accessor's nodes is a string, not a list of node ids( \\(in lowlink\\))?$";
+        cell = who: expr: {
+          expr = builtins.deepSeq expr expr;
+          expectedError = {
+            type = "ThrownError";
+            msg = msg who;
+          };
+        };
+      in
+      {
+        test-lowlink = cell "lowlink" (genGraph.lowlink { } bad).sccOf;
+        test-lowlink-rooted-order = cell "lowlink" (genGraph.lowlink { root = null; } bad).order;
+        test-lowlink-rooted-cyclic = cell "lowlink" (genGraph.lowlink { root = null; } bad).cyclic;
+        test-fbNode = cell "fbNode" (genGraph.fbNode bad).sccOf;
+        test-fbWork = cell "fbWork" (genGraph.fbWork bad).sccOf;
+        test-condensation = cell "condensation" (genGraph.condensation bad).reps;
+        test-cycles = cell "cycles" (genGraph.cycles bad);
+        test-cyclePaths = cell "cyclePaths" (genGraph.cyclePaths bad);
+        test-condensationClosure =
+          cell "condensationClosure( \\(in condensationOf\\))?"
+            (genGraph.condensationClosure { } bad).reps;
+        test-cyclicEdgesWhere = cell "cyclicEdgesWhere" (
+          genGraph.cyclicEdgesWhere (_: true) {
+            nodes = "a";
+            labeledEdges = _: [ ];
+          }
+        );
+        test-catchable = {
+          expr = (builtins.tryEval (builtins.deepSeq (genGraph.lowlink { } bad).sccOf true)).success;
+          expected = false;
+        };
+      };
+
     flake.testsError.lowlink-root =
       let
         diamond = {
@@ -1225,12 +1268,39 @@ in
           cell
             "^gen-graph\\.lowlink: 'root' is an option of gen-graph\\.lowlink, not a field of this record \\(in prelude\\.checkGuarded\\)$"
             (genGraph.lowlink { } (diamond // { root = "a"; })).sccOf;
-        test-bad-root-with-a-dangling-edge-reports-the-edge =
-          cell "^gen-graph\\.lowlink: edges \"a\" names a target outside `nodes`$"
+        # two faults: the run's fields meet the root first, the finisher's fields the edge
+        test-bad-root-with-a-dangling-edge-order-reports-the-root =
+          cell (nonMember "\"zz\"")
             (rooted "zz" {
               nodes = [ "a" ];
               edges = _: [ "zz" ];
             }).order;
+        test-bad-root-with-a-dangling-edge-sccOf-reports-the-edge =
+          cell "^gen-graph\\.lowlink: edges \"a\" names a target outside `nodes`$"
+            (rooted "zz" {
+              nodes = [ "a" ];
+              edges = _: [ "zz" ];
+            }).sccOf;
+        # two dangling edges: the run names the one its search from the root meets first (b's), the finisher
+        # the first in `nodes` (a's)
+        test-two-dangling-edges-order-reports-the-search-first =
+          cell "^gen-graph\\.lowlink: edges \"b\" names a target outside `nodes`$"
+            (rooted "b" {
+              nodes = [
+                "a"
+                "b"
+              ];
+              edges = k: if k == "a" then [ "x" ] else [ "y" ];
+            }).order;
+        test-two-dangling-edges-sccOf-reports-the-nodes-first =
+          cell "^gen-graph\\.lowlink: edges \"a\" names a target outside `nodes`$"
+            (rooted "b" {
+              nodes = [
+                "a"
+                "b"
+              ];
+              edges = k: if k == "a" then [ "x" ] else [ "y" ];
+            }).sccOf;
         test-bad-root-with-a-non-string-node-reports-the-node =
           cell "^gen-graph\\.lowlink: got int, expected a node identifier \\(a string\\)$"
             (rooted "zz" {
