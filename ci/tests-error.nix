@@ -1176,7 +1176,8 @@ in
     # THE ROOTED STEP'S OWN REFUSALS. A `root` outside `nodes` is refused by name, catchably, on every
     # field of the rooted record; a non-string root names its type, never its value. `root` on the
     # GRAPH record is an option left in the wrong place and is refused as such (G10). With two faults
-    # the graph's own domain refusal wins: the root is checked against a graph that already passed.
+    # each field names the first it meets: `order` and `cyclic` (the run's) meet the root first, then
+    # edges in search order; the partition fields (the finisher's) scan edges in `nodes` order.
     # A `nodes` that is not a list is refused by name, catchably, on every partition surface (den-hoag-n0euw):
     # `map` over it used to abort uncatchably (`expected a list but found a string`).
     flake.testsError.partition-nodes-not-a-list =
@@ -1305,6 +1306,21 @@ in
               ];
               edges = k: if k == "a" then [ "x" ] else [ "y" ];
             }).sccOf;
+        test-bad-root-with-a-dangling-edge-cyclic-reports-the-root =
+          cell (nonMember "\"zz\"")
+            (rooted "zz" {
+              nodes = [ "a" ];
+              edges = _: [ "zz" ];
+            }).cyclic;
+        test-two-dangling-edges-cyclic-reports-the-search-first =
+          cell "^gen-graph\\.lowlink: edges \"b\" names a target outside `nodes`$"
+            (rooted "b" {
+              nodes = [
+                "a"
+                "b"
+              ];
+              edges = k: if k == "a" then [ "x" ] else [ "y" ];
+            }).cyclic;
         test-bad-root-with-a-non-string-node-reports-the-node =
           cell "^gen-graph\\.lowlink: got int, expected a node identifier \\(a string\\)$"
             (rooted "zz" {

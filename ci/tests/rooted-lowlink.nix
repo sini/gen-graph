@@ -74,6 +74,43 @@ let
       y = [ "x" ];
     };
   };
+  # the contract on any digraph: `order` is a permutation of `nodes`, each SCC (the plain record's
+  # `sccOf`) is contiguous, and across every edge the target's component comes first
+  invariantsHold =
+    root: es:
+    let
+      order = orderOf root es;
+      sccOf = (G.lowlink { } (acc es)).sccOf;
+      pos = builtins.listToAttrs (
+        builtins.genList (i: {
+          name = builtins.elemAt order i;
+          value = i;
+        }) (builtins.length order)
+      );
+      tags = map (v: sccOf.${v}) order;
+      contiguous =
+        (builtins.foldl'
+          (st: t: {
+            ok = st.ok && (t == st.cur || !(st.done ? ${t}));
+            cur = t;
+            done = st.done // (if st.cur == null then { } else { ${st.cur} = true; });
+          })
+          {
+            ok = true;
+            cur = null;
+            done = { };
+          }
+          tags
+        ).ok;
+    in
+    builtins.sort builtins.lessThan order == builtins.sort builtins.lessThan (builtins.attrNames es)
+    && contiguous
+    && builtins.all (v: builtins.all (w: sccOf.${w} == sccOf.${v} || pos.${w} < pos.${v}) es.${v}) (
+      builtins.attrNames es
+    );
+  cyclicGraphs = {
+    inherit (graphs) self twoCycle chainOfCycles;
+  };
   perms =
     xs:
     if xs == [ ] then
@@ -108,8 +145,6 @@ in
         disconnectedNull = orderOf null graphs.disconnected;
         lateKeyZ = orderOf "z" graphs.lateKey;
         lateKeyNull = orderOf null graphs.lateKey;
-        twoCycleP = orderOf "p" graphs.twoCycle;
-        chainOfCyclesR = orderOf "r" graphs.chainOfCycles;
         selfY = orderOf "y" graphs.self;
         empty =
           (rooted null {
@@ -166,6 +201,29 @@ in
           "b"
           "z"
         ];
+        selfY = [
+          "y"
+          "x"
+        ];
+        empty = [ ];
+      };
+    };
+    # the CONTRACT on the cyclic graphs, from every root: a permutation, each component contiguous, each
+    # component after every component it reaches. Members inside a component are in no promised order.
+    test-order-invariants-on-cyclic-graphs = {
+      expr = builtins.mapAttrs (
+        _: es: builtins.all (r: invariantsHold r es) ([ null ] ++ builtins.attrNames es)
+      ) cyclicGraphs;
+      expected = builtins.mapAttrs (_: _: true) cyclicGraphs;
+    };
+    # CHARACTERISATION, pinned, not promised: today's member order inside each component. A conforming
+    # change to the run may move it; the invariants cell above is the contract.
+    test-order-on-cyclic-graphs-characterisation = {
+      expr = {
+        twoCycleP = orderOf "p" graphs.twoCycle;
+        chainOfCyclesR = orderOf "r" graphs.chainOfCycles;
+      };
+      expected = {
         twoCycleP = [
           "r"
           "p"
@@ -179,11 +237,6 @@ in
           "c"
           "r"
         ];
-        selfY = [
-          "y"
-          "x"
-        ];
-        empty = [ ];
       };
     };
     # the same derivation as `cycles`, on every fixed graph and from every root
